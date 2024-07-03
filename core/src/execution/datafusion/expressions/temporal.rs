@@ -100,7 +100,7 @@ impl PhysicalExpr for HourExec {
                         Microsecond,
                         Some(self.timezone.clone().into()),
                     )),
-                );
+                )?;
                 let result = date_part(&array, DatePart::Hour)?;
 
                 Ok(ColumnarValue::Array(result))
@@ -111,8 +111,8 @@ impl PhysicalExpr for HourExec {
         }
     }
 
-    fn children(&self) -> Vec<Arc<dyn PhysicalExpr>> {
-        vec![self.child.clone()]
+    fn children(&self) -> Vec<&Arc<dyn PhysicalExpr>> {
+        vec![&self.child]
     }
 
     fn with_new_children(
@@ -194,7 +194,7 @@ impl PhysicalExpr for MinuteExec {
                         Microsecond,
                         Some(self.timezone.clone().into()),
                     )),
-                );
+                )?;
                 let result = date_part(&array, DatePart::Minute)?;
 
                 Ok(ColumnarValue::Array(result))
@@ -205,8 +205,8 @@ impl PhysicalExpr for MinuteExec {
         }
     }
 
-    fn children(&self) -> Vec<Arc<dyn PhysicalExpr>> {
-        vec![self.child.clone()]
+    fn children(&self) -> Vec<&Arc<dyn PhysicalExpr>> {
+        vec![&self.child]
     }
 
     fn with_new_children(
@@ -288,7 +288,7 @@ impl PhysicalExpr for SecondExec {
                         Microsecond,
                         Some(self.timezone.clone().into()),
                     )),
-                );
+                )?;
                 let result = date_part(&array, DatePart::Second)?;
 
                 Ok(ColumnarValue::Array(result))
@@ -299,8 +299,8 @@ impl PhysicalExpr for SecondExec {
         }
     }
 
-    fn children(&self) -> Vec<Arc<dyn PhysicalExpr>> {
-        vec![self.child.clone()]
+    fn children(&self) -> Vec<&Arc<dyn PhysicalExpr>> {
+        vec![&self.child]
     }
 
     fn with_new_children(
@@ -386,8 +386,8 @@ impl PhysicalExpr for DateTruncExec {
         }
     }
 
-    fn children(&self) -> Vec<Arc<dyn PhysicalExpr>> {
-        vec![self.child.clone()]
+    fn children(&self) -> Vec<&Arc<dyn PhysicalExpr>> {
+        vec![&self.child]
     }
 
     fn with_new_children(
@@ -489,7 +489,7 @@ impl PhysicalExpr for TimestampTruncExec {
                     ts,
                     tz.clone(),
                     Some(&DataType::Timestamp(Microsecond, Some(tz.into()))),
-                );
+                )?;
                 let result = timestamp_trunc_dyn(&ts, format)?;
                 Ok(ColumnarValue::Array(result))
             }
@@ -498,7 +498,7 @@ impl PhysicalExpr for TimestampTruncExec {
                     ts,
                     tz.clone(),
                     Some(&DataType::Timestamp(Microsecond, Some(tz.into()))),
-                );
+                )?;
                 let result = timestamp_trunc_array_fmt_dyn(&ts, &formats)?;
                 Ok(ColumnarValue::Array(result))
             }
@@ -511,8 +511,8 @@ impl PhysicalExpr for TimestampTruncExec {
         }
     }
 
-    fn children(&self) -> Vec<Arc<dyn PhysicalExpr>> {
-        vec![self.child.clone()]
+    fn children(&self) -> Vec<&Arc<dyn PhysicalExpr>> {
+        vec![&self.child]
     }
 
     fn with_new_children(

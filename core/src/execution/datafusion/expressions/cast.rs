@@ -19,6 +19,7 @@ use std::{
     any::Any,
     fmt::{Debug, Display, Formatter},
     hash::{Hash, Hasher},
+    num::Wrapping,
     sync::Arc,
 };
 
@@ -51,6 +52,8 @@ use crate::{
     },
 };
 
+use super::EvalMode;
+
 static TIMESTAMP_FORMAT: Option<&str> = Some("%Y-%m-%d %H:%M:%S%.f");
 
 static CAST_OPTIONS: CastOptions = CastOptions {
@@ -59,13 +62,6 @@ static CAST_OPTIONS: CastOptions = CastOptions {
         .with_timestamp_tz_format(TIMESTAMP_FORMAT)
         .with_timestamp_format(TIMESTAMP_FORMAT),
 };
-
-#[derive(Debug, Hash, PartialEq, Clone, Copy)]
-pub enum EvalMode {
-    Legacy,
-    Ansi,
-    Try,
-}
 
 #[derive(Debug, Hash)]
 pub struct Cast {
@@ -263,7 +259,7 @@ macro_rules! cast_float_to_int16_down {
                 .iter()
                 .map(|value| match value {
                     Some(value) => {
-                        let is_overflow = value.is_nan() || value.abs() as i32 == std::i32::MAX;
+                        let is_overflow = value.is_nan() || value.abs() as i32 == i32::MAX;
                         if is_overflow {
                             return Err(cast_overflow(
                                 &format!($format_str, value).replace("e", "E"),
@@ -378,7 +374,7 @@ macro_rules! cast_decimal_to_int16_down {
                     Some(value) => {
                         let divisor = 10_i128.pow($scale as u32);
                         let (truncated, decimal) = (value / divisor, (value % divisor).abs());
-                        let is_overflow = truncated.abs() > std::i32::MAX.into();
+                        let is_overflow = truncated.abs() > i32::MAX.into();
                         if is_overflow {
                             return Err(cast_overflow(
                                 &format!("{}.{}BD", truncated, decimal),
@@ -502,7 +498,7 @@ impl Cast {
 
     fn cast_array(&self, array: ArrayRef) -> DataFusionResult<ArrayRef> {
         let to_type = &self.data_type;
-        let array = array_with_timezone(array, self.timezone.clone(), Some(to_type));
+        let array = array_with_timezone(array, self.timezone.clone(), Some(to_type))?;
         let from_type = array.data_type().clone();
 
         // unpack dictionary string arrays first
@@ -1291,8 +1287,8 @@ impl PhysicalExpr for Cast {
         }
     }
 
-    fn children(&self) -> Vec<Arc<dyn PhysicalExpr>> {
-        vec![self.child.clone()]
+    fn children(&self) -> Vec<&Arc<dyn PhysicalExpr>> {
+        vec![&self.child]
     }
 
     fn with_new_children(
@@ -1570,7 +1566,7 @@ fn date_parser(date_str: &str, eval_mode: EvalMode) -> CometResult<Option<i32>> 
     let mut date_segments = [1, 1, 1];
     let mut sign = 1;
     let mut current_segment = 0;
-    let mut current_segment_value = 0;
+    let mut current_segment_value = Wrapping(0);
     let mut current_segment_digits = 0;
     let bytes = date_str.as_bytes();
 
@@ -1597,16 +1593,16 @@ fn date_parser(date_str: &str, eval_mode: EvalMode) -> CometResult<Option<i32>> 
                 return return_result(date_str, eval_mode);
             }
             //if valid update corresponding segment with the current segment value.
-            date_segments[current_segment as usize] = current_segment_value;
-            current_segment_value = 0;
+            date_segments[current_segment as usize] = current_segment_value.0;
+            current_segment_value = Wrapping(0);
             current_segment_digits = 0;
             current_segment += 1;
         } else if !b.is_ascii_digit() {
             return return_result(date_str, eval_mode);
         } else {
             //increment value of current segment by the next digit
-            let parsed_value = (b - b'0') as i32;
-            current_segment_value = current_segment_value * 10 + parsed_value;
+            let parsed_value = Wrapping((b - b'0') as i32);
+            current_segment_value = current_segment_value * Wrapping(10) + parsed_value;
             current_segment_digits += 1;
         }
         j += 1;
@@ -1622,7 +1618,7 @@ fn date_parser(date_str: &str, eval_mode: EvalMode) -> CometResult<Option<i32>> 
         return return_result(date_str, eval_mode);
     }
 
-    date_segments[current_segment as usize] = current_segment_value;
+    date_segments[current_segment as usize] = current_segment_value.0;
 
     match NaiveDate::from_ymd_opt(
         sign * date_segments[0],
@@ -1644,6 +1640,8 @@ mod tests {
     use arrow::datatypes::TimestampMicrosecondType;
     use arrow_array::StringArray;
     use arrow_schema::TimeUnit;
+
+    use datafusion_physical_expr::expressions::Column;
 
     use super::*;
 
@@ -1836,6 +1834,8 @@ mod tests {
             Some(" 202 "),
             Some("\n 2020-\r8 "),
             Some("2020-01-01T"),
+            // Overflows i32
+            Some("-4607172990231812908"),
         ]));
 
         for eval_mode in &[EvalMode::Legacy, EvalMode::Try] {
@@ -1857,7 +1857,8 @@ mod tests {
                     None,
                     None,
                     None,
-                    Some(18262)
+                    Some(18262),
+                    None
                 ]
             );
         }
@@ -1897,5 +1898,32 @@ mod tests {
         // ANSI mode should throw error on decimal
         assert!(cast_string_to_i8("0.2", EvalMode::Ansi).is_err());
         assert!(cast_string_to_i8(".", EvalMode::Ansi).is_err());
+    }
+
+    #[test]
+    fn test_cast_unsupported_timestamp_to_date() {
+        // Since datafusion uses chrono::Datetime internally not all dates representable by TimestampMicrosecondType are supported
+        let timestamps: PrimitiveArray<TimestampMicrosecondType> = vec![i64::MAX].into();
+        let cast = Cast::new(
+            Arc::new(Column::new("a", 0)),
+            DataType::Date32,
+            EvalMode::Legacy,
+            "UTC".to_owned(),
+        );
+        let result = cast.cast_array(Arc::new(timestamps.with_timezone("Europe/Copenhagen")));
+        assert!(result.is_err())
+    }
+
+    #[test]
+    fn test_cast_invalid_timezone() {
+        let timestamps: PrimitiveArray<TimestampMicrosecondType> = vec![i64::MAX].into();
+        let cast = Cast::new(
+            Arc::new(Column::new("a", 0)),
+            DataType::Date32,
+            EvalMode::Legacy,
+            "Not a valid timezone".to_owned(),
+        );
+        let result = cast.cast_array(Arc::new(timestamps.with_timezone("Europe/Copenhagen")));
+        assert!(result.is_err())
     }
 }

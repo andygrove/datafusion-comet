@@ -65,7 +65,7 @@ message Expr {
     CaseWhen caseWhen = 38;
     In in = 39;
     Not not = 40;
-    Negative negative = 41;
+    UnaryMinus unary_minus = 41;
     BitwiseShiftRight bitwiseShiftRight = 42;
     BitwiseShiftLeft bitwiseShiftLeft = 43;
     IfExpr if = 44;
@@ -92,11 +92,10 @@ message AggExpr {
     BitAndAgg bitAndAgg = 9;
     BitOrAgg bitOrAgg = 10;
     BitXorAgg bitXorAgg = 11;
-    CovSample covSample = 12;
-    CovPopulation covPopulation = 13;
-    Variance variance = 14;
-    Stddev stddev = 15;
-    Correlation correlation = 16;
+    Covariance covariance = 12;
+    Variance variance = 13;
+    Stddev stddev = 14;
+    Correlation correlation = 15;
   }
 }
 
@@ -159,18 +158,12 @@ message BitXorAgg {
   DataType datatype = 2;
 }
 
-message CovSample {
+message Covariance {
   Expr child1 = 1;
   Expr child2 = 2;
   bool null_on_divide_by_zero = 3;
   DataType datatype = 4;
-}
-
-message CovPopulation {
-  Expr child1 = 1;
-  Expr child2 = 2;
-  bool null_on_divide_by_zero = 3;
-  DataType datatype = 4;
+  StatisticsType stats_type = 5;
 }
 
 message Variance {
@@ -452,7 +445,7 @@ message Not {
   Expr child = 1;
 }
 
-message Negative {
+message UnaryMinus {
   Expr child = 1;
   bool fail_on_error = 2;
 }
@@ -480,6 +473,7 @@ message BitwiseNot {
 
 message Abs {
   Expr child = 1;
+  EvalMode eval_mode = 2;
 }
 
 message Subquery {

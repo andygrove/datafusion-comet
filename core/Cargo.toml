@@ -16,8 +16,14 @@
 # under the License.
 
 [package]
-name = "comet"
+name = "datafusion-comet"
 version = "0.1.0"
+homepage = "https://datafusion.apache.org/comet"
+repository = "https://github.com/apache/datafusion-comet"
+authors = ["Apache DataFusion <dev@datafusion.apache.org>"]
+description = "Apache DataFusion Comet: High performance accelerator for Apache Spark"
+readme = "README.md"
+license = "Apache-2.0"
 edition = "2021"
 include = [
     "benches/*.rs",
@@ -25,17 +31,16 @@ include = [
     "Cargo.toml",
 ]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 parquet-format = "4.0.0" # This must be kept in sync with that from parquet crate
-arrow = { git = "https://github.com/viirya/arrow-rs.git", rev = "3f1ae0c", features = ["prettyprint", "ffi", "chrono-tz"] }
-arrow-array = { git = "https://github.com/viirya/arrow-rs.git", rev = "3f1ae0c" }
-arrow-data = { git = "https://github.com/viirya/arrow-rs.git", rev = "3f1ae0c" }
-arrow-schema = { git = "https://github.com/viirya/arrow-rs.git", rev = "3f1ae0c" }
-arrow-string = { git = "https://github.com/viirya/arrow-rs.git", rev = "3f1ae0c" }
-parquet = { git = "https://github.com/viirya/arrow-rs.git", rev = "3f1ae0c", default-features = false, features = ["experimental"] }
-half = { version = "~2.1", default-features = false }
+arrow = { git = "https://github.com/apache/arrow-rs.git", rev = "0a4d8a1", features = ["prettyprint", "ffi", "chrono-tz"] }
+arrow-array = { git = "https://github.com/apache/arrow-rs.git", rev = "0a4d8a1" }
+arrow-buffer = { git = "https://github.com/apache/arrow-rs.git", rev = "0a4d8a1" }
+arrow-data = { git = "https://github.com/apache/arrow-rs.git", rev = "0a4d8a1" }
+arrow-schema = { git = "https://github.com/apache/arrow-rs.git", rev = "0a4d8a1" }
+arrow-string = { git = "https://github.com/apache/arrow-rs.git", rev = "0a4d8a1" }
+parquet = { git = "https://github.com/apache/arrow-rs.git", rev = "0a4d8a1", default-features = false, features = ["experimental"] }
+half = { version = "2.4.1", default-features = false }
 futures = "0.3.28"
 mimalloc = { version = "*", default-features = false, optional = true }
 tokio = { version = "1", features = ["rt-multi-thread"] }
@@ -66,16 +71,17 @@ itertools = "0.11.0"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 chrono-tz = { version = "0.8" }
 paste = "1.0.14"
-datafusion-common = { git = "https://github.com/viirya/arrow-datafusion.git", rev = "57b3be4" }
-datafusion = { default-features = false, git = "https://github.com/viirya/arrow-datafusion.git", rev = "57b3be4", features = ["unicode_expressions", "crypto_expressions"] }
-datafusion-functions = { git = "https://github.com/viirya/arrow-datafusion.git", rev = "57b3be4", features = ["crypto_expressions"]}
-datafusion-physical-expr = { git = "https://github.com/viirya/arrow-datafusion.git", rev = "57b3be4", default-features = false, features = ["unicode_expressions"] }
+datafusion-common = { git = "https://github.com/viirya/arrow-datafusion.git", rev = "17446b1" }
+datafusion = { default-features = false, git = "https://github.com/viirya/arrow-datafusion.git", rev = "17446b1", features = ["unicode_expressions", "crypto_expressions"] }
+datafusion-functions = { git = "https://github.com/viirya/arrow-datafusion.git", rev = "17446b1", features = ["crypto_expressions"] }
+datafusion-expr = { git = "https://github.com/viirya/arrow-datafusion.git", rev = "17446b1", default-features = false }
+datafusion-physical-expr-common = { git = "https://github.com/viirya/arrow-datafusion.git", rev = "17446b1", default-features = false }
+datafusion-physical-expr = { git = "https://github.com/viirya/arrow-datafusion.git", rev = "17446b1", default-features = false }
 unicode-segmentation = "^1.10.1"
 once_cell = "1.18.0"
 regex = "1.9.6"
 crc32fast = "1.3.2"
 simd-adler32 = "0.3.7"
-twox-hash = "1.6.3"
 
 [build-dependencies]
 prost-build = "0.9.0"
@@ -86,6 +92,8 @@ criterion = "0.5.1"
 jni = { version = "0.21", features = ["invocation"] }
 lazy_static = "1.4"
 assertables = "7"
+hex = "0.4.3"
+twox-hash = "1.6.3"
 
 [features]
 default = []
@@ -100,7 +108,7 @@ strip = "debuginfo"
 [lib]
 name = "comet"
 # "rlib" is for benchmarking with criterion.
-crate_type = ["cdylib", "rlib"]
+crate-type = ["cdylib", "rlib"]
 
 [[bench]]
 name = "parquet_read"
@@ -128,4 +136,8 @@ harness = false
 
 [[bench]]
 name = "shuffle_writer"
+harness = false
+
+[[bench]]
+name = "parquet_decode"
 harness = false
