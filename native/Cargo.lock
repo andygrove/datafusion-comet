@@ -854,6 +854,7 @@ dependencies = [
  "crc32fast",
  "criterion",
  "datafusion",
+ "datafusion-comet-proto",
  "datafusion-common",
  "datafusion-expr",
  "datafusion-functions",
@@ -879,7 +880,6 @@ dependencies = [
  "paste",
  "pprof",
  "prost 0.12.6",
- "prost-build",
  "rand",
  "regex",
  "serde",
@@ -893,6 +893,14 @@ dependencies = [
  "twox-hash",
  "unicode-segmentation",
  "zstd",
+]
+
+[[package]]
+name = "datafusion-comet-proto"
+version = "0.1.0"
+dependencies = [
+ "prost 0.12.6",
+ "prost-build",
 ]
 
 [[package]]

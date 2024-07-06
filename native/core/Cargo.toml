@@ -17,14 +17,14 @@
 
 [package]
 name = "datafusion-comet"
-version = "0.1.0"
-homepage = "https://datafusion.apache.org/comet"
-repository = "https://github.com/apache/datafusion-comet"
-authors = ["Apache DataFusion <dev@datafusion.apache.org>"]
 description = "Apache DataFusion Comet: High performance accelerator for Apache Spark"
+version = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+authors = { workspace = true }
 readme = "README.md"
-license = "Apache-2.0"
-edition = "2021"
+license = { workspace = true }
+edition = { workspace = true }
 include = [
     "benches/*.rs",
     "src/**/*.rs",
@@ -32,6 +32,7 @@ include = [
 ]
 
 [dependencies]
+datafusion-comet-proto = { path = "../proto" }
 parquet-format = "4.0.0" # This must be kept in sync with that from parquet crate
 arrow = { git = "https://github.com/apache/arrow-rs.git", rev = "0a4d8a1", features = ["prettyprint", "ffi", "chrono-tz"] }
 arrow-array = { git = "https://github.com/apache/arrow-rs.git", rev = "0a4d8a1" }
@@ -83,9 +84,6 @@ regex = "1.9.6"
 crc32fast = "1.3.2"
 simd-adler32 = "0.3.7"
 
-[build-dependencies]
-prost-build = "0.9.0"
-
 [dev-dependencies]
 pprof = { version = "0.13.0", features = ["flamegraph"] }
 criterion = "0.5.1"
@@ -97,13 +95,6 @@ twox-hash = "1.6.3"
 
 [features]
 default = []
-
-[profile.release]
-debug = true
-overflow-checks = false
-lto = "thin"
-codegen-units = 1
-strip = "debuginfo"
 
 [lib]
 name = "comet"

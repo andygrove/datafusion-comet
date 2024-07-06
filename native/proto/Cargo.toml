@@ -15,11 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
-[workspace]
-members = ["core", "proto"]
-resolver = "2"
-
-[workspace.package]
+[package]
+name = "datafusion-comet-proto"
 version = "0.1.0"
 homepage = "https://datafusion.apache.org/comet"
 repository = "https://github.com/apache/datafusion-comet"
@@ -29,12 +26,19 @@ readme = "README.md"
 license = "Apache-2.0"
 edition = "2021"
 
-# Comet uses the same minimum Rust version as DataFusion
-rust-version = "1.75"
+[dependencies]
+prost = "0.12.1"
 
-[profile.release]
-debug = true
-overflow-checks = false
-lto = "thin"
-codegen-units = 1
-strip = "debuginfo"
+[build-dependencies]
+prost-build = "0.9.0"
+
+[features]
+default = []
+
+[lib]
+name = "datafusion_comet_proto"
+path = "src/lib.rs"
+
+
+
+

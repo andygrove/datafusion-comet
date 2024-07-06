@@ -26,7 +26,8 @@ pub mod scalar_funcs;
 pub use normalize_nan::NormalizeNaNAndZero;
 use prost::DecodeError;
 
-use crate::{errors::CometError, execution::spark_expression};
+use crate::errors::CometError;
+use datafusion_comet_proto::spark_expression;
 pub mod abs;
 pub mod avg;
 pub mod avg_decimal;

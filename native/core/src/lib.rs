@@ -19,7 +19,7 @@
 #![allow(non_camel_case_types)]
 #![allow(dead_code)]
 #![allow(clippy::upper_case_acronyms)]
-#![allow(clippy::derive_partial_eq_without_eq)] // For prost generated struct
+// #![allow(clippy::derive_partial_eq_without_eq)] // For prost generated struct
 
 use jni::{
     objects::{JClass, JString},
