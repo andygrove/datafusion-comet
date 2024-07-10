@@ -665,12 +665,28 @@ class CometExpressionSuite extends CometTestBase with AdaptiveSparkPlanHelper {
     }
   }
 
-  test("add overflow (ANSI disable)") {
+  test("add overflow (ANSI disabled)") {
     // Enabling ANSI will cause native engine failure, but as we cannot catch
     // native error now, we cannot test it here.
     withSQLConf(SQLConf.ANSI_ENABLED.key -> "false") {
-      withParquetTable(Seq((Int.MaxValue, 1)), "tbl") {
+      withParquetTable(Seq((Int.MaxValue, 1), (1, 1)), "tbl") {
         checkSparkAnswerAndOperator("SELECT _1 + _2 FROM tbl")
+      }
+    }
+  }
+
+  test("add overflow (ANSI enabled)") {
+    // Enabling ANSI will cause native engine failure, but as we cannot catch
+    // native error now, we cannot test it here.
+    withSQLConf(SQLConf.ANSI_ENABLED.key -> "true",
+        CometConf.COMET_ANSI_MODE_ENABLED.key -> "true") {
+      withParquetTable(Seq((Int.MaxValue, 1, (1, 1))), "tbl") {
+        checkSparkMaybeThrows(sql("SELECT _1 + _2 FROM tbl")) match {
+          case (Some(sparkErr), Some(cometErr)) =>
+            // this is fine
+          case _ =>
+            fail("Expected both Spark and Comet to throw an exception")
+        }
       }
     }
   }
