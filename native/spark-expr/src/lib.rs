@@ -22,6 +22,7 @@ mod if_expr;
 
 pub mod timezone;
 pub mod utils;
+mod expr_or_null;
 
 pub use abs::Abs;
 pub use error::{SparkError, SparkResult};
