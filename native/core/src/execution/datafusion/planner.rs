@@ -544,10 +544,11 @@ impl PhysicalPlanner {
                     }
                 };
 
-                // fast path for CASE WHEN predicate THEN expr ELSE null END
-                if let Some(x) = &else_phy_expr {
-                    if let Some(y) = x.as_any().downcast_ref::<Literal>() {
-                        if ScalarValue::Null == *y.value() && when_then_pairs.len() == 1 {
+                // optimized path for CASE WHEN predicate THEN expr ELSE null END
+                if let Some(else_value) = &else_phy_expr {
+                    if let Some(lit) = else_value.as_any().downcast_ref::<Literal>() {
+                        if ScalarValue::Null == *lit.value() && when_then_pairs.len() == 1 {
+                            println!("Using ExprOrNull!");
                             return Ok(Arc::new(ExprOrNull::new(
                                 when_then_pairs[0].0.clone(),
                                 when_then_pairs[0].1.clone(),
