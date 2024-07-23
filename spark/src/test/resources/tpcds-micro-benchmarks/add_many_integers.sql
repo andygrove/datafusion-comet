@@ -17,7 +17,7 @@
 
 -- This is testing the cost of a complex expression that will create many intermediate arrays in Comet
 
-select sum(
+select
     ss_sold_date_sk+
     ss_sold_time_sk+
     ss_item_sk+
@@ -29,5 +29,4 @@ select sum(
     ss_promo_sk+
     ss_ticket_number+
     ss_quantity
-)
 from store_sales;

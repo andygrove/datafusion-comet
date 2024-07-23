@@ -1,0 +1,16 @@
+OpenJDK 64-Bit Server VM 11.0.23+9-post-Ubuntu-1ubuntu122.04.1 on Linux 6.5.0-41-generic
+AMD Ryzen 9 7950X3D 16-Core Processor
+TPCDS Micro Benchmarks:                       Best Time(ms)   Avg Time(ms)   Stdev(ms)    Rate(M/s)   Per Row(ns)   Relative
+----------------------------------------------------------------------------------------------------------------------------
+case_when_column_or_null                                942            989          41        305.6           3.3       1.0X
+case_when_column_or_null: Comet (Scan)                  988           1002          11        291.5           3.4       1.0X
+case_when_column_or_null: Comet (Scan, Exec)            857            894          26        336.2           3.0       1.1X
+
+OpenJDK 64-Bit Server VM 11.0.23+9-post-Ubuntu-1ubuntu122.04.1 on Linux 6.5.0-41-generic
+AMD Ryzen 9 7950X3D 16-Core Processor
+TPCDS Micro Benchmarks:                   Best Time(ms)   Avg Time(ms)   Stdev(ms)    Rate(M/s)   Per Row(ns)   Relative
+------------------------------------------------------------------------------------------------------------------------
+case_when_scalar                                    202            214           8        356.9           2.8       1.0X
+case_when_scalar: Comet (Scan)                     1849           1861          16         38.9          25.7       0.1X
+case_when_scalar: Comet (Scan, Exec)                201            223          15        357.5           2.8       1.0X
+

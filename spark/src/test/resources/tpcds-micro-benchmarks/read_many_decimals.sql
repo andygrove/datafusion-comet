@@ -18,16 +18,16 @@
 -- This is testing the cost of a complex expression that will create many intermediate arrays in Comet
 
 select
-    ss_wholesale_cost+
-    ss_list_price+
-    ss_sales_price+
-    ss_ext_discount_amt+
-    ss_ext_sales_price+
-    ss_ext_wholesale_cost+
-    ss_ext_list_price+
-    ss_ext_tax+
-    ss_coupon_amt+
-    ss_net_paid+
-    ss_net_paid_inc_tax+
+    ss_wholesale_cost,
+    ss_list_price,
+    ss_sales_price,
+    ss_ext_discount_amt,
+    ss_ext_sales_price,
+    ss_ext_wholesale_cost,
+    ss_ext_list_price,
+    ss_ext_tax,
+    ss_coupon_amt,
+    ss_net_paid,
+    ss_net_paid_inc_tax,
     ss_net_profit
 from store_sales;

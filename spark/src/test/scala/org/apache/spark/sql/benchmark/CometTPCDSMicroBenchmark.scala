@@ -54,8 +54,10 @@ object CometTPCDSMicroBenchmark extends CometTPCQueryBenchmarkBase {
 
   val queries: Seq[String] = Seq(
     "add_many_decimals",
+    "read_many_decimals",
     "add_many_integers",
-    "agg_high_cardinality",
+    "read_many_integers",
+    /*"agg_high_cardinality",
     "agg_low_cardinality",
     "agg_sum_decimals_no_grouping",
     "agg_sum_integers_no_grouping",
@@ -69,7 +71,7 @@ object CometTPCDSMicroBenchmark extends CometTPCQueryBenchmarkBase {
     "join_exploding_output",
     "join_inner",
     "join_left_outer",
-    "join_semi")
+    "join_semi"*/)
 
   override def runQueries(
       queryLocation: String,
