@@ -65,7 +65,7 @@ pub struct ScanExec {
     pub schema: SchemaRef,
     /// The input batch of input data. Used to determine the schema of the input data.
     /// It is also used in unit test to mock the input data from JVM.
-    pub batch: Arc<Option<InputBatch>>,
+    pub batch: Option<Arc<InputBatch>>,
     cache: PlanProperties,
     metrics: ExecutionPlanMetricsSet,
 }
@@ -98,7 +98,7 @@ impl ScanExec {
             input_source_description: input_source_description.to_string(),
             data_types,
             schema,
-            batch: Arc::new(Some(first_batch)),
+            batch: Some(Arc::new(first_batch)),
             cache,
             metrics: ExecutionPlanMetricsSet::default(),
         })
@@ -126,12 +126,11 @@ impl ScanExec {
 
     /// Feeds input batch into this `Scan`. Only used in unit test.
     pub fn set_input_batch(&mut self, input: InputBatch) {
-        self.batch = Arc::new(Some(input));
+        self.batch = Some(Arc::new(input));
     }
 
     /// Pull next input batch from JVM.
     pub fn get_next_batch(&mut self) -> Result<(), CometError> {
-
         if self.input_source.is_none() {
             // This is a unit test. We don't need to call JNI.
             return Ok(());
@@ -142,7 +141,7 @@ impl ScanExec {
                 self.exec_context_id,
                 self.input_source.as_ref().unwrap().as_obj(),
             )?;
-            self.batch = Arc::new(Some(next_batch));
+            self.batch = Some(Arc::new(next_batch));
         }
 
         Ok(())
@@ -358,11 +357,8 @@ impl Stream for ScanStream {
     type Item = DataFusionResult<RecordBatch>;
 
     fn poll_next(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        // let mut timer = self.baseline_metrics.elapsed_compute().timer();
-        // timer.stop();
-
-        let input_batch = if let Some(batch) = &self.scan.batch.as_ref() {
-            batch
+        let input_batch = if let Some(batch) = self.scan.batch.as_ref() {
+            batch.as_ref()
         } else {
             return Poll::Pending;
         };
@@ -379,7 +375,7 @@ impl Stream for ScanStream {
         };
 
         let this: &mut Self = Pin::get_mut(self);
-        this.scan.batch = Arc::new(None);
+        this.scan.batch = None;
 
         result
     }
