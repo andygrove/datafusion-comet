@@ -18,7 +18,7 @@
 use std::{
     any::Any,
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::Arc,
     task::{Context, Poll},
 };
 
@@ -61,9 +61,11 @@ pub struct ScanExec {
     pub input_source_description: String,
     /// The data types of columns of the input batch. Converted from Spark schema.
     pub data_types: Vec<DataType>,
+    /// schema
+    pub schema: SchemaRef,
     /// The input batch of input data. Used to determine the schema of the input data.
     /// It is also used in unit test to mock the input data from JVM.
-    pub batch: Arc<Mutex<Option<InputBatch>>>,
+    pub batch: Arc<Option<InputBatch>>,
     cache: PlanProperties,
     metrics: ExecutionPlanMetricsSet,
 }
@@ -85,7 +87,7 @@ impl ScanExec {
         let schema = scan_schema(&first_batch, &data_types);
 
         let cache = PlanProperties::new(
-            EquivalenceProperties::new(schema),
+            EquivalenceProperties::new(schema.clone()),
             Partitioning::UnknownPartitioning(1),
             ExecutionMode::Bounded,
         );
@@ -95,7 +97,8 @@ impl ScanExec {
             input_source,
             input_source_description: input_source_description.to_string(),
             data_types,
-            batch: Arc::new(Mutex::new(Some(first_batch))),
+            schema,
+            batch: Arc::new(Some(first_batch)),
             cache,
             metrics: ExecutionPlanMetricsSet::default(),
         })
@@ -123,24 +126,23 @@ impl ScanExec {
 
     /// Feeds input batch into this `Scan`. Only used in unit test.
     pub fn set_input_batch(&mut self, input: InputBatch) {
-        *self.batch.try_lock().unwrap() = Some(input);
+        self.batch = Arc::new(Some(input));
     }
 
     /// Pull next input batch from JVM.
     pub fn get_next_batch(&mut self) -> Result<(), CometError> {
-        let mut current_batch = self.batch.try_lock().unwrap();
 
         if self.input_source.is_none() {
             // This is a unit test. We don't need to call JNI.
             return Ok(());
         }
 
-        if current_batch.is_none() {
+        if self.batch.is_none() {
             let next_batch = ScanExec::get_next(
                 self.exec_context_id,
                 self.input_source.as_ref().unwrap().as_obj(),
             )?;
-            *current_batch = Some(next_batch);
+            self.batch = Arc::new(Some(next_batch));
         }
 
         Ok(())
@@ -248,11 +250,7 @@ impl ExecutionPlan for ScanExec {
     }
 
     fn schema(&self) -> SchemaRef {
-        // `unwrap` is safe because `schema` is only called during converting
-        // Spark plan to DataFusion plan. At the moment, `batch` is not EOF.
-        let binding = self.batch.try_lock().unwrap();
-        let input_batch = binding.as_ref().unwrap();
-        scan_schema(input_batch, &self.data_types)
+        self.schema.clone()
     }
 
     fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
@@ -360,12 +358,10 @@ impl Stream for ScanStream {
     type Item = DataFusionResult<RecordBatch>;
 
     fn poll_next(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let mut timer = self.baseline_metrics.elapsed_compute().timer();
-        let mut scan_batch = self.scan.batch.try_lock().unwrap();
-        timer.stop();
+        // let mut timer = self.baseline_metrics.elapsed_compute().timer();
+        // timer.stop();
 
-        let input_batch = &*scan_batch;
-        let input_batch = if let Some(batch) = input_batch {
+        let input_batch = if let Some(batch) = &self.scan.batch.as_ref() {
             batch
         } else {
             return Poll::Pending;
@@ -376,13 +372,14 @@ impl Stream for ScanStream {
             InputBatch::Batch(columns, num_rows) => {
                 self.baseline_metrics.record_output(*num_rows);
                 let mut timer = self.baseline_metrics.elapsed_compute().timer();
-                let maybe_batch = self.build_record_batch(columns, *num_rows);
+                let maybe_batch = self.build_record_batch(&columns, *num_rows);
                 timer.stop();
                 Poll::Ready(Some(maybe_batch))
             }
         };
 
-        *scan_batch = None;
+        let this: &mut Self = Pin::get_mut(self);
+        this.scan.batch = Arc::new(None);
 
         result
     }
