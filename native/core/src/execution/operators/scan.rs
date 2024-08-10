@@ -65,7 +65,7 @@ pub struct ScanExec {
     pub schema: SchemaRef,
     /// The input batch of input data. Used to determine the schema of the input data.
     /// It is also used in unit test to mock the input data from JVM.
-    pub batch: Option<Arc<InputBatch>>,
+    pub batch: Option<InputBatch>,
     cache: PlanProperties,
     metrics: ExecutionPlanMetricsSet,
 }
@@ -98,7 +98,7 @@ impl ScanExec {
             input_source_description: input_source_description.to_string(),
             data_types,
             schema,
-            batch: Some(Arc::new(first_batch)),
+            batch: Some(first_batch),
             cache,
             metrics: ExecutionPlanMetricsSet::default(),
         })
@@ -126,7 +126,7 @@ impl ScanExec {
 
     /// Feeds input batch into this `Scan`. Only used in unit test.
     pub fn set_input_batch(&mut self, input: InputBatch) {
-        self.batch = Some(Arc::new(input));
+        self.batch = Some(input);
     }
 
     /// Pull next input batch from JVM.
@@ -141,7 +141,7 @@ impl ScanExec {
                 self.exec_context_id,
                 self.input_source.as_ref().unwrap().as_obj(),
             )?;
-            self.batch = Some(Arc::new(next_batch));
+            self.batch = Some(next_batch);
         }
 
         Ok(())
@@ -358,7 +358,7 @@ impl Stream for ScanStream {
 
     fn poll_next(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let input_batch = if let Some(batch) = self.scan.batch.as_ref() {
-            batch.as_ref()
+            batch
         } else {
             return Poll::Pending;
         };
