@@ -356,7 +356,7 @@ impl ScanStream {
 impl Stream for ScanStream {
     type Item = DataFusionResult<RecordBatch>;
 
-    fn poll_next(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let input_batch = if let Some(batch) = self.scan.batch.as_ref() {
             batch
         } else {
@@ -374,8 +374,7 @@ impl Stream for ScanStream {
             }
         };
 
-        let this: &mut Self = Pin::get_mut(self);
-        this.scan.batch = None;
+        self.scan.batch = None;
 
         result
     }
