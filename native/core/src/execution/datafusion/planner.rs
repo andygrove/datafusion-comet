@@ -967,6 +967,7 @@ impl PhysicalPlanner {
                     &join.right_join_keys,
                     join.join_type,
                     &None,
+                    true
                 )?;
 
                 let sort_options = join
@@ -1005,6 +1006,7 @@ impl PhysicalPlanner {
                     &join.right_join_keys,
                     join.join_type,
                     &join.condition,
+                    false
                 )?;
                 let hash_join = Arc::new(HashJoinExec::try_new(
                     join_params.left,
@@ -1080,6 +1082,7 @@ impl PhysicalPlanner {
         right_join_keys: &[Expr],
         join_type: i32,
         condition: &Option<Expr>,
+        copy_right_input: bool
     ) -> Result<(JoinParameters, Vec<ScanExec>), ExecutionError> {
         assert!(children.len() == 2);
         let (mut left_scans, left) = self.create_plan(&children[0], inputs)?;
@@ -1209,7 +1212,9 @@ impl PhysicalPlanner {
             left
         };
 
-        let right = if can_reuse_input_batch(&right) {
+        // we only copy batches on the right input for sort-merge joins and not for
+        // hash joins because hash join does not cache batches on the probe side
+        let right = if copy_right_input && can_reuse_input_batch(&right) {
             Arc::new(CopyExec::new(right))
         } else {
             right
