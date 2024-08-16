@@ -19,8 +19,9 @@
 
 package org.apache.spark.sql.comet
 
-import scala.collection.JavaConverters._
+import org.apache.comet.vector.CometVector
 
+import scala.collection.JavaConverters._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection}
@@ -61,7 +62,15 @@ case class CometColumnarToRowExec(child: SparkPlan) extends ColumnarToRowTransit
       batches.flatMap { batch =>
         numInputBatches += 1
         numOutputRows += batch.numRows()
-        // TODO we want to refactor this part to make it more efficient
+
+        // TODO add code that is optimized for dealing with CometVector
+        // but we can do something like ...
+        for (i <- 0 until batch.numCols()) {
+          val cv = batch.column(i).asInstanceOf[CometVector]
+          // cv.importVector
+        }
+
+        // this is the original Spark code
         batch.rowIterator().asScala.map(toUnsafe)
       }
     }
