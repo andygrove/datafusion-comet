@@ -30,7 +30,7 @@ TakeOrderedAndProject [sales_cnt_diff,sales_amt_diff,prev_year,year,i_brand_id,i
                                                           InputAdapter
                                                             Exchange [cs_order_number,cs_item_sk] #4
                                                               WholeStageCodegen (1)
-                                                                ColumnarToRow
+                                                                CometColumnarToRow
                                                                   InputAdapter
                                                                     CometProject [cs_item_sk,cs_order_number,cs_quantity,cs_ext_sales_price,i_brand_id,i_class_id,i_category_id,i_manufact_id,d_year]
                                                                       CometBroadcastHashJoin [cs_item_sk,cs_order_number,cs_quantity,cs_ext_sales_price,cs_sold_date_sk,i_brand_id,i_class_id,i_category_id,i_manufact_id,d_date_sk,d_year]
@@ -41,7 +41,7 @@ TakeOrderedAndProject [sales_cnt_diff,sales_amt_diff,prev_year,year,i_brand_id,i
                                                                                 SubqueryBroadcast [d_date_sk] #1
                                                                                   BroadcastExchange #5
                                                                                     WholeStageCodegen (1)
-                                                                                      ColumnarToRow
+                                                                                      CometColumnarToRow
                                                                                         InputAdapter
                                                                                           CometFilter [d_date_sk,d_year]
                                                                                             CometScan parquet spark_catalog.default.date_dim [d_date_sk,d_year]
@@ -58,7 +58,7 @@ TakeOrderedAndProject [sales_cnt_diff,sales_amt_diff,prev_year,year,i_brand_id,i
                                                           InputAdapter
                                                             Exchange [cr_order_number,cr_item_sk] #8
                                                               WholeStageCodegen (3)
-                                                                ColumnarToRow
+                                                                CometColumnarToRow
                                                                   InputAdapter
                                                                     CometProject [cr_item_sk,cr_order_number,cr_return_quantity,cr_return_amount]
                                                                       CometFilter [cr_item_sk,cr_order_number,cr_return_quantity,cr_return_amount,cr_returned_date_sk]
@@ -72,7 +72,7 @@ TakeOrderedAndProject [sales_cnt_diff,sales_amt_diff,prev_year,year,i_brand_id,i
                                                           InputAdapter
                                                             Exchange [ss_ticket_number,ss_item_sk] #9
                                                               WholeStageCodegen (6)
-                                                                ColumnarToRow
+                                                                CometColumnarToRow
                                                                   InputAdapter
                                                                     CometProject [ss_item_sk,ss_ticket_number,ss_quantity,ss_ext_sales_price,i_brand_id,i_class_id,i_category_id,i_manufact_id,d_year]
                                                                       CometBroadcastHashJoin [ss_item_sk,ss_ticket_number,ss_quantity,ss_ext_sales_price,ss_sold_date_sk,i_brand_id,i_class_id,i_category_id,i_manufact_id,d_date_sk,d_year]
@@ -89,7 +89,7 @@ TakeOrderedAndProject [sales_cnt_diff,sales_amt_diff,prev_year,year,i_brand_id,i
                                                           InputAdapter
                                                             Exchange [sr_ticket_number,sr_item_sk] #10
                                                               WholeStageCodegen (8)
-                                                                ColumnarToRow
+                                                                CometColumnarToRow
                                                                   InputAdapter
                                                                     CometProject [sr_item_sk,sr_ticket_number,sr_return_quantity,sr_return_amt]
                                                                       CometFilter [sr_item_sk,sr_ticket_number,sr_return_quantity,sr_return_amt,sr_returned_date_sk]
@@ -103,7 +103,7 @@ TakeOrderedAndProject [sales_cnt_diff,sales_amt_diff,prev_year,year,i_brand_id,i
                                                           InputAdapter
                                                             Exchange [ws_order_number,ws_item_sk] #11
                                                               WholeStageCodegen (11)
-                                                                ColumnarToRow
+                                                                CometColumnarToRow
                                                                   InputAdapter
                                                                     CometProject [ws_item_sk,ws_order_number,ws_quantity,ws_ext_sales_price,i_brand_id,i_class_id,i_category_id,i_manufact_id,d_year]
                                                                       CometBroadcastHashJoin [ws_item_sk,ws_order_number,ws_quantity,ws_ext_sales_price,ws_sold_date_sk,i_brand_id,i_class_id,i_category_id,i_manufact_id,d_date_sk,d_year]
@@ -120,7 +120,7 @@ TakeOrderedAndProject [sales_cnt_diff,sales_amt_diff,prev_year,year,i_brand_id,i
                                                           InputAdapter
                                                             Exchange [wr_order_number,wr_item_sk] #12
                                                               WholeStageCodegen (13)
-                                                                ColumnarToRow
+                                                                CometColumnarToRow
                                                                   InputAdapter
                                                                     CometProject [wr_item_sk,wr_order_number,wr_return_quantity,wr_return_amt]
                                                                       CometFilter [wr_item_sk,wr_order_number,wr_return_quantity,wr_return_amt,wr_returned_date_sk]
@@ -153,7 +153,7 @@ TakeOrderedAndProject [sales_cnt_diff,sales_amt_diff,prev_year,year,i_brand_id,i
                                                           InputAdapter
                                                             Exchange [cs_order_number,cs_item_sk] #16
                                                               WholeStageCodegen (20)
-                                                                ColumnarToRow
+                                                                CometColumnarToRow
                                                                   InputAdapter
                                                                     CometProject [cs_item_sk,cs_order_number,cs_quantity,cs_ext_sales_price,i_brand_id,i_class_id,i_category_id,i_manufact_id,d_year]
                                                                       CometBroadcastHashJoin [cs_item_sk,cs_order_number,cs_quantity,cs_ext_sales_price,cs_sold_date_sk,i_brand_id,i_class_id,i_category_id,i_manufact_id,d_date_sk,d_year]
@@ -164,7 +164,7 @@ TakeOrderedAndProject [sales_cnt_diff,sales_amt_diff,prev_year,year,i_brand_id,i
                                                                                 SubqueryBroadcast [d_date_sk] #2
                                                                                   BroadcastExchange #17
                                                                                     WholeStageCodegen (1)
-                                                                                      ColumnarToRow
+                                                                                      CometColumnarToRow
                                                                                         InputAdapter
                                                                                           CometFilter [d_date_sk,d_year]
                                                                                             CometScan parquet spark_catalog.default.date_dim [d_date_sk,d_year]
@@ -186,7 +186,7 @@ TakeOrderedAndProject [sales_cnt_diff,sales_amt_diff,prev_year,year,i_brand_id,i
                                                           InputAdapter
                                                             Exchange [ss_ticket_number,ss_item_sk] #19
                                                               WholeStageCodegen (25)
-                                                                ColumnarToRow
+                                                                CometColumnarToRow
                                                                   InputAdapter
                                                                     CometProject [ss_item_sk,ss_ticket_number,ss_quantity,ss_ext_sales_price,i_brand_id,i_class_id,i_category_id,i_manufact_id,d_year]
                                                                       CometBroadcastHashJoin [ss_item_sk,ss_ticket_number,ss_quantity,ss_ext_sales_price,ss_sold_date_sk,i_brand_id,i_class_id,i_category_id,i_manufact_id,d_date_sk,d_year]
@@ -211,7 +211,7 @@ TakeOrderedAndProject [sales_cnt_diff,sales_amt_diff,prev_year,year,i_brand_id,i
                                                           InputAdapter
                                                             Exchange [ws_order_number,ws_item_sk] #20
                                                               WholeStageCodegen (30)
-                                                                ColumnarToRow
+                                                                CometColumnarToRow
                                                                   InputAdapter
                                                                     CometProject [ws_item_sk,ws_order_number,ws_quantity,ws_ext_sales_price,i_brand_id,i_class_id,i_category_id,i_manufact_id,d_year]
                                                                       CometBroadcastHashJoin [ws_item_sk,ws_order_number,ws_quantity,ws_ext_sales_price,ws_sold_date_sk,i_brand_id,i_class_id,i_category_id,i_manufact_id,d_date_sk,d_year]

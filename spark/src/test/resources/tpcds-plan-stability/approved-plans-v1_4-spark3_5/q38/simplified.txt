@@ -11,7 +11,7 @@ WholeStageCodegen (7)
                     InputAdapter
                       Exchange [c_last_name,c_first_name,d_date] #2
                         WholeStageCodegen (1)
-                          ColumnarToRow
+                          CometColumnarToRow
                             InputAdapter
                               CometHashAggregate [c_last_name,c_first_name,d_date]
                                 CometProject [c_last_name,c_first_name,d_date]
@@ -23,7 +23,7 @@ WholeStageCodegen (7)
                                             SubqueryBroadcast [d_date_sk] #1
                                               BroadcastExchange #3
                                                 WholeStageCodegen (1)
-                                                  ColumnarToRow
+                                                  CometColumnarToRow
                                                     InputAdapter
                                                       CometProject [d_date_sk,d_date]
                                                         CometFilter [d_date_sk,d_date,d_month_seq]
@@ -42,7 +42,7 @@ WholeStageCodegen (7)
                           InputAdapter
                             Exchange [c_last_name,c_first_name,d_date] #7
                               WholeStageCodegen (2)
-                                ColumnarToRow
+                                CometColumnarToRow
                                   InputAdapter
                                     CometHashAggregate [c_last_name,c_first_name,d_date]
                                       CometProject [c_last_name,c_first_name,d_date]
@@ -61,7 +61,7 @@ WholeStageCodegen (7)
                         InputAdapter
                           Exchange [c_last_name,c_first_name,d_date] #9
                             WholeStageCodegen (4)
-                              ColumnarToRow
+                              CometColumnarToRow
                                 InputAdapter
                                   CometHashAggregate [c_last_name,c_first_name,d_date]
                                     CometProject [c_last_name,c_first_name,d_date]

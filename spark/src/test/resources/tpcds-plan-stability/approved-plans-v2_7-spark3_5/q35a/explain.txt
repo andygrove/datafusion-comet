@@ -2,7 +2,7 @@
 TakeOrderedAndProject (38)
 +- * HashAggregate (37)
    +- Exchange (36)
-      +- * ColumnarToRow (35)
+      +- * CometColumnarToRow (35)
          +- CometHashAggregate (34)
             +- CometProject (33)
                +- CometBroadcastHashJoin (32)
@@ -202,7 +202,7 @@ Input [6]: [ca_state#21, cd_gender#23, cd_marital_status#24, cd_dep_count#25, cd
 Keys [6]: [ca_state#21, cd_gender#23, cd_marital_status#24, cd_dep_count#25, cd_dep_employed_count#26, cd_dep_college_count#27]
 Functions [10]: [partial_count(1), partial_avg(cd_dep_count#25), partial_max(cd_dep_count#25), partial_sum(cd_dep_count#25), partial_avg(cd_dep_employed_count#26), partial_max(cd_dep_employed_count#26), partial_sum(cd_dep_employed_count#26), partial_avg(cd_dep_college_count#27), partial_max(cd_dep_college_count#27), partial_sum(cd_dep_college_count#27)]
 
-(35) ColumnarToRow [codegen id : 1]
+(35) CometColumnarToRow [codegen id : 1]
 Input [19]: [ca_state#21, cd_gender#23, cd_marital_status#24, cd_dep_count#25, cd_dep_employed_count#26, cd_dep_college_count#27, count#28, sum#29, count#30, max#31, sum#32, sum#33, count#34, max#35, sum#36, sum#37, count#38, max#39, sum#40]
 
 (36) Exchange
@@ -224,7 +224,7 @@ Arguments: 100, [ca_state#21 ASC NULLS FIRST, cd_gender#23 ASC NULLS FIRST, cd_m
 
 Subquery:1 Hosting operator id = 3 Hosting Expression = ss_sold_date_sk#5 IN dynamicpruning#6
 BroadcastExchange (43)
-+- * ColumnarToRow (42)
++- * CometColumnarToRow (42)
    +- CometProject (41)
       +- CometFilter (40)
          +- CometScan parquet spark_catalog.default.date_dim (39)
@@ -245,7 +245,7 @@ Condition : ((((isnotnull(d_year#8) AND isnotnull(d_qoy#9)) AND (d_year#8 = 1999
 Input [3]: [d_date_sk#7, d_year#8, d_qoy#9]
 Arguments: [d_date_sk#7], [d_date_sk#7]
 
-(42) ColumnarToRow [codegen id : 1]
+(42) CometColumnarToRow [codegen id : 1]
 Input [1]: [d_date_sk#7]
 
 (43) BroadcastExchange

@@ -4,7 +4,7 @@ TakeOrderedAndProject [ca_zip,sum(cs_sales_price)]
       InputAdapter
         Exchange [ca_zip] #1
           WholeStageCodegen (1)
-            ColumnarToRow
+            CometColumnarToRow
               InputAdapter
                 CometHashAggregate [ca_zip,sum,cs_sales_price]
                   CometProject [cs_sales_price,ca_zip]
@@ -18,7 +18,7 @@ TakeOrderedAndProject [ca_zip,sum(cs_sales_price)]
                                   SubqueryBroadcast [d_date_sk] #1
                                     BroadcastExchange #2
                                       WholeStageCodegen (1)
-                                        ColumnarToRow
+                                        CometColumnarToRow
                                           InputAdapter
                                             CometProject [d_date_sk]
                                               CometFilter [d_date_sk,d_year,d_qoy]

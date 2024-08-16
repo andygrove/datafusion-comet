@@ -20,7 +20,7 @@ TakeOrderedAndProject [channel,id,sales,returns,profit]
                                       InputAdapter
                                         Exchange [s_store_id] #3
                                           WholeStageCodegen (1)
-                                            ColumnarToRow
+                                            CometColumnarToRow
                                               InputAdapter
                                                 CometHashAggregate [s_store_id,sum,sum,sum,sum,sales_price,return_amt,profit,net_loss]
                                                   CometProject [sales_price,profit,return_amt,net_loss,s_store_id]
@@ -34,7 +34,7 @@ TakeOrderedAndProject [channel,id,sales,returns,profit]
                                                                   SubqueryBroadcast [d_date_sk] #1
                                                                     BroadcastExchange #4
                                                                       WholeStageCodegen (1)
-                                                                        ColumnarToRow
+                                                                        CometColumnarToRow
                                                                           InputAdapter
                                                                             CometProject [d_date_sk]
                                                                               CometFilter [d_date_sk,d_date]
@@ -55,7 +55,7 @@ TakeOrderedAndProject [channel,id,sales,returns,profit]
                                       InputAdapter
                                         Exchange [cp_catalog_page_id] #7
                                           WholeStageCodegen (3)
-                                            ColumnarToRow
+                                            CometColumnarToRow
                                               InputAdapter
                                                 CometHashAggregate [cp_catalog_page_id,sum,sum,sum,sum,sales_price,return_amt,profit,net_loss]
                                                   CometProject [sales_price,profit,return_amt,net_loss,cp_catalog_page_id]
@@ -80,7 +80,7 @@ TakeOrderedAndProject [channel,id,sales,returns,profit]
                                       InputAdapter
                                         Exchange [web_site_id] #9
                                           WholeStageCodegen (5)
-                                            ColumnarToRow
+                                            CometColumnarToRow
                                               InputAdapter
                                                 CometHashAggregate [web_site_id,sum,sum,sum,sum,sales_price,return_amt,profit,net_loss]
                                                   CometProject [sales_price,profit,return_amt,net_loss,web_site_id]

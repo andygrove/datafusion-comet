@@ -4,7 +4,7 @@ TakeOrderedAndProject [s_store_name,s_company_id,s_street_number,s_street_name,s
       InputAdapter
         Exchange [s_store_name,s_company_id,s_street_number,s_street_name,s_street_type,s_suite_number,s_city,s_county,s_state,s_zip] #1
           WholeStageCodegen (1)
-            ColumnarToRow
+            CometColumnarToRow
               InputAdapter
                 CometHashAggregate [s_store_name,s_company_id,s_street_number,s_street_name,s_street_type,s_suite_number,s_city,s_county,s_state,s_zip,sum,sum,sum,sum,sum,sr_returned_date_sk,ss_sold_date_sk]
                   CometProject [ss_sold_date_sk,sr_returned_date_sk,s_store_name,s_company_id,s_street_number,s_street_name,s_street_type,s_suite_number,s_city,s_county,s_state,s_zip]
@@ -23,7 +23,7 @@ TakeOrderedAndProject [s_store_name,s_company_id,s_street_number,s_street_name,s
                                         SubqueryBroadcast [d_date_sk] #1
                                           BroadcastExchange #3
                                             WholeStageCodegen (1)
-                                              ColumnarToRow
+                                              CometColumnarToRow
                                                 InputAdapter
                                                   CometProject [d_date_sk]
                                                     CometFilter [d_date_sk,d_year,d_moy]

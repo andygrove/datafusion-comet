@@ -4,7 +4,7 @@
    +- * HashAggregate (39)
       +- Exchange (38)
          +- * HashAggregate (37)
-            +- * ColumnarToRow (36)
+            +- * CometColumnarToRow (36)
                +- CometProject (35)
                   +- CometBroadcastHashJoin (34)
                      :- CometProject (29)
@@ -210,7 +210,7 @@ Arguments: [c_current_hdemo_sk#15], [hd_demo_sk#22], Inner, BuildRight
 Input [8]: [cc_call_center_id#2, cc_name#3, cc_manager#4, cr_net_loss#7, c_current_hdemo_sk#15, cd_marital_status#20, cd_education_status#21, hd_demo_sk#22]
 Arguments: [cc_call_center_id#2, cc_name#3, cc_manager#4, cr_net_loss#7, cd_marital_status#20, cd_education_status#21], [cc_call_center_id#2, cc_name#3, cc_manager#4, cr_net_loss#7, cd_marital_status#20, cd_education_status#21]
 
-(36) ColumnarToRow [codegen id : 1]
+(36) CometColumnarToRow [codegen id : 1]
 Input [6]: [cc_call_center_id#2, cc_name#3, cc_manager#4, cr_net_loss#7, cd_marital_status#20, cd_education_status#21]
 
 (37) HashAggregate [codegen id : 1]
@@ -243,7 +243,7 @@ Arguments: [Returns_Loss#30 DESC NULLS LAST], true, 0
 
 Subquery:1 Hosting operator id = 3 Hosting Expression = cr_returned_date_sk#8 IN dynamicpruning#9
 BroadcastExchange (46)
-+- * ColumnarToRow (45)
++- * CometColumnarToRow (45)
    +- CometProject (44)
       +- CometFilter (43)
          +- CometScan parquet spark_catalog.default.date_dim (42)
@@ -264,7 +264,7 @@ Condition : ((((isnotnull(d_year#11) AND isnotnull(d_moy#12)) AND (d_year#11 = 1
 Input [3]: [d_date_sk#10, d_year#11, d_moy#12]
 Arguments: [d_date_sk#10], [d_date_sk#10]
 
-(45) ColumnarToRow [codegen id : 1]
+(45) CometColumnarToRow [codegen id : 1]
 Input [1]: [d_date_sk#10]
 
 (46) BroadcastExchange

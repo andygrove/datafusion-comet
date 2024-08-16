@@ -1,7 +1,7 @@
 == Physical Plan ==
 * HashAggregate (25)
 +- Exchange (24)
-   +- * ColumnarToRow (23)
+   +- * CometColumnarToRow (23)
       +- CometHashAggregate (22)
          +- CometProject (21)
             +- CometBroadcastHashJoin (20)
@@ -129,7 +129,7 @@ Input: []
 Keys: []
 Functions [1]: [partial_count(1)]
 
-(23) ColumnarToRow [codegen id : 1]
+(23) CometColumnarToRow [codegen id : 1]
 Input [1]: [count#12]
 
 (24) Exchange

@@ -41,7 +41,7 @@
          :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :  +- * SortMergeJoin Inner (32)
          :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :     :- * Sort (11)
          :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :     :  +- Exchange (10)
-         :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :     :     +- * ColumnarToRow (9)
+         :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :     :     +- * CometColumnarToRow (9)
          :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :     :        +- CometProject (8)
          :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :     :           +- CometBroadcastHashJoin (7)
          :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :     :              :- CometBroadcastExchange (3)
@@ -60,56 +60,56 @@
          :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :                          +- * SortMergeJoin Inner (24)
          :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :                             :- * Sort (17)
          :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :                             :  +- Exchange (16)
-         :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :                             :     +- * ColumnarToRow (15)
+         :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :                             :     +- * CometColumnarToRow (15)
          :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :                             :        +- CometProject (14)
          :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :                             :           +- CometFilter (13)
          :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :                             :              +- CometScan parquet spark_catalog.default.catalog_sales (12)
          :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :                             +- * Sort (23)
          :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :                                +- Exchange (22)
-         :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :                                   +- * ColumnarToRow (21)
+         :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :                                   +- * CometColumnarToRow (21)
          :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :                                      +- CometProject (20)
          :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :                                         +- CometFilter (19)
          :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     :                                            +- CometScan parquet spark_catalog.default.catalog_returns (18)
          :                 :     :     :     :     :     :     :     :     :     :     :     :     :     :     +- ReusedExchange (34)
          :                 :     :     :     :     :     :     :     :     :     :     :     :     :     +- BroadcastExchange (40)
-         :                 :     :     :     :     :     :     :     :     :     :     :     :     :        +- * ColumnarToRow (39)
+         :                 :     :     :     :     :     :     :     :     :     :     :     :     :        +- * CometColumnarToRow (39)
          :                 :     :     :     :     :     :     :     :     :     :     :     :     :           +- CometFilter (38)
          :                 :     :     :     :     :     :     :     :     :     :     :     :     :              +- CometScan parquet spark_catalog.default.store (37)
          :                 :     :     :     :     :     :     :     :     :     :     :     :     +- BroadcastExchange (46)
-         :                 :     :     :     :     :     :     :     :     :     :     :     :        +- * ColumnarToRow (45)
+         :                 :     :     :     :     :     :     :     :     :     :     :     :        +- * CometColumnarToRow (45)
          :                 :     :     :     :     :     :     :     :     :     :     :     :           +- CometFilter (44)
          :                 :     :     :     :     :     :     :     :     :     :     :     :              +- CometScan parquet spark_catalog.default.customer (43)
          :                 :     :     :     :     :     :     :     :     :     :     :     +- BroadcastExchange (52)
-         :                 :     :     :     :     :     :     :     :     :     :     :        +- * ColumnarToRow (51)
+         :                 :     :     :     :     :     :     :     :     :     :     :        +- * CometColumnarToRow (51)
          :                 :     :     :     :     :     :     :     :     :     :     :           +- CometFilter (50)
          :                 :     :     :     :     :     :     :     :     :     :     :              +- CometScan parquet spark_catalog.default.date_dim (49)
          :                 :     :     :     :     :     :     :     :     :     :     +- ReusedExchange (55)
          :                 :     :     :     :     :     :     :     :     :     +- BroadcastExchange (61)
-         :                 :     :     :     :     :     :     :     :     :        +- * ColumnarToRow (60)
+         :                 :     :     :     :     :     :     :     :     :        +- * CometColumnarToRow (60)
          :                 :     :     :     :     :     :     :     :     :           +- CometFilter (59)
          :                 :     :     :     :     :     :     :     :     :              +- CometScan parquet spark_catalog.default.customer_demographics (58)
          :                 :     :     :     :     :     :     :     :     +- ReusedExchange (64)
          :                 :     :     :     :     :     :     :     +- BroadcastExchange (70)
-         :                 :     :     :     :     :     :     :        +- * ColumnarToRow (69)
+         :                 :     :     :     :     :     :     :        +- * CometColumnarToRow (69)
          :                 :     :     :     :     :     :     :           +- CometFilter (68)
          :                 :     :     :     :     :     :     :              +- CometScan parquet spark_catalog.default.promotion (67)
          :                 :     :     :     :     :     :     +- BroadcastExchange (76)
-         :                 :     :     :     :     :     :        +- * ColumnarToRow (75)
+         :                 :     :     :     :     :     :        +- * CometColumnarToRow (75)
          :                 :     :     :     :     :     :           +- CometFilter (74)
          :                 :     :     :     :     :     :              +- CometScan parquet spark_catalog.default.household_demographics (73)
          :                 :     :     :     :     :     +- ReusedExchange (79)
          :                 :     :     :     :     +- BroadcastExchange (85)
-         :                 :     :     :     :        +- * ColumnarToRow (84)
+         :                 :     :     :     :        +- * CometColumnarToRow (84)
          :                 :     :     :     :           +- CometFilter (83)
          :                 :     :     :     :              +- CometScan parquet spark_catalog.default.customer_address (82)
          :                 :     :     :     +- ReusedExchange (88)
          :                 :     :     +- BroadcastExchange (94)
-         :                 :     :        +- * ColumnarToRow (93)
+         :                 :     :        +- * CometColumnarToRow (93)
          :                 :     :           +- CometFilter (92)
          :                 :     :              +- CometScan parquet spark_catalog.default.income_band (91)
          :                 :     +- ReusedExchange (97)
          :                 +- BroadcastExchange (104)
-         :                    +- * ColumnarToRow (103)
+         :                    +- * CometColumnarToRow (103)
          :                       +- CometProject (102)
          :                          +- CometFilter (101)
          :                             +- CometScan parquet spark_catalog.default.item (100)
@@ -151,7 +151,7 @@
                            :     :     :     :     :     :     :     :     :     :     :     :     :     :     :  +- * SortMergeJoin Inner (127)
                            :     :     :     :     :     :     :     :     :     :     :     :     :     :     :     :- * Sort (121)
                            :     :     :     :     :     :     :     :     :     :     :     :     :     :     :     :  +- Exchange (120)
-                           :     :     :     :     :     :     :     :     :     :     :     :     :     :     :     :     +- * ColumnarToRow (119)
+                           :     :     :     :     :     :     :     :     :     :     :     :     :     :     :     :     +- * CometColumnarToRow (119)
                            :     :     :     :     :     :     :     :     :     :     :     :     :     :     :     :        +- CometProject (118)
                            :     :     :     :     :     :     :     :     :     :     :     :     :     :     :     :           +- CometBroadcastHashJoin (117)
                            :     :     :     :     :     :     :     :     :     :     :     :     :     :     :     :              :- CometBroadcastExchange (113)
@@ -222,7 +222,7 @@ Arguments: [ss_item_sk#1, ss_ticket_number#8], [sr_item_sk#14, sr_ticket_number#
 Input [14]: [ss_item_sk#1, ss_customer_sk#2, ss_cdemo_sk#3, ss_hdemo_sk#4, ss_addr_sk#5, ss_store_sk#6, ss_promo_sk#7, ss_ticket_number#8, ss_wholesale_cost#9, ss_list_price#10, ss_coupon_amt#11, ss_sold_date_sk#12, sr_item_sk#14, sr_ticket_number#15]
 Arguments: [ss_item_sk#1, ss_customer_sk#2, ss_cdemo_sk#3, ss_hdemo_sk#4, ss_addr_sk#5, ss_store_sk#6, ss_promo_sk#7, ss_wholesale_cost#9, ss_list_price#10, ss_coupon_amt#11, ss_sold_date_sk#12], [ss_item_sk#1, ss_customer_sk#2, ss_cdemo_sk#3, ss_hdemo_sk#4, ss_addr_sk#5, ss_store_sk#6, ss_promo_sk#7, ss_wholesale_cost#9, ss_list_price#10, ss_coupon_amt#11, ss_sold_date_sk#12]
 
-(9) ColumnarToRow [codegen id : 1]
+(9) CometColumnarToRow [codegen id : 1]
 Input [11]: [ss_item_sk#1, ss_customer_sk#2, ss_cdemo_sk#3, ss_hdemo_sk#4, ss_addr_sk#5, ss_store_sk#6, ss_promo_sk#7, ss_wholesale_cost#9, ss_list_price#10, ss_coupon_amt#11, ss_sold_date_sk#12]
 
 (10) Exchange
@@ -248,7 +248,7 @@ Condition : (isnotnull(cs_item_sk#17) AND isnotnull(cs_order_number#18))
 Input [4]: [cs_item_sk#17, cs_order_number#18, cs_ext_list_price#19, cs_sold_date_sk#20]
 Arguments: [cs_item_sk#17, cs_order_number#18, cs_ext_list_price#19], [cs_item_sk#17, cs_order_number#18, cs_ext_list_price#19]
 
-(15) ColumnarToRow [codegen id : 3]
+(15) CometColumnarToRow [codegen id : 3]
 Input [3]: [cs_item_sk#17, cs_order_number#18, cs_ext_list_price#19]
 
 (16) Exchange
@@ -274,7 +274,7 @@ Condition : (isnotnull(cr_item_sk#21) AND isnotnull(cr_order_number#22))
 Input [6]: [cr_item_sk#21, cr_order_number#22, cr_refunded_cash#23, cr_reversed_charge#24, cr_store_credit#25, cr_returned_date_sk#26]
 Arguments: [cr_item_sk#21, cr_order_number#22, cr_refunded_cash#23, cr_reversed_charge#24, cr_store_credit#25], [cr_item_sk#21, cr_order_number#22, cr_refunded_cash#23, cr_reversed_charge#24, cr_store_credit#25]
 
-(21) ColumnarToRow [codegen id : 5]
+(21) CometColumnarToRow [codegen id : 5]
 Input [5]: [cr_item_sk#21, cr_order_number#22, cr_refunded_cash#23, cr_reversed_charge#24, cr_store_credit#25]
 
 (22) Exchange
@@ -359,7 +359,7 @@ ReadSchema: struct<s_store_sk:int,s_store_name:string,s_zip:string>
 Input [3]: [s_store_sk#39, s_store_name#40, s_zip#41]
 Condition : ((isnotnull(s_store_sk#39) AND isnotnull(s_store_name#40)) AND isnotnull(s_zip#41))
 
-(39) ColumnarToRow [codegen id : 10]
+(39) CometColumnarToRow [codegen id : 10]
 Input [3]: [s_store_sk#39, s_store_name#40, s_zip#41]
 
 (40) BroadcastExchange
@@ -387,7 +387,7 @@ ReadSchema: struct<c_customer_sk:int,c_current_cdemo_sk:int,c_current_hdemo_sk:i
 Input [6]: [c_customer_sk#42, c_current_cdemo_sk#43, c_current_hdemo_sk#44, c_current_addr_sk#45, c_first_shipto_date_sk#46, c_first_sales_date_sk#47]
 Condition : (((((isnotnull(c_customer_sk#42) AND isnotnull(c_first_sales_date_sk#47)) AND isnotnull(c_first_shipto_date_sk#46)) AND isnotnull(c_current_cdemo_sk#43)) AND isnotnull(c_current_hdemo_sk#44)) AND isnotnull(c_current_addr_sk#45))
 
-(45) ColumnarToRow [codegen id : 11]
+(45) CometColumnarToRow [codegen id : 11]
 Input [6]: [c_customer_sk#42, c_current_cdemo_sk#43, c_current_hdemo_sk#44, c_current_addr_sk#45, c_first_shipto_date_sk#46, c_first_sales_date_sk#47]
 
 (46) BroadcastExchange
@@ -415,7 +415,7 @@ ReadSchema: struct<d_date_sk:int,d_year:int>
 Input [2]: [d_date_sk#48, d_year#49]
 Condition : isnotnull(d_date_sk#48)
 
-(51) ColumnarToRow [codegen id : 12]
+(51) CometColumnarToRow [codegen id : 12]
 Input [2]: [d_date_sk#48, d_year#49]
 
 (52) BroadcastExchange
@@ -456,7 +456,7 @@ ReadSchema: struct<cd_demo_sk:int,cd_marital_status:string>
 Input [2]: [cd_demo_sk#52, cd_marital_status#53]
 Condition : (isnotnull(cd_demo_sk#52) AND isnotnull(cd_marital_status#53))
 
-(60) ColumnarToRow [codegen id : 14]
+(60) CometColumnarToRow [codegen id : 14]
 Input [2]: [cd_demo_sk#52, cd_marital_status#53]
 
 (61) BroadcastExchange
@@ -497,7 +497,7 @@ ReadSchema: struct<p_promo_sk:int>
 Input [1]: [p_promo_sk#56]
 Condition : isnotnull(p_promo_sk#56)
 
-(69) ColumnarToRow [codegen id : 16]
+(69) CometColumnarToRow [codegen id : 16]
 Input [1]: [p_promo_sk#56]
 
 (70) BroadcastExchange
@@ -525,7 +525,7 @@ ReadSchema: struct<hd_demo_sk:int,hd_income_band_sk:int>
 Input [2]: [hd_demo_sk#57, hd_income_band_sk#58]
 Condition : (isnotnull(hd_demo_sk#57) AND isnotnull(hd_income_band_sk#58))
 
-(75) ColumnarToRow [codegen id : 17]
+(75) CometColumnarToRow [codegen id : 17]
 Input [2]: [hd_demo_sk#57, hd_income_band_sk#58]
 
 (76) BroadcastExchange
@@ -566,7 +566,7 @@ ReadSchema: struct<ca_address_sk:int,ca_street_number:string,ca_street_name:stri
 Input [5]: [ca_address_sk#61, ca_street_number#62, ca_street_name#63, ca_city#64, ca_zip#65]
 Condition : isnotnull(ca_address_sk#61)
 
-(84) ColumnarToRow [codegen id : 19]
+(84) CometColumnarToRow [codegen id : 19]
 Input [5]: [ca_address_sk#61, ca_street_number#62, ca_street_name#63, ca_city#64, ca_zip#65]
 
 (85) BroadcastExchange
@@ -607,7 +607,7 @@ ReadSchema: struct<ib_income_band_sk:int>
 Input [1]: [ib_income_band_sk#71]
 Condition : isnotnull(ib_income_band_sk#71)
 
-(93) ColumnarToRow [codegen id : 21]
+(93) CometColumnarToRow [codegen id : 21]
 Input [1]: [ib_income_band_sk#71]
 
 (94) BroadcastExchange
@@ -652,7 +652,7 @@ Condition : ((((((isnotnull(i_current_price#74) AND i_color#75 IN (purple       
 Input [4]: [i_item_sk#73, i_current_price#74, i_color#75, i_product_name#76]
 Arguments: [i_item_sk#73, i_product_name#76], [i_item_sk#73, i_product_name#76]
 
-(103) ColumnarToRow [codegen id : 23]
+(103) CometColumnarToRow [codegen id : 23]
 Input [2]: [i_item_sk#73, i_product_name#76]
 
 (104) BroadcastExchange
@@ -731,7 +731,7 @@ Arguments: [ss_item_sk#106, ss_ticket_number#113], [sr_item_sk#119, sr_ticket_nu
 Input [14]: [ss_item_sk#106, ss_customer_sk#107, ss_cdemo_sk#108, ss_hdemo_sk#109, ss_addr_sk#110, ss_store_sk#111, ss_promo_sk#112, ss_ticket_number#113, ss_wholesale_cost#114, ss_list_price#115, ss_coupon_amt#116, ss_sold_date_sk#117, sr_item_sk#119, sr_ticket_number#120]
 Arguments: [ss_item_sk#106, ss_customer_sk#107, ss_cdemo_sk#108, ss_hdemo_sk#109, ss_addr_sk#110, ss_store_sk#111, ss_promo_sk#112, ss_wholesale_cost#114, ss_list_price#115, ss_coupon_amt#116, ss_sold_date_sk#117], [ss_item_sk#106, ss_customer_sk#107, ss_cdemo_sk#108, ss_hdemo_sk#109, ss_addr_sk#110, ss_store_sk#111, ss_promo_sk#112, ss_wholesale_cost#114, ss_list_price#115, ss_coupon_amt#116, ss_sold_date_sk#117]
 
-(119) ColumnarToRow [codegen id : 26]
+(119) CometColumnarToRow [codegen id : 26]
 Input [11]: [ss_item_sk#106, ss_customer_sk#107, ss_cdemo_sk#108, ss_hdemo_sk#109, ss_addr_sk#110, ss_store_sk#111, ss_promo_sk#112, ss_wholesale_cost#114, ss_list_price#115, ss_coupon_amt#116, ss_sold_date_sk#117]
 
 (120) Exchange
@@ -1013,7 +1013,7 @@ Arguments: [product_name#89 ASC NULLS FIRST, store_name#91 ASC NULLS FIRST, cnt#
 
 Subquery:1 Hosting operator id = 1 Hosting Expression = ss_sold_date_sk#12 IN dynamicpruning#13
 BroadcastExchange (185)
-+- * ColumnarToRow (184)
++- * CometColumnarToRow (184)
    +- CometFilter (183)
       +- CometScan parquet spark_catalog.default.date_dim (182)
 
@@ -1029,7 +1029,7 @@ ReadSchema: struct<d_date_sk:int,d_year:int>
 Input [2]: [d_date_sk#37, d_year#38]
 Condition : ((isnotnull(d_year#38) AND (d_year#38 = 1999)) AND isnotnull(d_date_sk#37))
 
-(184) ColumnarToRow [codegen id : 1]
+(184) CometColumnarToRow [codegen id : 1]
 Input [2]: [d_date_sk#37, d_year#38]
 
 (185) BroadcastExchange
@@ -1038,7 +1038,7 @@ Arguments: HashedRelationBroadcastMode(List(cast(input[0, int, false] as bigint)
 
 Subquery:2 Hosting operator id = 111 Hosting Expression = ss_sold_date_sk#117 IN dynamicpruning#118
 BroadcastExchange (189)
-+- * ColumnarToRow (188)
++- * CometColumnarToRow (188)
    +- CometFilter (187)
       +- CometScan parquet spark_catalog.default.date_dim (186)
 
@@ -1054,7 +1054,7 @@ ReadSchema: struct<d_date_sk:int,d_year:int>
 Input [2]: [d_date_sk#132, d_year#133]
 Condition : ((isnotnull(d_year#133) AND (d_year#133 = 2000)) AND isnotnull(d_date_sk#132))
 
-(188) ColumnarToRow [codegen id : 1]
+(188) CometColumnarToRow [codegen id : 1]
 Input [2]: [d_date_sk#132, d_year#133]
 
 (189) BroadcastExchange

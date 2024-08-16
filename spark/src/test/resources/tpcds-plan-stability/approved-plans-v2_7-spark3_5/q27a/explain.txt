@@ -3,7 +3,7 @@ TakeOrderedAndProject (71)
 +- Union (70)
    :- * HashAggregate (28)
    :  +- Exchange (27)
-   :     +- * ColumnarToRow (26)
+   :     +- * CometColumnarToRow (26)
    :        +- CometHashAggregate (25)
    :           +- CometProject (24)
    :              +- CometBroadcastHashJoin (23)
@@ -31,7 +31,7 @@ TakeOrderedAndProject (71)
    :                       +- CometScan parquet spark_catalog.default.item (20)
    :- * HashAggregate (49)
    :  +- Exchange (48)
-   :     +- * ColumnarToRow (47)
+   :     +- * CometColumnarToRow (47)
    :        +- CometHashAggregate (46)
    :           +- CometProject (45)
    :              +- CometBroadcastHashJoin (44)
@@ -52,7 +52,7 @@ TakeOrderedAndProject (71)
    :                 +- ReusedExchange (43)
    +- * HashAggregate (69)
       +- Exchange (68)
-         +- * ColumnarToRow (67)
+         +- * CometColumnarToRow (67)
             +- CometHashAggregate (66)
                +- CometProject (65)
                   +- CometBroadcastHashJoin (64)
@@ -193,7 +193,7 @@ Input [6]: [i_item_id#19, s_state#17, agg1#20, agg2#21, agg3#22, agg4#23]
 Keys [2]: [i_item_id#19, s_state#17]
 Functions [4]: [partial_avg(agg1#20), partial_avg(UnscaledValue(agg2#21)), partial_avg(UnscaledValue(agg3#22)), partial_avg(UnscaledValue(agg4#23))]
 
-(26) ColumnarToRow [codegen id : 1]
+(26) CometColumnarToRow [codegen id : 1]
 Input [10]: [i_item_id#19, s_state#17, sum#24, count#25, sum#26, count#27, sum#28, count#29, sum#30, count#31]
 
 (27) Exchange
@@ -288,7 +288,7 @@ Input [5]: [i_item_id#55, agg1#56, agg2#57, agg3#58, agg4#59]
 Keys [1]: [i_item_id#55]
 Functions [4]: [partial_avg(agg1#56), partial_avg(UnscaledValue(agg2#57)), partial_avg(UnscaledValue(agg3#58)), partial_avg(UnscaledValue(agg4#59))]
 
-(47) ColumnarToRow [codegen id : 3]
+(47) CometColumnarToRow [codegen id : 3]
 Input [9]: [i_item_id#55, sum#60, count#61, sum#62, count#63, sum#64, count#65, sum#66, count#67]
 
 (48) Exchange
@@ -379,7 +379,7 @@ Input [4]: [agg1#91, agg2#92, agg3#93, agg4#94]
 Keys: []
 Functions [4]: [partial_avg(agg1#91), partial_avg(UnscaledValue(agg2#92)), partial_avg(UnscaledValue(agg3#93)), partial_avg(UnscaledValue(agg4#94))]
 
-(67) ColumnarToRow [codegen id : 5]
+(67) CometColumnarToRow [codegen id : 5]
 Input [8]: [sum#95, count#96, sum#97, count#98, sum#99, count#100, sum#101, count#102]
 
 (68) Exchange
@@ -403,7 +403,7 @@ Arguments: 100, [i_item_id#19 ASC NULLS FIRST, s_state#17 ASC NULLS FIRST], [i_i
 
 Subquery:1 Hosting operator id = 1 Hosting Expression = ss_sold_date_sk#8 IN dynamicpruning#9
 BroadcastExchange (76)
-+- * ColumnarToRow (75)
++- * CometColumnarToRow (75)
    +- CometProject (74)
       +- CometFilter (73)
          +- CometScan parquet spark_catalog.default.date_dim (72)
@@ -424,7 +424,7 @@ Condition : ((isnotnull(d_year#15) AND (d_year#15 = 1998)) AND isnotnull(d_date_
 Input [2]: [d_date_sk#14, d_year#15]
 Arguments: [d_date_sk#14], [d_date_sk#14]
 
-(75) ColumnarToRow [codegen id : 1]
+(75) CometColumnarToRow [codegen id : 1]
 Input [1]: [d_date_sk#14]
 
 (76) BroadcastExchange

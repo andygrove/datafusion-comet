@@ -7,7 +7,7 @@ TakeOrderedAndProject [s_store_name,sum(ss_net_profit)]
             HashAggregate [s_store_name,ss_net_profit] [sum,sum]
               Project [ss_net_profit,s_store_name]
                 BroadcastHashJoin [s_zip,ca_zip]
-                  ColumnarToRow
+                  CometColumnarToRow
                     InputAdapter
                       CometProject [ss_net_profit,s_store_name,s_zip]
                         CometBroadcastHashJoin [ss_store_sk,ss_net_profit,s_store_sk,s_store_name,s_zip]
@@ -18,7 +18,7 @@ TakeOrderedAndProject [s_store_name,sum(ss_net_profit)]
                                   SubqueryBroadcast [d_date_sk] #1
                                     BroadcastExchange #2
                                       WholeStageCodegen (1)
-                                        ColumnarToRow
+                                        CometColumnarToRow
                                           InputAdapter
                                             CometProject [d_date_sk]
                                               CometFilter [d_date_sk,d_year,d_qoy]
@@ -39,7 +39,7 @@ TakeOrderedAndProject [s_store_name,sum(ss_net_profit)]
                               WholeStageCodegen (3)
                                 HashAggregate [ca_zip]
                                   BroadcastHashJoin [ca_zip,ca_zip]
-                                    ColumnarToRow
+                                    CometColumnarToRow
                                       InputAdapter
                                         CometProject [ca_zip] [ca_zip]
                                           CometFilter [ca_zip]
@@ -53,7 +53,7 @@ TakeOrderedAndProject [s_store_name,sum(ss_net_profit)]
                                                 InputAdapter
                                                   Exchange [ca_zip] #8
                                                     WholeStageCodegen (1)
-                                                      ColumnarToRow
+                                                      CometColumnarToRow
                                                         InputAdapter
                                                           CometHashAggregate [ca_zip,count]
                                                             CometProject [ca_zip]

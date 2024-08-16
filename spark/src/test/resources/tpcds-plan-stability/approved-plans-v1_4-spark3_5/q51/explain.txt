@@ -14,7 +14,7 @@ TakeOrderedAndProject (40)
                   :              +- Exchange (13)
                   :                 +- * HashAggregate (12)
                   :                    +- Exchange (11)
-                  :                       +- * ColumnarToRow (10)
+                  :                       +- * CometColumnarToRow (10)
                   :                          +- CometHashAggregate (9)
                   :                             +- CometProject (8)
                   :                                +- CometBroadcastHashJoin (7)
@@ -32,7 +32,7 @@ TakeOrderedAndProject (40)
                                  +- Exchange (28)
                                     +- * HashAggregate (27)
                                        +- Exchange (26)
-                                          +- * ColumnarToRow (25)
+                                          +- * CometColumnarToRow (25)
                                              +- CometHashAggregate (24)
                                                 +- CometProject (23)
                                                    +- CometBroadcastHashJoin (22)
@@ -86,7 +86,7 @@ Input [3]: [ws_item_sk#1, ws_sales_price#2, d_date#6]
 Keys [2]: [ws_item_sk#1, d_date#6]
 Functions [1]: [partial_sum(UnscaledValue(ws_sales_price#2))]
 
-(10) ColumnarToRow [codegen id : 1]
+(10) CometColumnarToRow [codegen id : 1]
 Input [3]: [ws_item_sk#1, d_date#6, sum#8]
 
 (11) Exchange
@@ -153,7 +153,7 @@ Input [3]: [ss_item_sk#13, ss_sales_price#14, d_date#18]
 Keys [2]: [ss_item_sk#13, d_date#18]
 Functions [1]: [partial_sum(UnscaledValue(ss_sales_price#14))]
 
-(25) ColumnarToRow [codegen id : 6]
+(25) CometColumnarToRow [codegen id : 6]
 Input [3]: [ss_item_sk#13, d_date#18, sum#19]
 
 (26) Exchange
@@ -225,7 +225,7 @@ Arguments: 100, [item_sk#24 ASC NULLS FIRST, d_date#25 ASC NULLS FIRST], [item_s
 
 Subquery:1 Hosting operator id = 1 Hosting Expression = ws_sold_date_sk#3 IN dynamicpruning#4
 BroadcastExchange (45)
-+- * ColumnarToRow (44)
++- * CometColumnarToRow (44)
    +- CometProject (43)
       +- CometFilter (42)
          +- CometScan parquet spark_catalog.default.date_dim (41)
@@ -246,7 +246,7 @@ Condition : (((isnotnull(d_month_seq#7) AND (d_month_seq#7 >= 1200)) AND (d_mont
 Input [3]: [d_date_sk#5, d_date#6, d_month_seq#7]
 Arguments: [d_date_sk#5, d_date#6], [d_date_sk#5, d_date#6]
 
-(44) ColumnarToRow [codegen id : 1]
+(44) CometColumnarToRow [codegen id : 1]
 Input [2]: [d_date_sk#5, d_date#6]
 
 (45) BroadcastExchange

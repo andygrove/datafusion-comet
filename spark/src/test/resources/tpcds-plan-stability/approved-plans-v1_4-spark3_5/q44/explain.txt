@@ -18,7 +18,7 @@ TakeOrderedAndProject (41)
       :     :     :                          +- * Filter (8)
       :     :     :                             +- * HashAggregate (7)
       :     :     :                                +- Exchange (6)
-      :     :     :                                   +- * ColumnarToRow (5)
+      :     :     :                                   +- * CometColumnarToRow (5)
       :     :     :                                      +- CometHashAggregate (4)
       :     :     :                                         +- CometProject (3)
       :     :     :                                            +- CometFilter (2)
@@ -36,7 +36,7 @@ TakeOrderedAndProject (41)
       :     :                                   +- * HashAggregate (19)
       :     :                                      +- ReusedExchange (18)
       :     +- BroadcastExchange (35)
-      :        +- * ColumnarToRow (34)
+      :        +- * CometColumnarToRow (34)
       :           +- CometFilter (33)
       :              +- CometScan parquet spark_catalog.default.item (32)
       +- ReusedExchange (38)
@@ -62,7 +62,7 @@ Input [2]: [ss_item_sk#1, ss_net_profit#3]
 Keys [1]: [ss_item_sk#1]
 Functions [1]: [partial_avg(UnscaledValue(ss_net_profit#3))]
 
-(5) ColumnarToRow [codegen id : 1]
+(5) CometColumnarToRow [codegen id : 1]
 Input [3]: [ss_item_sk#1, sum#5, count#6]
 
 (6) Exchange
@@ -187,7 +187,7 @@ ReadSchema: struct<i_item_sk:int,i_product_name:string>
 Input [2]: [i_item_sk#21, i_product_name#22]
 Condition : isnotnull(i_item_sk#21)
 
-(34) ColumnarToRow [codegen id : 9]
+(34) CometColumnarToRow [codegen id : 9]
 Input [2]: [i_item_sk#21, i_product_name#22]
 
 (35) BroadcastExchange
@@ -226,7 +226,7 @@ Arguments: 100, [rnk#12 ASC NULLS FIRST], [rnk#12, best_performing#25, worst_per
 Subquery:1 Hosting operator id = 8 Hosting Expression = Subquery scalar-subquery#10, [id=#11]
 * HashAggregate (48)
 +- Exchange (47)
-   +- * ColumnarToRow (46)
+   +- * CometColumnarToRow (46)
       +- CometHashAggregate (45)
          +- CometProject (44)
             +- CometFilter (43)
@@ -253,7 +253,7 @@ Input [2]: [ss_store_sk#28, ss_net_profit#29]
 Keys [1]: [ss_store_sk#28]
 Functions [1]: [partial_avg(UnscaledValue(ss_net_profit#29))]
 
-(46) ColumnarToRow [codegen id : 1]
+(46) CometColumnarToRow [codegen id : 1]
 Input [3]: [ss_store_sk#28, sum#31, count#32]
 
 (47) Exchange

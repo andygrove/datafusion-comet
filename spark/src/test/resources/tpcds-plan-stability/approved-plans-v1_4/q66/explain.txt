@@ -6,7 +6,7 @@ TakeOrderedAndProject (51)
          +- Union (47)
             :- * HashAggregate (28)
             :  +- Exchange (27)
-            :     +- * ColumnarToRow (26)
+            :     +- * CometColumnarToRow (26)
             :        +- CometHashAggregate (25)
             :           +- CometProject (24)
             :              +- CometBroadcastHashJoin (23)
@@ -34,7 +34,7 @@ TakeOrderedAndProject (51)
             :                          +- CometScan parquet spark_catalog.default.ship_mode (19)
             +- * HashAggregate (46)
                +- Exchange (45)
-                  +- * ColumnarToRow (44)
+                  +- * CometColumnarToRow (44)
                      +- CometHashAggregate (43)
                         +- CometProject (42)
                            +- CometBroadcastHashJoin (41)
@@ -173,7 +173,7 @@ Input [11]: [ws_quantity#4, ws_ext_sales_price#5, ws_net_paid#6, w_warehouse_nam
 Keys [7]: [w_warehouse_name#10, w_warehouse_sq_ft#11, w_city#12, w_county#13, w_state#14, w_country#15, d_year#17]
 Functions [24]: [partial_sum(CASE WHEN (d_moy#18 = 1) THEN (ws_ext_sales_price#5 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 2) THEN (ws_ext_sales_price#5 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 3) THEN (ws_ext_sales_price#5 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 4) THEN (ws_ext_sales_price#5 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 5) THEN (ws_ext_sales_price#5 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 6) THEN (ws_ext_sales_price#5 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 7) THEN (ws_ext_sales_price#5 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 8) THEN (ws_ext_sales_price#5 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 9) THEN (ws_ext_sales_price#5 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 10) THEN (ws_ext_sales_price#5 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 11) THEN (ws_ext_sales_price#5 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 12) THEN (ws_ext_sales_price#5 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 1) THEN (ws_net_paid#6 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 2) THEN (ws_net_paid#6 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 3) THEN (ws_net_paid#6 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 4) THEN (ws_net_paid#6 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 5) THEN (ws_net_paid#6 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 6) THEN (ws_net_paid#6 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 7) THEN (ws_net_paid#6 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 8) THEN (ws_net_paid#6 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 9) THEN (ws_net_paid#6 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 10) THEN (ws_net_paid#6 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 11) THEN (ws_net_paid#6 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#18 = 12) THEN (ws_net_paid#6 * cast(ws_quantity#4 as decimal(10,0))) ELSE 0.00 END)]
 
-(26) ColumnarToRow [codegen id : 1]
+(26) CometColumnarToRow [codegen id : 1]
 Input [55]: [w_warehouse_name#10, w_warehouse_sq_ft#11, w_city#12, w_county#13, w_state#14, w_country#15, d_year#17, sum#23, isEmpty#24, sum#25, isEmpty#26, sum#27, isEmpty#28, sum#29, isEmpty#30, sum#31, isEmpty#32, sum#33, isEmpty#34, sum#35, isEmpty#36, sum#37, isEmpty#38, sum#39, isEmpty#40, sum#41, isEmpty#42, sum#43, isEmpty#44, sum#45, isEmpty#46, sum#47, isEmpty#48, sum#49, isEmpty#50, sum#51, isEmpty#52, sum#53, isEmpty#54, sum#55, isEmpty#56, sum#57, isEmpty#58, sum#59, isEmpty#60, sum#61, isEmpty#62, sum#63, isEmpty#64, sum#65, isEmpty#66, sum#67, isEmpty#68, sum#69, isEmpty#70]
 
 (27) Exchange
@@ -252,7 +252,7 @@ Input [11]: [cs_quantity#124, cs_sales_price#125, cs_net_paid_inc_tax#126, w_war
 Keys [7]: [w_warehouse_name#130, w_warehouse_sq_ft#131, w_city#132, w_county#133, w_state#134, w_country#135, d_year#137]
 Functions [24]: [partial_sum(CASE WHEN (d_moy#138 = 1) THEN (cs_sales_price#125 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 2) THEN (cs_sales_price#125 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 3) THEN (cs_sales_price#125 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 4) THEN (cs_sales_price#125 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 5) THEN (cs_sales_price#125 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 6) THEN (cs_sales_price#125 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 7) THEN (cs_sales_price#125 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 8) THEN (cs_sales_price#125 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 9) THEN (cs_sales_price#125 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 10) THEN (cs_sales_price#125 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 11) THEN (cs_sales_price#125 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 12) THEN (cs_sales_price#125 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 1) THEN (cs_net_paid_inc_tax#126 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 2) THEN (cs_net_paid_inc_tax#126 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 3) THEN (cs_net_paid_inc_tax#126 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 4) THEN (cs_net_paid_inc_tax#126 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 5) THEN (cs_net_paid_inc_tax#126 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 6) THEN (cs_net_paid_inc_tax#126 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 7) THEN (cs_net_paid_inc_tax#126 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 8) THEN (cs_net_paid_inc_tax#126 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 9) THEN (cs_net_paid_inc_tax#126 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 10) THEN (cs_net_paid_inc_tax#126 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 11) THEN (cs_net_paid_inc_tax#126 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END), partial_sum(CASE WHEN (d_moy#138 = 12) THEN (cs_net_paid_inc_tax#126 * cast(cs_quantity#124 as decimal(10,0))) ELSE 0.00 END)]
 
-(44) ColumnarToRow [codegen id : 3]
+(44) CometColumnarToRow [codegen id : 3]
 Input [55]: [w_warehouse_name#130, w_warehouse_sq_ft#131, w_city#132, w_county#133, w_state#134, w_country#135, d_year#137, sum#141, isEmpty#142, sum#143, isEmpty#144, sum#145, isEmpty#146, sum#147, isEmpty#148, sum#149, isEmpty#150, sum#151, isEmpty#152, sum#153, isEmpty#154, sum#155, isEmpty#156, sum#157, isEmpty#158, sum#159, isEmpty#160, sum#161, isEmpty#162, sum#163, isEmpty#164, sum#165, isEmpty#166, sum#167, isEmpty#168, sum#169, isEmpty#170, sum#171, isEmpty#172, sum#173, isEmpty#174, sum#175, isEmpty#176, sum#177, isEmpty#178, sum#179, isEmpty#180, sum#181, isEmpty#182, sum#183, isEmpty#184, sum#185, isEmpty#186, sum#187, isEmpty#188]
 
 (45) Exchange
@@ -294,7 +294,7 @@ Arguments: 100, [w_warehouse_name#10 ASC NULLS FIRST], [w_warehouse_name#10, w_w
 
 Subquery:1 Hosting operator id = 1 Hosting Expression = ws_sold_date_sk#7 IN dynamicpruning#8
 BroadcastExchange (55)
-+- * ColumnarToRow (54)
++- * CometColumnarToRow (54)
    +- CometFilter (53)
       +- CometScan parquet spark_catalog.default.date_dim (52)
 
@@ -310,7 +310,7 @@ ReadSchema: struct<d_date_sk:int,d_year:int,d_moy:int>
 Input [3]: [d_date_sk#16, d_year#17, d_moy#18]
 Condition : ((isnotnull(d_year#17) AND (d_year#17 = 2001)) AND isnotnull(d_date_sk#16))
 
-(54) ColumnarToRow [codegen id : 1]
+(54) CometColumnarToRow [codegen id : 1]
 Input [3]: [d_date_sk#16, d_year#17, d_moy#18]
 
 (55) BroadcastExchange

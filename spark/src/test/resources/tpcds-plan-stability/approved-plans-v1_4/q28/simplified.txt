@@ -13,7 +13,7 @@ WholeStageCodegen (18)
                         InputAdapter
                           Exchange [ss_list_price] #2
                             WholeStageCodegen (1)
-                              ColumnarToRow
+                              CometColumnarToRow
                                 InputAdapter
                                   CometHashAggregate [ss_list_price,sum,count,count]
                                     CometProject [ss_list_price]
@@ -31,7 +31,7 @@ WholeStageCodegen (18)
                               InputAdapter
                                 Exchange [ss_list_price] #5
                                   WholeStageCodegen (3)
-                                    ColumnarToRow
+                                    CometColumnarToRow
                                       InputAdapter
                                         CometHashAggregate [ss_list_price,sum,count,count]
                                           CometProject [ss_list_price]
@@ -49,7 +49,7 @@ WholeStageCodegen (18)
                             InputAdapter
                               Exchange [ss_list_price] #8
                                 WholeStageCodegen (6)
-                                  ColumnarToRow
+                                  CometColumnarToRow
                                     InputAdapter
                                       CometHashAggregate [ss_list_price,sum,count,count]
                                         CometProject [ss_list_price]
@@ -67,7 +67,7 @@ WholeStageCodegen (18)
                           InputAdapter
                             Exchange [ss_list_price] #11
                               WholeStageCodegen (9)
-                                ColumnarToRow
+                                CometColumnarToRow
                                   InputAdapter
                                     CometHashAggregate [ss_list_price,sum,count,count]
                                       CometProject [ss_list_price]
@@ -85,7 +85,7 @@ WholeStageCodegen (18)
                         InputAdapter
                           Exchange [ss_list_price] #14
                             WholeStageCodegen (12)
-                              ColumnarToRow
+                              CometColumnarToRow
                                 InputAdapter
                                   CometHashAggregate [ss_list_price,sum,count,count]
                                     CometProject [ss_list_price]
@@ -103,7 +103,7 @@ WholeStageCodegen (18)
                       InputAdapter
                         Exchange [ss_list_price] #17
                           WholeStageCodegen (15)
-                            ColumnarToRow
+                            CometColumnarToRow
                               InputAdapter
                                 CometHashAggregate [ss_list_price,sum,count,count]
                                   CometProject [ss_list_price]

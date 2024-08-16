@@ -9,7 +9,7 @@
 :  :  :  :  :     +- * HashAggregate (8)
 :  :  :  :  :        +- * HashAggregate (7)
 :  :  :  :  :           +- Exchange (6)
-:  :  :  :  :              +- * ColumnarToRow (5)
+:  :  :  :  :              +- * CometColumnarToRow (5)
 :  :  :  :  :                 +- CometHashAggregate (4)
 :  :  :  :  :                    +- CometProject (3)
 :  :  :  :  :                       +- CometFilter (2)
@@ -20,7 +20,7 @@
 :  :  :  :           +- * HashAggregate (18)
 :  :  :  :              +- * HashAggregate (17)
 :  :  :  :                 +- Exchange (16)
-:  :  :  :                    +- * ColumnarToRow (15)
+:  :  :  :                    +- * CometColumnarToRow (15)
 :  :  :  :                       +- CometHashAggregate (14)
 :  :  :  :                          +- CometProject (13)
 :  :  :  :                             +- CometFilter (12)
@@ -31,7 +31,7 @@
 :  :  :           +- * HashAggregate (30)
 :  :  :              +- * HashAggregate (29)
 :  :  :                 +- Exchange (28)
-:  :  :                    +- * ColumnarToRow (27)
+:  :  :                    +- * CometColumnarToRow (27)
 :  :  :                       +- CometHashAggregate (26)
 :  :  :                          +- CometProject (25)
 :  :  :                             +- CometFilter (24)
@@ -42,7 +42,7 @@
 :  :           +- * HashAggregate (42)
 :  :              +- * HashAggregate (41)
 :  :                 +- Exchange (40)
-:  :                    +- * ColumnarToRow (39)
+:  :                    +- * CometColumnarToRow (39)
 :  :                       +- CometHashAggregate (38)
 :  :                          +- CometProject (37)
 :  :                             +- CometFilter (36)
@@ -53,7 +53,7 @@
 :           +- * HashAggregate (54)
 :              +- * HashAggregate (53)
 :                 +- Exchange (52)
-:                    +- * ColumnarToRow (51)
+:                    +- * CometColumnarToRow (51)
 :                       +- CometHashAggregate (50)
 :                          +- CometProject (49)
 :                             +- CometFilter (48)
@@ -64,7 +64,7 @@
          +- * HashAggregate (66)
             +- * HashAggregate (65)
                +- Exchange (64)
-                  +- * ColumnarToRow (63)
+                  +- * CometColumnarToRow (63)
                      +- CometHashAggregate (62)
                         +- CometProject (61)
                            +- CometFilter (60)
@@ -91,7 +91,7 @@ Input [1]: [ss_list_price#3]
 Keys [1]: [ss_list_price#3]
 Functions [2]: [partial_avg(UnscaledValue(ss_list_price#3)), partial_count(ss_list_price#3)]
 
-(5) ColumnarToRow [codegen id : 1]
+(5) CometColumnarToRow [codegen id : 1]
 Input [4]: [ss_list_price#3, sum#6, count#7, count#8]
 
 (6) Exchange
@@ -143,7 +143,7 @@ Input [1]: [ss_list_price#18]
 Keys [1]: [ss_list_price#18]
 Functions [2]: [partial_avg(UnscaledValue(ss_list_price#18)), partial_count(ss_list_price#18)]
 
-(15) ColumnarToRow [codegen id : 3]
+(15) CometColumnarToRow [codegen id : 3]
 Input [4]: [ss_list_price#18, sum#21, count#22, count#23]
 
 (16) Exchange
@@ -203,7 +203,7 @@ Input [1]: [ss_list_price#33]
 Keys [1]: [ss_list_price#33]
 Functions [2]: [partial_avg(UnscaledValue(ss_list_price#33)), partial_count(ss_list_price#33)]
 
-(27) ColumnarToRow [codegen id : 6]
+(27) CometColumnarToRow [codegen id : 6]
 Input [4]: [ss_list_price#33, sum#36, count#37, count#38]
 
 (28) Exchange
@@ -263,7 +263,7 @@ Input [1]: [ss_list_price#48]
 Keys [1]: [ss_list_price#48]
 Functions [2]: [partial_avg(UnscaledValue(ss_list_price#48)), partial_count(ss_list_price#48)]
 
-(39) ColumnarToRow [codegen id : 9]
+(39) CometColumnarToRow [codegen id : 9]
 Input [4]: [ss_list_price#48, sum#51, count#52, count#53]
 
 (40) Exchange
@@ -323,7 +323,7 @@ Input [1]: [ss_list_price#63]
 Keys [1]: [ss_list_price#63]
 Functions [2]: [partial_avg(UnscaledValue(ss_list_price#63)), partial_count(ss_list_price#63)]
 
-(51) ColumnarToRow [codegen id : 12]
+(51) CometColumnarToRow [codegen id : 12]
 Input [4]: [ss_list_price#63, sum#66, count#67, count#68]
 
 (52) Exchange
@@ -383,7 +383,7 @@ Input [1]: [ss_list_price#78]
 Keys [1]: [ss_list_price#78]
 Functions [2]: [partial_avg(UnscaledValue(ss_list_price#78)), partial_count(ss_list_price#78)]
 
-(63) ColumnarToRow [codegen id : 15]
+(63) CometColumnarToRow [codegen id : 15]
 Input [4]: [ss_list_price#78, sum#81, count#82, count#83]
 
 (64) Exchange

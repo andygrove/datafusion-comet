@@ -20,7 +20,7 @@ TakeOrderedAndProject [lochierarchy,i_category,rank_within_parent,gross_margin,i
                                       InputAdapter
                                         Exchange [i_category,i_class] #3
                                           WholeStageCodegen (1)
-                                            ColumnarToRow
+                                            CometColumnarToRow
                                               InputAdapter
                                                 CometHashAggregate [i_category,i_class,sum,sum,ss_net_profit,ss_ext_sales_price]
                                                   CometProject [ss_ext_sales_price,ss_net_profit,i_class,i_category]
@@ -34,7 +34,7 @@ TakeOrderedAndProject [lochierarchy,i_category,rank_within_parent,gross_margin,i
                                                                   SubqueryBroadcast [d_date_sk] #1
                                                                     BroadcastExchange #4
                                                                       WholeStageCodegen (1)
-                                                                        ColumnarToRow
+                                                                        CometColumnarToRow
                                                                           InputAdapter
                                                                             CometProject [d_date_sk]
                                                                               CometFilter [d_date_sk,d_year]

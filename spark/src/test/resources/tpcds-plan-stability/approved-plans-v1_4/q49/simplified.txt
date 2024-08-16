@@ -25,7 +25,7 @@ TakeOrderedAndProject [channel,return_rank,currency_rank,item,return_ratio]
                                                 InputAdapter
                                                   Exchange [ws_item_sk] #3
                                                     WholeStageCodegen (1)
-                                                      ColumnarToRow
+                                                      CometColumnarToRow
                                                         InputAdapter
                                                           CometHashAggregate [ws_item_sk,sum,sum,sum,isEmpty,sum,isEmpty,wr_return_quantity,ws_quantity,wr_return_amt,ws_net_paid]
                                                             CometProject [ws_item_sk,ws_quantity,ws_net_paid,wr_return_quantity,wr_return_amt]
@@ -39,7 +39,7 @@ TakeOrderedAndProject [channel,return_rank,currency_rank,item,return_ratio]
                                                                             SubqueryBroadcast [d_date_sk] #1
                                                                               BroadcastExchange #5
                                                                                 WholeStageCodegen (1)
-                                                                                  ColumnarToRow
+                                                                                  CometColumnarToRow
                                                                                     InputAdapter
                                                                                       CometProject [d_date_sk]
                                                                                         CometFilter [d_date_sk,d_year,d_moy]
@@ -69,7 +69,7 @@ TakeOrderedAndProject [channel,return_rank,currency_rank,item,return_ratio]
                                                 InputAdapter
                                                   Exchange [cs_item_sk] #8
                                                     WholeStageCodegen (6)
-                                                      ColumnarToRow
+                                                      CometColumnarToRow
                                                         InputAdapter
                                                           CometHashAggregate [cs_item_sk,sum,sum,sum,isEmpty,sum,isEmpty,cr_return_quantity,cs_quantity,cr_return_amount,cs_net_paid]
                                                             CometProject [cs_item_sk,cs_quantity,cs_net_paid,cr_return_quantity,cr_return_amount]
@@ -103,7 +103,7 @@ TakeOrderedAndProject [channel,return_rank,currency_rank,item,return_ratio]
                                                 InputAdapter
                                                   Exchange [ss_item_sk] #11
                                                     WholeStageCodegen (11)
-                                                      ColumnarToRow
+                                                      CometColumnarToRow
                                                         InputAdapter
                                                           CometHashAggregate [ss_item_sk,sum,sum,sum,isEmpty,sum,isEmpty,sr_return_quantity,ss_quantity,sr_return_amt,ss_net_paid]
                                                             CometProject [ss_item_sk,ss_quantity,ss_net_paid,sr_return_quantity,sr_return_amt]

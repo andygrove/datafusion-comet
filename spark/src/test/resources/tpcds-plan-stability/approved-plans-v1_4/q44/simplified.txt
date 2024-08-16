@@ -25,7 +25,7 @@ TakeOrderedAndProject [rnk,best_performing,worst_performing]
                                                 InputAdapter
                                                   Exchange [ss_store_sk] #3
                                                     WholeStageCodegen (1)
-                                                      ColumnarToRow
+                                                      CometColumnarToRow
                                                         InputAdapter
                                                           CometHashAggregate [ss_store_sk,sum,count,ss_net_profit]
                                                             CometProject [ss_store_sk,ss_net_profit]
@@ -35,7 +35,7 @@ TakeOrderedAndProject [rnk,best_performing,worst_performing]
                                             InputAdapter
                                               Exchange [ss_item_sk] #2
                                                 WholeStageCodegen (1)
-                                                  ColumnarToRow
+                                                  CometColumnarToRow
                                                     InputAdapter
                                                       CometHashAggregate [ss_item_sk,sum,count,ss_net_profit]
                                                         CometProject [ss_item_sk,ss_net_profit]
@@ -55,7 +55,7 @@ TakeOrderedAndProject [rnk,best_performing,worst_performing]
             InputAdapter
               BroadcastExchange #4
                 WholeStageCodegen (9)
-                  ColumnarToRow
+                  CometColumnarToRow
                     InputAdapter
                       CometFilter [i_item_sk,i_product_name]
                         CometScan parquet spark_catalog.default.item [i_item_sk,i_product_name]

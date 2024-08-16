@@ -22,7 +22,7 @@ WholeStageCodegen (21)
                                           InputAdapter
                                             Exchange [ws_order_number] #2
                                               WholeStageCodegen (1)
-                                                ColumnarToRow
+                                                CometColumnarToRow
                                                   InputAdapter
                                                     CometProject [ws_ship_date_sk,ws_ship_addr_sk,ws_web_site_sk,ws_order_number,ws_ext_ship_cost,ws_net_profit]
                                                       CometFilter [ws_ship_date_sk,ws_ship_addr_sk,ws_web_site_sk,ws_order_number,ws_ext_ship_cost,ws_net_profit,ws_sold_date_sk]
@@ -37,7 +37,7 @@ WholeStageCodegen (21)
                                                   InputAdapter
                                                     Exchange [ws_order_number] #3
                                                       WholeStageCodegen (3)
-                                                        ColumnarToRow
+                                                        CometColumnarToRow
                                                           InputAdapter
                                                             CometProject [ws_warehouse_sk,ws_order_number]
                                                               CometFilter [ws_warehouse_sk,ws_order_number,ws_sold_date_sk]
@@ -57,7 +57,7 @@ WholeStageCodegen (21)
                                             InputAdapter
                                               Exchange [wr_order_number] #4
                                                 WholeStageCodegen (9)
-                                                  ColumnarToRow
+                                                  CometColumnarToRow
                                                     InputAdapter
                                                       CometProject [wr_order_number]
                                                         CometFilter [wr_order_number,wr_returned_date_sk]
@@ -79,7 +79,7 @@ WholeStageCodegen (21)
                             InputAdapter
                               BroadcastExchange #5
                                 WholeStageCodegen (17)
-                                  ColumnarToRow
+                                  CometColumnarToRow
                                     InputAdapter
                                       CometProject [d_date_sk]
                                         CometFilter [d_date_sk,d_date]
@@ -87,7 +87,7 @@ WholeStageCodegen (21)
                         InputAdapter
                           BroadcastExchange #6
                             WholeStageCodegen (18)
-                              ColumnarToRow
+                              CometColumnarToRow
                                 InputAdapter
                                   CometProject [ca_address_sk]
                                     CometFilter [ca_address_sk,ca_state]
@@ -95,7 +95,7 @@ WholeStageCodegen (21)
                     InputAdapter
                       BroadcastExchange #7
                         WholeStageCodegen (19)
-                          ColumnarToRow
+                          CometColumnarToRow
                             InputAdapter
                               CometProject [web_site_sk]
                                 CometFilter [web_site_sk,web_company_name]

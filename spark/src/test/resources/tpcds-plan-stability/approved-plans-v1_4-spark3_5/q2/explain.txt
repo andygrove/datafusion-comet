@@ -7,7 +7,7 @@
          :  +- * BroadcastHashJoin Inner BuildRight (20)
          :     :- * HashAggregate (14)
          :     :  +- Exchange (13)
-         :     :     +- * ColumnarToRow (12)
+         :     :     +- * CometColumnarToRow (12)
          :     :        +- CometHashAggregate (11)
          :     :           +- CometProject (10)
          :     :              +- CometBroadcastHashJoin (9)
@@ -20,7 +20,7 @@
          :     :                    +- CometFilter (7)
          :     :                       +- CometScan parquet spark_catalog.default.date_dim (6)
          :     +- BroadcastExchange (19)
-         :        +- * ColumnarToRow (18)
+         :        +- * CometColumnarToRow (18)
          :           +- CometProject (17)
          :              +- CometFilter (16)
          :                 +- CometScan parquet spark_catalog.default.date_dim (15)
@@ -30,7 +30,7 @@
                   :- * HashAggregate (23)
                   :  +- ReusedExchange (22)
                   +- BroadcastExchange (28)
-                     +- * ColumnarToRow (27)
+                     +- * CometColumnarToRow (27)
                         +- CometProject (26)
                            +- CometFilter (25)
                               +- CometScan parquet spark_catalog.default.date_dim (24)
@@ -91,7 +91,7 @@ Input [3]: [sales_price#4, d_week_seq#10, d_day_name#11]
 Keys [1]: [d_week_seq#10]
 Functions [7]: [partial_sum(UnscaledValue(CASE WHEN (d_day_name#11 = Sunday   ) THEN sales_price#4 END)), partial_sum(UnscaledValue(CASE WHEN (d_day_name#11 = Monday   ) THEN sales_price#4 END)), partial_sum(UnscaledValue(CASE WHEN (d_day_name#11 = Tuesday  ) THEN sales_price#4 END)), partial_sum(UnscaledValue(CASE WHEN (d_day_name#11 = Wednesday) THEN sales_price#4 END)), partial_sum(UnscaledValue(CASE WHEN (d_day_name#11 = Thursday ) THEN sales_price#4 END)), partial_sum(UnscaledValue(CASE WHEN (d_day_name#11 = Friday   ) THEN sales_price#4 END)), partial_sum(UnscaledValue(CASE WHEN (d_day_name#11 = Saturday ) THEN sales_price#4 END))]
 
-(12) ColumnarToRow [codegen id : 1]
+(12) CometColumnarToRow [codegen id : 1]
 Input [8]: [d_week_seq#10, sum#12, sum#13, sum#14, sum#15, sum#16, sum#17, sum#18]
 
 (13) Exchange
@@ -120,7 +120,7 @@ Condition : ((isnotnull(d_year#34) AND (d_year#34 = 2001)) AND isnotnull(d_week_
 Input [2]: [d_week_seq#33, d_year#34]
 Arguments: [d_week_seq#33], [d_week_seq#33]
 
-(18) ColumnarToRow [codegen id : 2]
+(18) CometColumnarToRow [codegen id : 2]
 Input [1]: [d_week_seq#33]
 
 (19) BroadcastExchange
@@ -162,7 +162,7 @@ Condition : ((isnotnull(d_year#60) AND (d_year#60 = 2002)) AND isnotnull(d_week_
 Input [2]: [d_week_seq#59, d_year#60]
 Arguments: [d_week_seq#59], [d_week_seq#59]
 
-(27) ColumnarToRow [codegen id : 4]
+(27) CometColumnarToRow [codegen id : 4]
 Input [1]: [d_week_seq#59]
 
 (28) BroadcastExchange

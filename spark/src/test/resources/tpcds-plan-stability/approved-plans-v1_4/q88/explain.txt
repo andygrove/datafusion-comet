@@ -8,7 +8,7 @@
 :  :  :  :  :  :- * BroadcastNestedLoopJoin Inner BuildRight (46)
 :  :  :  :  :  :  :- * HashAggregate (25)
 :  :  :  :  :  :  :  +- Exchange (24)
-:  :  :  :  :  :  :     +- * ColumnarToRow (23)
+:  :  :  :  :  :  :     +- * CometColumnarToRow (23)
 :  :  :  :  :  :  :        +- CometHashAggregate (22)
 :  :  :  :  :  :  :           +- CometProject (21)
 :  :  :  :  :  :  :              +- CometBroadcastHashJoin (20)
@@ -34,7 +34,7 @@
 :  :  :  :  :  :  +- BroadcastExchange (45)
 :  :  :  :  :  :     +- * HashAggregate (44)
 :  :  :  :  :  :        +- Exchange (43)
-:  :  :  :  :  :           +- * ColumnarToRow (42)
+:  :  :  :  :  :           +- * CometColumnarToRow (42)
 :  :  :  :  :  :              +- CometHashAggregate (41)
 :  :  :  :  :  :                 +- CometProject (40)
 :  :  :  :  :  :                    +- CometBroadcastHashJoin (39)
@@ -54,7 +54,7 @@
 :  :  :  :  :  +- BroadcastExchange (66)
 :  :  :  :  :     +- * HashAggregate (65)
 :  :  :  :  :        +- Exchange (64)
-:  :  :  :  :           +- * ColumnarToRow (63)
+:  :  :  :  :           +- * CometColumnarToRow (63)
 :  :  :  :  :              +- CometHashAggregate (62)
 :  :  :  :  :                 +- CometProject (61)
 :  :  :  :  :                    +- CometBroadcastHashJoin (60)
@@ -74,7 +74,7 @@
 :  :  :  :  +- BroadcastExchange (87)
 :  :  :  :     +- * HashAggregate (86)
 :  :  :  :        +- Exchange (85)
-:  :  :  :           +- * ColumnarToRow (84)
+:  :  :  :           +- * CometColumnarToRow (84)
 :  :  :  :              +- CometHashAggregate (83)
 :  :  :  :                 +- CometProject (82)
 :  :  :  :                    +- CometBroadcastHashJoin (81)
@@ -94,7 +94,7 @@
 :  :  :  +- BroadcastExchange (108)
 :  :  :     +- * HashAggregate (107)
 :  :  :        +- Exchange (106)
-:  :  :           +- * ColumnarToRow (105)
+:  :  :           +- * CometColumnarToRow (105)
 :  :  :              +- CometHashAggregate (104)
 :  :  :                 +- CometProject (103)
 :  :  :                    +- CometBroadcastHashJoin (102)
@@ -114,7 +114,7 @@
 :  :  +- BroadcastExchange (129)
 :  :     +- * HashAggregate (128)
 :  :        +- Exchange (127)
-:  :           +- * ColumnarToRow (126)
+:  :           +- * CometColumnarToRow (126)
 :  :              +- CometHashAggregate (125)
 :  :                 +- CometProject (124)
 :  :                    +- CometBroadcastHashJoin (123)
@@ -134,7 +134,7 @@
 :  +- BroadcastExchange (150)
 :     +- * HashAggregate (149)
 :        +- Exchange (148)
-:           +- * ColumnarToRow (147)
+:           +- * CometColumnarToRow (147)
 :              +- CometHashAggregate (146)
 :                 +- CometProject (145)
 :                    +- CometBroadcastHashJoin (144)
@@ -154,7 +154,7 @@
 +- BroadcastExchange (171)
    +- * HashAggregate (170)
       +- Exchange (169)
-         +- * ColumnarToRow (168)
+         +- * CometColumnarToRow (168)
             +- CometHashAggregate (167)
                +- CometProject (166)
                   +- CometBroadcastHashJoin (165)
@@ -276,7 +276,7 @@ Input: []
 Keys: []
 Functions [1]: [partial_count(1)]
 
-(23) ColumnarToRow [codegen id : 1]
+(23) CometColumnarToRow [codegen id : 1]
 Input [1]: [count#13]
 
 (24) Exchange
@@ -361,7 +361,7 @@ Input: []
 Keys: []
 Functions [1]: [partial_count(1)]
 
-(42) ColumnarToRow [codegen id : 2]
+(42) CometColumnarToRow [codegen id : 2]
 Input [1]: [count#25]
 
 (43) Exchange
@@ -454,7 +454,7 @@ Input: []
 Keys: []
 Functions [1]: [partial_count(1)]
 
-(63) ColumnarToRow [codegen id : 4]
+(63) CometColumnarToRow [codegen id : 4]
 Input [1]: [count#37]
 
 (64) Exchange
@@ -547,7 +547,7 @@ Input: []
 Keys: []
 Functions [1]: [partial_count(1)]
 
-(84) ColumnarToRow [codegen id : 6]
+(84) CometColumnarToRow [codegen id : 6]
 Input [1]: [count#49]
 
 (85) Exchange
@@ -640,7 +640,7 @@ Input: []
 Keys: []
 Functions [1]: [partial_count(1)]
 
-(105) ColumnarToRow [codegen id : 8]
+(105) CometColumnarToRow [codegen id : 8]
 Input [1]: [count#61]
 
 (106) Exchange
@@ -733,7 +733,7 @@ Input: []
 Keys: []
 Functions [1]: [partial_count(1)]
 
-(126) ColumnarToRow [codegen id : 10]
+(126) CometColumnarToRow [codegen id : 10]
 Input [1]: [count#73]
 
 (127) Exchange
@@ -826,7 +826,7 @@ Input: []
 Keys: []
 Functions [1]: [partial_count(1)]
 
-(147) ColumnarToRow [codegen id : 12]
+(147) CometColumnarToRow [codegen id : 12]
 Input [1]: [count#85]
 
 (148) Exchange
@@ -919,7 +919,7 @@ Input: []
 Keys: []
 Functions [1]: [partial_count(1)]
 
-(168) ColumnarToRow [codegen id : 14]
+(168) CometColumnarToRow [codegen id : 14]
 Input [1]: [count#97]
 
 (169) Exchange
