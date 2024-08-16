@@ -19,9 +19,8 @@
 
 package org.apache.spark.sql.comet
 
-import org.apache.comet.vector.CometVector
-
 import scala.collection.JavaConverters._
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection}
@@ -29,6 +28,8 @@ import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.util.Utils
+
+import org.apache.comet.vector.CometVector
 
 /**
  * This is currently an identical copy of Spark's ColumnarToRowExec except for removing the

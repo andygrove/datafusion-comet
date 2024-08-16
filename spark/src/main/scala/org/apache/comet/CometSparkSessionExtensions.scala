@@ -83,12 +83,14 @@ class CometSparkSessionExtensions
     }
   }
 
+  /** Replace ColumnarToRowExec with CometColumnarToRowExec for CometExec inputs */
   case class CometPostColumnarTransitions() extends Rule[SparkPlan] {
     override def apply(sparkPlan: SparkPlan): SparkPlan = {
       sparkPlan.transformUp {
-        // TODO do we do this for all CometExec or just CometNativeExec?
         case ColumnarToRowExec(child: CometExec) =>
           CometColumnarToRowExec(child)
+        case ColumnarToRowExec(InputAdapter(child: CometExec)) =>
+          CometColumnarToRowExec(InputAdapter(child))
       }
     }
   }
