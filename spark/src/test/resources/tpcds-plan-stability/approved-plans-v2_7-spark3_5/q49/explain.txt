@@ -13,7 +13,7 @@ TakeOrderedAndProject (77)
             :                 +- Exchange (20)
             :                    +- * HashAggregate (19)
             :                       +- Exchange (18)
-            :                          +- * CometColumnarToRow (17)
+            :                          +- * ColumnarToRow (17)
             :                             +- CometHashAggregate (16)
             :                                +- CometProject (15)
             :                                   +- CometBroadcastHashJoin (14)
@@ -39,7 +39,7 @@ TakeOrderedAndProject (77)
             :                 +- Exchange (43)
             :                    +- * HashAggregate (42)
             :                       +- Exchange (41)
-            :                          +- * CometColumnarToRow (40)
+            :                          +- * ColumnarToRow (40)
             :                             +- CometHashAggregate (39)
             :                                +- CometProject (38)
             :                                   +- CometBroadcastHashJoin (37)
@@ -62,7 +62,7 @@ TakeOrderedAndProject (77)
                               +- Exchange (66)
                                  +- * HashAggregate (65)
                                     +- Exchange (64)
-                                       +- * CometColumnarToRow (63)
+                                       +- * ColumnarToRow (63)
                                           +- CometHashAggregate (62)
                                              +- CometProject (61)
                                                 +- CometBroadcastHashJoin (60)
@@ -155,7 +155,7 @@ Input [5]: [ws_item_sk#1, ws_quantity#3, ws_net_paid#4, wr_return_quantity#10, w
 Keys [1]: [ws_item_sk#1]
 Functions [4]: [partial_sum(coalesce(wr_return_quantity#10, 0)), partial_sum(coalesce(ws_quantity#3, 0)), partial_sum(coalesce(cast(wr_return_amt#11 as decimal(12,2)), 0.00)), partial_sum(coalesce(cast(ws_net_paid#4 as decimal(12,2)), 0.00))]
 
-(17) CometColumnarToRow [codegen id : 1]
+(17) ColumnarToRow [codegen id : 1]
 Input [7]: [ws_item_sk#1, sum#16, sum#17, sum#18, isEmpty#19, sum#20, isEmpty#21]
 
 (18) Exchange
@@ -258,7 +258,7 @@ Input [5]: [cs_item_sk#32, cs_quantity#34, cs_net_paid#35, cr_return_quantity#41
 Keys [1]: [cs_item_sk#32]
 Functions [4]: [partial_sum(coalesce(cr_return_quantity#41, 0)), partial_sum(coalesce(cs_quantity#34, 0)), partial_sum(coalesce(cast(cr_return_amount#42 as decimal(12,2)), 0.00)), partial_sum(coalesce(cast(cs_net_paid#35 as decimal(12,2)), 0.00))]
 
-(40) CometColumnarToRow [codegen id : 6]
+(40) ColumnarToRow [codegen id : 6]
 Input [7]: [cs_item_sk#32, sum#45, sum#46, sum#47, isEmpty#48, sum#49, isEmpty#50]
 
 (41) Exchange
@@ -361,7 +361,7 @@ Input [5]: [ss_item_sk#61, ss_quantity#63, ss_net_paid#64, sr_return_quantity#70
 Keys [1]: [ss_item_sk#61]
 Functions [4]: [partial_sum(coalesce(sr_return_quantity#70, 0)), partial_sum(coalesce(ss_quantity#63, 0)), partial_sum(coalesce(cast(sr_return_amt#71 as decimal(12,2)), 0.00)), partial_sum(coalesce(cast(ss_net_paid#64 as decimal(12,2)), 0.00))]
 
-(63) CometColumnarToRow [codegen id : 11]
+(63) ColumnarToRow [codegen id : 11]
 Input [7]: [ss_item_sk#61, sum#74, sum#75, sum#76, isEmpty#77, sum#78, isEmpty#79]
 
 (64) Exchange
@@ -431,7 +431,7 @@ Arguments: 100, [channel#31 ASC NULLS FIRST, return_rank#29 ASC NULLS FIRST, cur
 
 Subquery:1 Hosting operator id = 1 Hosting Expression = ws_sold_date_sk#6 IN dynamicpruning#7
 BroadcastExchange (82)
-+- * CometColumnarToRow (81)
++- * ColumnarToRow (81)
    +- CometProject (80)
       +- CometFilter (79)
          +- CometScan parquet spark_catalog.default.date_dim (78)
@@ -452,7 +452,7 @@ Condition : ((((isnotnull(d_year#14) AND isnotnull(d_moy#15)) AND (d_year#14 = 2
 Input [3]: [d_date_sk#13, d_year#14, d_moy#15]
 Arguments: [d_date_sk#13], [d_date_sk#13]
 
-(81) CometColumnarToRow [codegen id : 1]
+(81) ColumnarToRow [codegen id : 1]
 Input [1]: [d_date_sk#13]
 
 (82) BroadcastExchange

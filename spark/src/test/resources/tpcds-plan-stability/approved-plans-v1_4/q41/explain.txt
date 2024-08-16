@@ -5,7 +5,7 @@ TakeOrderedAndProject (20)
       +- * HashAggregate (17)
          +- * Project (16)
             +- * BroadcastHashJoin Inner BuildRight (15)
-               :- * CometColumnarToRow (4)
+               :- * ColumnarToRow (4)
                :  +- CometProject (3)
                :     +- CometFilter (2)
                :        +- CometScan parquet spark_catalog.default.item (1)
@@ -14,7 +14,7 @@ TakeOrderedAndProject (20)
                      +- * Filter (12)
                         +- * HashAggregate (11)
                            +- Exchange (10)
-                              +- * CometColumnarToRow (9)
+                              +- * ColumnarToRow (9)
                                  +- CometHashAggregate (8)
                                     +- CometProject (7)
                                        +- CometFilter (6)
@@ -36,7 +36,7 @@ Condition : (((isnotnull(i_manufact_id#1) AND (i_manufact_id#1 >= 738)) AND (i_m
 Input [3]: [i_manufact_id#1, i_manufact#2, i_product_name#3]
 Arguments: [i_manufact#2, i_product_name#3], [i_manufact#2, i_product_name#3]
 
-(4) CometColumnarToRow [codegen id : 3]
+(4) ColumnarToRow [codegen id : 3]
 Input [2]: [i_manufact#2, i_product_name#3]
 
 (5) Scan parquet spark_catalog.default.item
@@ -59,7 +59,7 @@ Input [1]: [i_manufact#5]
 Keys [1]: [i_manufact#5]
 Functions [1]: [partial_count(1)]
 
-(9) CometColumnarToRow [codegen id : 1]
+(9) ColumnarToRow [codegen id : 1]
 Input [2]: [i_manufact#5, count#9]
 
 (10) Exchange

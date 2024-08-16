@@ -2,7 +2,7 @@
 TakeOrderedAndProject (19)
 +- * HashAggregate (18)
    +- Exchange (17)
-      +- * CometColumnarToRow (16)
+      +- * ColumnarToRow (16)
          +- CometHashAggregate (15)
             +- CometProject (14)
                +- CometBroadcastHashJoin (13)
@@ -93,7 +93,7 @@ Input [4]: [d_day_name#3, ss_sales_price#5, s_store_id#8, s_store_name#9]
 Keys [2]: [s_store_name#9, s_store_id#8]
 Functions [7]: [partial_sum(UnscaledValue(CASE WHEN (d_day_name#3 = Sunday   ) THEN ss_sales_price#5 END)), partial_sum(UnscaledValue(CASE WHEN (d_day_name#3 = Monday   ) THEN ss_sales_price#5 END)), partial_sum(UnscaledValue(CASE WHEN (d_day_name#3 = Tuesday  ) THEN ss_sales_price#5 END)), partial_sum(UnscaledValue(CASE WHEN (d_day_name#3 = Wednesday) THEN ss_sales_price#5 END)), partial_sum(UnscaledValue(CASE WHEN (d_day_name#3 = Thursday ) THEN ss_sales_price#5 END)), partial_sum(UnscaledValue(CASE WHEN (d_day_name#3 = Friday   ) THEN ss_sales_price#5 END)), partial_sum(UnscaledValue(CASE WHEN (d_day_name#3 = Saturday ) THEN ss_sales_price#5 END))]
 
-(16) CometColumnarToRow [codegen id : 1]
+(16) ColumnarToRow [codegen id : 1]
 Input [9]: [s_store_name#9, s_store_id#8, sum#11, sum#12, sum#13, sum#14, sum#15, sum#16, sum#17]
 
 (17) Exchange

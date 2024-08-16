@@ -4,7 +4,7 @@ TakeOrderedAndProject [cd_gender,cd_marital_status,cd_education_status,cd_purcha
       InputAdapter
         Exchange [cd_gender,cd_marital_status,cd_education_status,cd_purchase_estimate,cd_credit_rating,cd_dep_count,cd_dep_employed_count,cd_dep_college_count] #1
           WholeStageCodegen (1)
-            CometColumnarToRow
+            ColumnarToRow
               InputAdapter
                 CometHashAggregate [cd_gender,cd_marital_status,cd_education_status,cd_purchase_estimate,cd_credit_rating,cd_dep_count,cd_dep_employed_count,cd_dep_college_count,count]
                   CometProject [cd_gender,cd_marital_status,cd_education_status,cd_purchase_estimate,cd_credit_rating,cd_dep_count,cd_dep_employed_count,cd_dep_college_count]
@@ -23,7 +23,7 @@ TakeOrderedAndProject [cd_gender,cd_marital_status,cd_education_status,cd_purcha
                                         SubqueryBroadcast [d_date_sk] #1
                                           BroadcastExchange #3
                                             WholeStageCodegen (1)
-                                              CometColumnarToRow
+                                              ColumnarToRow
                                                 InputAdapter
                                                   CometProject [d_date_sk]
                                                     CometFilter [d_date_sk,d_year,d_moy]

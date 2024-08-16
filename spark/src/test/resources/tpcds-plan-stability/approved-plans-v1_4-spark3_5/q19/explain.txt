@@ -2,7 +2,7 @@
 TakeOrderedAndProject (34)
 +- * HashAggregate (33)
    +- Exchange (32)
-      +- * CometColumnarToRow (31)
+      +- * ColumnarToRow (31)
          +- CometHashAggregate (30)
             +- CometProject (29)
                +- CometBroadcastHashJoin (28)
@@ -180,7 +180,7 @@ Input [5]: [ss_ext_sales_price#7, i_brand_id#10, i_brand#11, i_manufact_id#12, i
 Keys [4]: [i_brand#11, i_brand_id#10, i_manufact_id#12, i_manufact#13]
 Functions [1]: [partial_sum(UnscaledValue(ss_ext_sales_price#7))]
 
-(31) CometColumnarToRow [codegen id : 1]
+(31) ColumnarToRow [codegen id : 1]
 Input [5]: [i_brand#11, i_brand_id#10, i_manufact_id#12, i_manufact#13, sum#21]
 
 (32) Exchange

@@ -9,17 +9,17 @@ TakeOrderedAndProject (24)
                :  +- * SortMergeJoin Inner (12)
                :     :- * Sort (5)
                :     :  +- Exchange (4)
-               :     :     +- * CometColumnarToRow (3)
+               :     :     +- * ColumnarToRow (3)
                :     :        +- CometProject (2)
                :     :           +- CometScan parquet spark_catalog.default.store_sales (1)
                :     +- * Sort (11)
                :        +- Exchange (10)
-               :           +- * CometColumnarToRow (9)
+               :           +- * ColumnarToRow (9)
                :              +- CometProject (8)
                :                 +- CometFilter (7)
                :                    +- CometScan parquet spark_catalog.default.store_returns (6)
                +- BroadcastExchange (18)
-                  +- * CometColumnarToRow (17)
+                  +- * ColumnarToRow (17)
                      +- CometProject (16)
                         +- CometFilter (15)
                            +- CometScan parquet spark_catalog.default.reason (14)
@@ -35,7 +35,7 @@ ReadSchema: struct<ss_item_sk:int,ss_customer_sk:int,ss_ticket_number:int,ss_qua
 Input [6]: [ss_item_sk#1, ss_customer_sk#2, ss_ticket_number#3, ss_quantity#4, ss_sales_price#5, ss_sold_date_sk#6]
 Arguments: [ss_item_sk#1, ss_customer_sk#2, ss_ticket_number#3, ss_quantity#4, ss_sales_price#5], [ss_item_sk#1, ss_customer_sk#2, ss_ticket_number#3, ss_quantity#4, ss_sales_price#5]
 
-(3) CometColumnarToRow [codegen id : 1]
+(3) ColumnarToRow [codegen id : 1]
 Input [5]: [ss_item_sk#1, ss_customer_sk#2, ss_ticket_number#3, ss_quantity#4, ss_sales_price#5]
 
 (4) Exchange
@@ -61,7 +61,7 @@ Condition : ((isnotnull(sr_item_sk#7) AND isnotnull(sr_ticket_number#9)) AND isn
 Input [5]: [sr_item_sk#7, sr_reason_sk#8, sr_ticket_number#9, sr_return_quantity#10, sr_returned_date_sk#11]
 Arguments: [sr_item_sk#7, sr_reason_sk#8, sr_ticket_number#9, sr_return_quantity#10], [sr_item_sk#7, sr_reason_sk#8, sr_ticket_number#9, sr_return_quantity#10]
 
-(9) CometColumnarToRow [codegen id : 3]
+(9) ColumnarToRow [codegen id : 3]
 Input [4]: [sr_item_sk#7, sr_reason_sk#8, sr_ticket_number#9, sr_return_quantity#10]
 
 (10) Exchange
@@ -97,7 +97,7 @@ Condition : ((isnotnull(r_reason_desc#13) AND (r_reason_desc#13 = reason 28     
 Input [2]: [r_reason_sk#12, r_reason_desc#13]
 Arguments: [r_reason_sk#12], [r_reason_sk#12]
 
-(17) CometColumnarToRow [codegen id : 5]
+(17) ColumnarToRow [codegen id : 5]
 Input [1]: [r_reason_sk#12]
 
 (18) BroadcastExchange

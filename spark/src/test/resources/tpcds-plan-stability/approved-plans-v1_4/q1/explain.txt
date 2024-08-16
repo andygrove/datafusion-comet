@@ -9,7 +9,7 @@ TakeOrderedAndProject (43)
       :     :     :- * Filter (13)
       :     :     :  +- * HashAggregate (12)
       :     :     :     +- Exchange (11)
-      :     :     :        +- * CometColumnarToRow (10)
+      :     :     :        +- * ColumnarToRow (10)
       :     :     :           +- CometHashAggregate (9)
       :     :     :              +- CometProject (8)
       :     :     :                 +- CometBroadcastHashJoin (7)
@@ -26,7 +26,7 @@ TakeOrderedAndProject (43)
       :     :                 +- * HashAggregate (23)
       :     :                    +- * HashAggregate (22)
       :     :                       +- Exchange (21)
-      :     :                          +- * CometColumnarToRow (20)
+      :     :                          +- * ColumnarToRow (20)
       :     :                             +- CometHashAggregate (19)
       :     :                                +- CometProject (18)
       :     :                                   +- CometBroadcastHashJoin (17)
@@ -34,12 +34,12 @@ TakeOrderedAndProject (43)
       :     :                                      :  +- CometScan parquet spark_catalog.default.store_returns (14)
       :     :                                      +- ReusedExchange (16)
       :     +- BroadcastExchange (34)
-      :        +- * CometColumnarToRow (33)
+      :        +- * ColumnarToRow (33)
       :           +- CometProject (32)
       :              +- CometFilter (31)
       :                 +- CometScan parquet spark_catalog.default.store (30)
       +- BroadcastExchange (40)
-         +- * CometColumnarToRow (39)
+         +- * ColumnarToRow (39)
             +- CometFilter (38)
                +- CometScan parquet spark_catalog.default.customer (37)
 
@@ -89,7 +89,7 @@ Input [3]: [sr_customer_sk#1, sr_store_sk#2, sr_return_amt#3]
 Keys [2]: [sr_customer_sk#1, sr_store_sk#2]
 Functions [1]: [partial_sum(UnscaledValue(sr_return_amt#3))]
 
-(10) CometColumnarToRow [codegen id : 1]
+(10) ColumnarToRow [codegen id : 1]
 Input [3]: [sr_customer_sk#1, sr_store_sk#2, sum#8]
 
 (11) Exchange
@@ -136,7 +136,7 @@ Input [3]: [sr_customer_sk#1, sr_store_sk#2, sr_return_amt#3]
 Keys [2]: [sr_customer_sk#1, sr_store_sk#2]
 Functions [1]: [partial_sum(UnscaledValue(sr_return_amt#3))]
 
-(20) CometColumnarToRow [codegen id : 2]
+(20) ColumnarToRow [codegen id : 2]
 Input [3]: [sr_customer_sk#1, sr_store_sk#2, sum#14]
 
 (21) Exchange
@@ -201,7 +201,7 @@ Condition : ((isnotnull(s_state#23) AND (s_state#23 = TN)) AND isnotnull(s_store
 Input [2]: [s_store_sk#22, s_state#23]
 Arguments: [s_store_sk#22], [s_store_sk#22]
 
-(33) CometColumnarToRow [codegen id : 5]
+(33) ColumnarToRow [codegen id : 5]
 Input [1]: [s_store_sk#22]
 
 (34) BroadcastExchange
@@ -229,7 +229,7 @@ ReadSchema: struct<c_customer_sk:int,c_customer_id:string>
 Input [2]: [c_customer_sk#24, c_customer_id#25]
 Condition : isnotnull(c_customer_sk#24)
 
-(39) CometColumnarToRow [codegen id : 6]
+(39) ColumnarToRow [codegen id : 6]
 Input [2]: [c_customer_sk#24, c_customer_id#25]
 
 (40) BroadcastExchange
@@ -254,7 +254,7 @@ Arguments: 100, [c_customer_id#25 ASC NULLS FIRST], [c_customer_id#25]
 
 Subquery:1 Hosting operator id = 1 Hosting Expression = sr_returned_date_sk#4 IN dynamicpruning#5
 BroadcastExchange (48)
-+- * CometColumnarToRow (47)
++- * ColumnarToRow (47)
    +- CometProject (46)
       +- CometFilter (45)
          +- CometScan parquet spark_catalog.default.date_dim (44)
@@ -275,7 +275,7 @@ Condition : ((isnotnull(d_year#7) AND (d_year#7 = 2000)) AND isnotnull(d_date_sk
 Input [2]: [d_date_sk#6, d_year#7]
 Arguments: [d_date_sk#6], [d_date_sk#6]
 
-(47) CometColumnarToRow [codegen id : 1]
+(47) ColumnarToRow [codegen id : 1]
 Input [1]: [d_date_sk#6]
 
 (48) BroadcastExchange

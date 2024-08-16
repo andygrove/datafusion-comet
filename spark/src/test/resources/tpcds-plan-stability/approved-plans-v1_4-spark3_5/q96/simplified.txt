@@ -3,7 +3,7 @@ WholeStageCodegen (2)
     InputAdapter
       Exchange #1
         WholeStageCodegen (1)
-          CometColumnarToRow
+          ColumnarToRow
             InputAdapter
               CometHashAggregate [count]
                 CometProject

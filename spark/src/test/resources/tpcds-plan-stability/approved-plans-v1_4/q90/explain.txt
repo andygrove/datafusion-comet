@@ -3,7 +3,7 @@
 +- * BroadcastNestedLoopJoin Inner BuildRight (46)
    :- * HashAggregate (25)
    :  +- Exchange (24)
-   :     +- * CometColumnarToRow (23)
+   :     +- * ColumnarToRow (23)
    :        +- CometHashAggregate (22)
    :           +- CometProject (21)
    :              +- CometBroadcastHashJoin (20)
@@ -29,7 +29,7 @@
    +- BroadcastExchange (45)
       +- * HashAggregate (44)
          +- Exchange (43)
-            +- * CometColumnarToRow (42)
+            +- * ColumnarToRow (42)
                +- CometHashAggregate (41)
                   +- CometProject (40)
                      +- CometBroadcastHashJoin (39)
@@ -151,7 +151,7 @@ Input: []
 Keys: []
 Functions [1]: [partial_count(1)]
 
-(23) CometColumnarToRow [codegen id : 1]
+(23) ColumnarToRow [codegen id : 1]
 Input [1]: [count#11]
 
 (24) Exchange
@@ -236,7 +236,7 @@ Input: []
 Keys: []
 Functions [1]: [partial_count(1)]
 
-(42) CometColumnarToRow [codegen id : 2]
+(42) ColumnarToRow [codegen id : 2]
 Input [1]: [count#22]
 
 (43) Exchange

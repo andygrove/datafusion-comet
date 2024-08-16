@@ -6,7 +6,7 @@ TakeOrderedAndProject (40)
          +- * HashAggregate (36)
             +- * Project (35)
                +- * BroadcastHashJoin Inner BuildRight (34)
-                  :- * CometColumnarToRow (19)
+                  :- * ColumnarToRow (19)
                   :  +- CometProject (18)
                   :     +- CometBroadcastHashJoin (17)
                   :        :- CometProject (12)
@@ -28,14 +28,14 @@ TakeOrderedAndProject (40)
                   +- BroadcastExchange (33)
                      +- * Project (32)
                         +- * BroadcastHashJoin Inner BuildRight (31)
-                           :- * CometColumnarToRow (22)
+                           :- * ColumnarToRow (22)
                            :  +- CometFilter (21)
                            :     +- CometScan parquet spark_catalog.default.item (20)
                            +- BroadcastExchange (30)
                               +- * Filter (29)
                                  +- * HashAggregate (28)
                                     +- Exchange (27)
-                                       +- * CometColumnarToRow (26)
+                                       +- * ColumnarToRow (26)
                                           +- CometHashAggregate (25)
                                              +- CometFilter (24)
                                                 +- CometScan parquet spark_catalog.default.item (23)
@@ -129,7 +129,7 @@ Arguments: [ss_sold_date_sk#7], [d_date_sk#9], Inner, BuildRight
 Input [4]: [ca_state#2, ss_item_sk#5, ss_sold_date_sk#7, d_date_sk#9]
 Arguments: [ca_state#2, ss_item_sk#5], [ca_state#2, ss_item_sk#5]
 
-(19) CometColumnarToRow [codegen id : 4]
+(19) ColumnarToRow [codegen id : 4]
 Input [2]: [ca_state#2, ss_item_sk#5]
 
 (20) Scan parquet spark_catalog.default.item
@@ -143,7 +143,7 @@ ReadSchema: struct<i_item_sk:int,i_current_price:decimal(7,2),i_category:string>
 Input [3]: [i_item_sk#13, i_current_price#14, i_category#15]
 Condition : ((isnotnull(i_current_price#14) AND isnotnull(i_category#15)) AND isnotnull(i_item_sk#13))
 
-(22) CometColumnarToRow [codegen id : 3]
+(22) ColumnarToRow [codegen id : 3]
 Input [3]: [i_item_sk#13, i_current_price#14, i_category#15]
 
 (23) Scan parquet spark_catalog.default.item
@@ -162,7 +162,7 @@ Input [2]: [i_current_price#16, i_category#17]
 Keys [1]: [i_category#17]
 Functions [1]: [partial_avg(UnscaledValue(i_current_price#16))]
 
-(26) CometColumnarToRow [codegen id : 1]
+(26) ColumnarToRow [codegen id : 1]
 Input [3]: [i_category#17, sum#18, count#19]
 
 (27) Exchange
@@ -238,7 +238,7 @@ Arguments: 100, [cnt#26 ASC NULLS FIRST, ca_state#2 ASC NULLS FIRST], [state#25,
 
 Subquery:1 Hosting operator id = 8 Hosting Expression = ss_sold_date_sk#7 IN dynamicpruning#8
 BroadcastExchange (45)
-+- * CometColumnarToRow (44)
++- * ColumnarToRow (44)
    +- CometProject (43)
       +- CometFilter (42)
          +- CometScan parquet spark_catalog.default.date_dim (41)
@@ -259,7 +259,7 @@ Condition : ((isnotnull(d_month_seq#10) AND (d_month_seq#10 = Subquery scalar-su
 Input [2]: [d_date_sk#9, d_month_seq#10]
 Arguments: [d_date_sk#9], [d_date_sk#9]
 
-(44) CometColumnarToRow [codegen id : 1]
+(44) ColumnarToRow [codegen id : 1]
 Input [1]: [d_date_sk#9]
 
 (45) BroadcastExchange
@@ -269,7 +269,7 @@ Arguments: HashedRelationBroadcastMode(List(cast(input[0, int, true] as bigint))
 Subquery:2 Hosting operator id = 42 Hosting Expression = Subquery scalar-subquery#11, [id=#12]
 * HashAggregate (52)
 +- Exchange (51)
-   +- * CometColumnarToRow (50)
+   +- * ColumnarToRow (50)
       +- CometHashAggregate (49)
          +- CometProject (48)
             +- CometFilter (47)
@@ -296,7 +296,7 @@ Input [1]: [d_month_seq#27]
 Keys [1]: [d_month_seq#27]
 Functions: []
 
-(50) CometColumnarToRow [codegen id : 1]
+(50) ColumnarToRow [codegen id : 1]
 Input [1]: [d_month_seq#27]
 
 (51) Exchange

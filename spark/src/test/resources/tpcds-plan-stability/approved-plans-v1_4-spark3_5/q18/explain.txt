@@ -2,7 +2,7 @@
 TakeOrderedAndProject (41)
 +- * HashAggregate (40)
    +- Exchange (39)
-      +- * CometColumnarToRow (38)
+      +- * ColumnarToRow (38)
          +- CometHashAggregate (37)
             +- CometExpand (36)
                +- CometProject (35)
@@ -219,7 +219,7 @@ Input [12]: [cs_quantity#4, cs_list_price#5, cs_sales_price#6, cs_coupon_amt#7, 
 Keys [5]: [i_item_id#29, ca_country#30, ca_state#31, ca_county#32, spark_grouping_id#33]
 Functions [7]: [partial_avg(cast(cs_quantity#4 as decimal(12,2))), partial_avg(cast(cs_list_price#5 as decimal(12,2))), partial_avg(cast(cs_coupon_amt#7 as decimal(12,2))), partial_avg(cast(cs_sales_price#6 as decimal(12,2))), partial_avg(cast(cs_net_profit#8 as decimal(12,2))), partial_avg(cast(c_birth_year#19 as decimal(12,2))), partial_avg(cast(cd_dep_count#14 as decimal(12,2)))]
 
-(38) CometColumnarToRow [codegen id : 1]
+(38) ColumnarToRow [codegen id : 1]
 Input [19]: [i_item_id#29, ca_country#30, ca_state#31, ca_county#32, spark_grouping_id#33, sum#34, count#35, sum#36, count#37, sum#38, count#39, sum#40, count#41, sum#42, count#43, sum#44, count#45, sum#46, count#47]
 
 (39) Exchange
@@ -241,7 +241,7 @@ Arguments: 100, [ca_country#30 ASC NULLS FIRST, ca_state#31 ASC NULLS FIRST, ca_
 
 Subquery:1 Hosting operator id = 1 Hosting Expression = cs_sold_date_sk#9 IN dynamicpruning#10
 BroadcastExchange (46)
-+- * CometColumnarToRow (45)
++- * ColumnarToRow (45)
    +- CometProject (44)
       +- CometFilter (43)
          +- CometScan parquet spark_catalog.default.date_dim (42)
@@ -262,7 +262,7 @@ Condition : ((isnotnull(d_year#26) AND (d_year#26 = 1998)) AND isnotnull(d_date_
 Input [2]: [d_date_sk#25, d_year#26]
 Arguments: [d_date_sk#25], [d_date_sk#25]
 
-(45) CometColumnarToRow [codegen id : 1]
+(45) ColumnarToRow [codegen id : 1]
 Input [1]: [d_date_sk#25]
 
 (46) BroadcastExchange

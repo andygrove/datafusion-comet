@@ -8,7 +8,7 @@ TakeOrderedAndProject (43)
       :     :  +- * BroadcastHashJoin Inner BuildRight (16)
       :     :     :- * HashAggregate (11)
       :     :     :  +- Exchange (10)
-      :     :     :     +- * CometColumnarToRow (9)
+      :     :     :     +- * ColumnarToRow (9)
       :     :     :        +- CometHashAggregate (8)
       :     :     :           +- CometProject (7)
       :     :     :              +- CometBroadcastHashJoin (6)
@@ -18,11 +18,11 @@ TakeOrderedAndProject (43)
       :     :     :                    +- CometFilter (4)
       :     :     :                       +- CometScan parquet spark_catalog.default.date_dim (3)
       :     :     +- BroadcastExchange (15)
-      :     :        +- * CometColumnarToRow (14)
+      :     :        +- * ColumnarToRow (14)
       :     :           +- CometFilter (13)
       :     :              +- CometScan parquet spark_catalog.default.store (12)
       :     +- BroadcastExchange (22)
-      :        +- * CometColumnarToRow (21)
+      :        +- * ColumnarToRow (21)
       :           +- CometProject (20)
       :              +- CometFilter (19)
       :                 +- CometScan parquet spark_catalog.default.date_dim (18)
@@ -34,11 +34,11 @@ TakeOrderedAndProject (43)
                :     :- * HashAggregate (26)
                :     :  +- ReusedExchange (25)
                :     +- BroadcastExchange (30)
-               :        +- * CometColumnarToRow (29)
+               :        +- * ColumnarToRow (29)
                :           +- CometFilter (28)
                :              +- CometScan parquet spark_catalog.default.store (27)
                +- BroadcastExchange (37)
-                  +- * CometColumnarToRow (36)
+                  +- * ColumnarToRow (36)
                      +- CometProject (35)
                         +- CometFilter (34)
                            +- CometScan parquet spark_catalog.default.date_dim (33)
@@ -85,7 +85,7 @@ Input [4]: [ss_store_sk#1, ss_sales_price#2, d_week_seq#5, d_day_name#6]
 Keys [2]: [d_week_seq#5, ss_store_sk#1]
 Functions [7]: [partial_sum(UnscaledValue(CASE WHEN (d_day_name#6 = Sunday   ) THEN ss_sales_price#2 END)), partial_sum(UnscaledValue(CASE WHEN (d_day_name#6 = Monday   ) THEN ss_sales_price#2 END)), partial_sum(UnscaledValue(CASE WHEN (d_day_name#6 = Tuesday  ) THEN ss_sales_price#2 END)), partial_sum(UnscaledValue(CASE WHEN (d_day_name#6 = Wednesday) THEN ss_sales_price#2 END)), partial_sum(UnscaledValue(CASE WHEN (d_day_name#6 = Thursday ) THEN ss_sales_price#2 END)), partial_sum(UnscaledValue(CASE WHEN (d_day_name#6 = Friday   ) THEN ss_sales_price#2 END)), partial_sum(UnscaledValue(CASE WHEN (d_day_name#6 = Saturday ) THEN ss_sales_price#2 END))]
 
-(9) CometColumnarToRow [codegen id : 1]
+(9) ColumnarToRow [codegen id : 1]
 Input [9]: [d_week_seq#5, ss_store_sk#1, sum#7, sum#8, sum#9, sum#10, sum#11, sum#12, sum#13]
 
 (10) Exchange
@@ -110,7 +110,7 @@ ReadSchema: struct<s_store_sk:int,s_store_id:string,s_store_name:string>
 Input [3]: [s_store_sk#28, s_store_id#29, s_store_name#30]
 Condition : (isnotnull(s_store_sk#28) AND isnotnull(s_store_id#29))
 
-(14) CometColumnarToRow [codegen id : 2]
+(14) ColumnarToRow [codegen id : 2]
 Input [3]: [s_store_sk#28, s_store_id#29, s_store_name#30]
 
 (15) BroadcastExchange
@@ -142,7 +142,7 @@ Condition : (((isnotnull(d_month_seq#31) AND (d_month_seq#31 >= 1212)) AND (d_mo
 Input [2]: [d_month_seq#31, d_week_seq#32]
 Arguments: [d_week_seq#32], [d_week_seq#32]
 
-(21) CometColumnarToRow [codegen id : 3]
+(21) ColumnarToRow [codegen id : 3]
 Input [1]: [d_week_seq#32]
 
 (22) BroadcastExchange
@@ -180,7 +180,7 @@ ReadSchema: struct<s_store_sk:int,s_store_id:string>
 Input [2]: [s_store_sk#61, s_store_id#62]
 Condition : (isnotnull(s_store_sk#61) AND isnotnull(s_store_id#62))
 
-(29) CometColumnarToRow [codegen id : 5]
+(29) ColumnarToRow [codegen id : 5]
 Input [2]: [s_store_sk#61, s_store_id#62]
 
 (30) BroadcastExchange
@@ -212,7 +212,7 @@ Condition : (((isnotnull(d_month_seq#63) AND (d_month_seq#63 >= 1224)) AND (d_mo
 Input [2]: [d_month_seq#63, d_week_seq#64]
 Arguments: [d_week_seq#64], [d_week_seq#64]
 
-(36) CometColumnarToRow [codegen id : 6]
+(36) ColumnarToRow [codegen id : 6]
 Input [1]: [d_week_seq#64]
 
 (37) BroadcastExchange

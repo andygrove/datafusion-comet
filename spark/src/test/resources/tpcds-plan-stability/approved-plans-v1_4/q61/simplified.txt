@@ -5,7 +5,7 @@ WholeStageCodegen (4)
         InputAdapter
           Exchange #1
             WholeStageCodegen (1)
-              CometColumnarToRow
+              ColumnarToRow
                 InputAdapter
                   CometHashAggregate [sum,ss_ext_sales_price]
                     CometProject [ss_ext_sales_price]
@@ -25,7 +25,7 @@ WholeStageCodegen (4)
                                                 SubqueryBroadcast [d_date_sk] #1
                                                   BroadcastExchange #2
                                                     WholeStageCodegen (1)
-                                                      CometColumnarToRow
+                                                      ColumnarToRow
                                                         InputAdapter
                                                           CometProject [d_date_sk]
                                                             CometFilter [d_date_sk,d_year,d_moy]
@@ -60,7 +60,7 @@ WholeStageCodegen (4)
               InputAdapter
                 Exchange #10
                   WholeStageCodegen (2)
-                    CometColumnarToRow
+                    ColumnarToRow
                       InputAdapter
                         CometHashAggregate [sum,ss_ext_sales_price]
                           CometProject [ss_ext_sales_price]

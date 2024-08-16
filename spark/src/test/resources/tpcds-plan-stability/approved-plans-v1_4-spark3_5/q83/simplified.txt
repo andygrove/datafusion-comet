@@ -8,7 +8,7 @@ TakeOrderedAndProject [item_id,sr_item_qty,sr_dev,cr_item_qty,cr_dev,wr_item_qty
               InputAdapter
                 Exchange [i_item_id] #1
                   WholeStageCodegen (1)
-                    CometColumnarToRow
+                    ColumnarToRow
                       InputAdapter
                         CometHashAggregate [i_item_id,sum,sr_return_quantity]
                           CometProject [sr_return_quantity,i_item_id]
@@ -20,7 +20,7 @@ TakeOrderedAndProject [item_id,sr_item_qty,sr_dev,cr_item_qty,cr_dev,wr_item_qty
                                       SubqueryBroadcast [d_date_sk] #1
                                         BroadcastExchange #2
                                           WholeStageCodegen (1)
-                                            CometColumnarToRow
+                                            ColumnarToRow
                                               InputAdapter
                                                 CometProject [d_date_sk]
                                                   CometBroadcastHashJoin [d_date_sk,d_date,d_date]
@@ -50,7 +50,7 @@ TakeOrderedAndProject [item_id,sr_item_qty,sr_dev,cr_item_qty,cr_dev,wr_item_qty
                     InputAdapter
                       Exchange [i_item_id] #8
                         WholeStageCodegen (2)
-                          CometColumnarToRow
+                          ColumnarToRow
                             InputAdapter
                               CometHashAggregate [i_item_id,sum,cr_return_quantity]
                                 CometProject [cr_return_quantity,i_item_id]
@@ -69,7 +69,7 @@ TakeOrderedAndProject [item_id,sr_item_qty,sr_dev,cr_item_qty,cr_dev,wr_item_qty
                 InputAdapter
                   Exchange [i_item_id] #10
                     WholeStageCodegen (4)
-                      CometColumnarToRow
+                      ColumnarToRow
                         InputAdapter
                           CometHashAggregate [i_item_id,sum,wr_return_quantity]
                             CometProject [wr_return_quantity,i_item_id]

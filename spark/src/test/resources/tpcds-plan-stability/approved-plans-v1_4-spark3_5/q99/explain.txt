@@ -2,7 +2,7 @@
 TakeOrderedAndProject (28)
 +- * HashAggregate (27)
    +- Exchange (26)
-      +- * CometColumnarToRow (25)
+      +- * ColumnarToRow (25)
          +- CometHashAggregate (24)
             +- CometProject (23)
                +- CometBroadcastHashJoin (22)
@@ -145,7 +145,7 @@ Input [5]: [cs_ship_date_sk#1, cs_sold_date_sk#5, sm_type#9, cc_name#11, _groupi
 Keys [3]: [_groupingexpression#14, sm_type#9, cc_name#11]
 Functions [5]: [partial_sum(CASE WHEN ((cs_ship_date_sk#1 - cs_sold_date_sk#5) <= 30) THEN 1 ELSE 0 END), partial_sum(CASE WHEN (((cs_ship_date_sk#1 - cs_sold_date_sk#5) > 30) AND ((cs_ship_date_sk#1 - cs_sold_date_sk#5) <= 60)) THEN 1 ELSE 0 END), partial_sum(CASE WHEN (((cs_ship_date_sk#1 - cs_sold_date_sk#5) > 60) AND ((cs_ship_date_sk#1 - cs_sold_date_sk#5) <= 90)) THEN 1 ELSE 0 END), partial_sum(CASE WHEN (((cs_ship_date_sk#1 - cs_sold_date_sk#5) > 90) AND ((cs_ship_date_sk#1 - cs_sold_date_sk#5) <= 120)) THEN 1 ELSE 0 END), partial_sum(CASE WHEN ((cs_ship_date_sk#1 - cs_sold_date_sk#5) > 120) THEN 1 ELSE 0 END)]
 
-(25) CometColumnarToRow [codegen id : 1]
+(25) ColumnarToRow [codegen id : 1]
 Input [8]: [_groupingexpression#14, sm_type#9, cc_name#11, sum#15, sum#16, sum#17, sum#18, sum#19]
 
 (26) Exchange

@@ -4,7 +4,7 @@ TakeOrderedAndProject [sum(ss_ext_sales_price),d_year,i_category_id,i_category]
       InputAdapter
         Exchange [d_year,i_category_id,i_category] #1
           WholeStageCodegen (1)
-            CometColumnarToRow
+            ColumnarToRow
               InputAdapter
                 CometHashAggregate [d_year,i_category_id,i_category,sum,ss_ext_sales_price]
                   CometProject [d_year,ss_ext_sales_price,i_category_id,i_category]

@@ -15,7 +15,7 @@ WholeStageCodegen (13)
                             InputAdapter
                               Exchange [ca_county,d_qoy,d_year] #2
                                 WholeStageCodegen (1)
-                                  CometColumnarToRow
+                                  ColumnarToRow
                                     InputAdapter
                                       CometHashAggregate [ca_county,d_qoy,d_year,sum,ss_ext_sales_price]
                                         CometProject [ss_ext_sales_price,d_year,d_qoy,ca_county]
@@ -27,7 +27,7 @@ WholeStageCodegen (13)
                                                     SubqueryBroadcast [d_date_sk] #1
                                                       BroadcastExchange #3
                                                         WholeStageCodegen (1)
-                                                          CometColumnarToRow
+                                                          ColumnarToRow
                                                             InputAdapter
                                                               CometFilter [d_date_sk,d_year,d_qoy]
                                                                 CometScan parquet spark_catalog.default.date_dim [d_date_sk,d_year,d_qoy]
@@ -44,7 +44,7 @@ WholeStageCodegen (13)
                                   InputAdapter
                                     Exchange [ca_county,d_qoy,d_year] #7
                                       WholeStageCodegen (2)
-                                        CometColumnarToRow
+                                        ColumnarToRow
                                           InputAdapter
                                             CometHashAggregate [ca_county,d_qoy,d_year,sum,ss_ext_sales_price]
                                               CometProject [ss_ext_sales_price,d_year,d_qoy,ca_county]
@@ -56,7 +56,7 @@ WholeStageCodegen (13)
                                                           SubqueryBroadcast [d_date_sk] #2
                                                             BroadcastExchange #8
                                                               WholeStageCodegen (1)
-                                                                CometColumnarToRow
+                                                                ColumnarToRow
                                                                   InputAdapter
                                                                     CometFilter [d_date_sk,d_year,d_qoy]
                                                                       CometScan parquet spark_catalog.default.date_dim [d_date_sk,d_year,d_qoy]
@@ -71,7 +71,7 @@ WholeStageCodegen (13)
                                 InputAdapter
                                   Exchange [ca_county,d_qoy,d_year] #11
                                     WholeStageCodegen (4)
-                                      CometColumnarToRow
+                                      ColumnarToRow
                                         InputAdapter
                                           CometHashAggregate [ca_county,d_qoy,d_year,sum,ss_ext_sales_price]
                                             CometProject [ss_ext_sales_price,d_year,d_qoy,ca_county]
@@ -83,7 +83,7 @@ WholeStageCodegen (13)
                                                         SubqueryBroadcast [d_date_sk] #3
                                                           BroadcastExchange #12
                                                             WholeStageCodegen (1)
-                                                              CometColumnarToRow
+                                                              ColumnarToRow
                                                                 InputAdapter
                                                                   CometFilter [d_date_sk,d_year,d_qoy]
                                                                     CometScan parquet spark_catalog.default.date_dim [d_date_sk,d_year,d_qoy]
@@ -98,7 +98,7 @@ WholeStageCodegen (13)
                             InputAdapter
                               Exchange [ca_county,d_qoy,d_year] #15
                                 WholeStageCodegen (6)
-                                  CometColumnarToRow
+                                  ColumnarToRow
                                     InputAdapter
                                       CometHashAggregate [ca_county,d_qoy,d_year,sum,ws_ext_sales_price]
                                         CometProject [ws_ext_sales_price,d_year,d_qoy,ca_county]
@@ -117,7 +117,7 @@ WholeStageCodegen (13)
                           InputAdapter
                             Exchange [ca_county,d_qoy,d_year] #17
                               WholeStageCodegen (8)
-                                CometColumnarToRow
+                                ColumnarToRow
                                   InputAdapter
                                     CometHashAggregate [ca_county,d_qoy,d_year,sum,ws_ext_sales_price]
                                       CometProject [ws_ext_sales_price,d_year,d_qoy,ca_county]
@@ -136,7 +136,7 @@ WholeStageCodegen (13)
                       InputAdapter
                         Exchange [ca_county,d_qoy,d_year] #19
                           WholeStageCodegen (10)
-                            CometColumnarToRow
+                            ColumnarToRow
                               InputAdapter
                                 CometHashAggregate [ca_county,d_qoy,d_year,sum,ws_ext_sales_price]
                                   CometProject [ws_ext_sales_price,d_year,d_qoy,ca_county]

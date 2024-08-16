@@ -9,7 +9,7 @@ TakeOrderedAndProject (86)
                :  +- * BroadcastHashJoin LeftOuter BuildRight (31)
                :     :- * HashAggregate (17)
                :     :  +- Exchange (16)
-               :     :     +- * CometColumnarToRow (15)
+               :     :     +- * ColumnarToRow (15)
                :     :        +- CometHashAggregate (14)
                :     :           +- CometProject (13)
                :     :              +- CometBroadcastHashJoin (12)
@@ -27,7 +27,7 @@ TakeOrderedAndProject (86)
                :     +- BroadcastExchange (30)
                :        +- * HashAggregate (29)
                :           +- Exchange (28)
-               :              +- * CometColumnarToRow (27)
+               :              +- * ColumnarToRow (27)
                :                 +- CometHashAggregate (26)
                :                    +- CometProject (25)
                :                       +- CometBroadcastHashJoin (24)
@@ -42,7 +42,7 @@ TakeOrderedAndProject (86)
                :     :- BroadcastExchange (41)
                :     :  +- * HashAggregate (40)
                :     :     +- Exchange (39)
-               :     :        +- * CometColumnarToRow (38)
+               :     :        +- * ColumnarToRow (38)
                :     :           +- CometHashAggregate (37)
                :     :              +- CometProject (36)
                :     :                 +- CometBroadcastHashJoin (35)
@@ -50,7 +50,7 @@ TakeOrderedAndProject (86)
                :     :                    +- ReusedExchange (34)
                :     +- * HashAggregate (49)
                :        +- Exchange (48)
-               :           +- * CometColumnarToRow (47)
+               :           +- * ColumnarToRow (47)
                :              +- CometHashAggregate (46)
                :                 +- CometProject (45)
                :                    +- CometBroadcastHashJoin (44)
@@ -60,7 +60,7 @@ TakeOrderedAndProject (86)
                   +- * BroadcastHashJoin LeftOuter BuildRight (79)
                      :- * HashAggregate (65)
                      :  +- Exchange (64)
-                     :     +- * CometColumnarToRow (63)
+                     :     +- * ColumnarToRow (63)
                      :        +- CometHashAggregate (62)
                      :           +- CometProject (61)
                      :              +- CometBroadcastHashJoin (60)
@@ -75,7 +75,7 @@ TakeOrderedAndProject (86)
                      +- BroadcastExchange (78)
                         +- * HashAggregate (77)
                            +- Exchange (76)
-                              +- * CometColumnarToRow (75)
+                              +- * ColumnarToRow (75)
                                  +- CometHashAggregate (74)
                                     +- CometProject (73)
                                        +- CometBroadcastHashJoin (72)
@@ -156,7 +156,7 @@ Input [3]: [ss_ext_sales_price#2, ss_net_profit#3, s_store_sk#8]
 Keys [1]: [s_store_sk#8]
 Functions [2]: [partial_sum(UnscaledValue(ss_ext_sales_price#2)), partial_sum(UnscaledValue(ss_net_profit#3))]
 
-(15) CometColumnarToRow [codegen id : 1]
+(15) ColumnarToRow [codegen id : 1]
 Input [3]: [s_store_sk#8, sum#9, sum#10]
 
 (16) Exchange
@@ -211,7 +211,7 @@ Input [3]: [sr_return_amt#16, sr_net_loss#17, s_store_sk#21]
 Keys [1]: [s_store_sk#21]
 Functions [2]: [partial_sum(UnscaledValue(sr_return_amt#16)), partial_sum(UnscaledValue(sr_net_loss#17))]
 
-(27) CometColumnarToRow [codegen id : 2]
+(27) ColumnarToRow [codegen id : 2]
 Input [3]: [s_store_sk#21, sum#22, sum#23]
 
 (28) Exchange
@@ -263,7 +263,7 @@ Input [3]: [cs_call_center_sk#32, cs_ext_sales_price#33, cs_net_profit#34]
 Keys [1]: [cs_call_center_sk#32]
 Functions [2]: [partial_sum(UnscaledValue(cs_ext_sales_price#33)), partial_sum(UnscaledValue(cs_net_profit#34))]
 
-(38) CometColumnarToRow [codegen id : 5]
+(38) ColumnarToRow [codegen id : 5]
 Input [3]: [cs_call_center_sk#32, sum#38, sum#39]
 
 (39) Exchange
@@ -305,7 +305,7 @@ Input [2]: [cr_return_amount#44, cr_net_loss#45]
 Keys: []
 Functions [2]: [partial_sum(UnscaledValue(cr_return_amount#44)), partial_sum(UnscaledValue(cr_net_loss#45))]
 
-(47) CometColumnarToRow [codegen id : 7]
+(47) ColumnarToRow [codegen id : 7]
 Input [2]: [sum#49, sum#50]
 
 (48) Exchange
@@ -380,7 +380,7 @@ Input [3]: [ws_ext_sales_price#59, ws_net_profit#60, wp_web_page_sk#64]
 Keys [1]: [wp_web_page_sk#64]
 Functions [2]: [partial_sum(UnscaledValue(ws_ext_sales_price#59)), partial_sum(UnscaledValue(ws_net_profit#60))]
 
-(63) CometColumnarToRow [codegen id : 9]
+(63) ColumnarToRow [codegen id : 9]
 Input [3]: [wp_web_page_sk#64, sum#65, sum#66]
 
 (64) Exchange
@@ -435,7 +435,7 @@ Input [3]: [wr_return_amt#72, wr_net_loss#73, wp_web_page_sk#77]
 Keys [1]: [wp_web_page_sk#77]
 Functions [2]: [partial_sum(UnscaledValue(wr_return_amt#72)), partial_sum(UnscaledValue(wr_net_loss#73))]
 
-(75) CometColumnarToRow [codegen id : 10]
+(75) ColumnarToRow [codegen id : 10]
 Input [3]: [wp_web_page_sk#77, sum#78, sum#79]
 
 (76) Exchange
@@ -495,7 +495,7 @@ Arguments: 100, [channel#88 ASC NULLS FIRST, id#89 ASC NULLS FIRST], [channel#88
 
 Subquery:1 Hosting operator id = 1 Hosting Expression = ss_sold_date_sk#4 IN dynamicpruning#5
 BroadcastExchange (91)
-+- * CometColumnarToRow (90)
++- * ColumnarToRow (90)
    +- CometProject (89)
       +- CometFilter (88)
          +- CometScan parquet spark_catalog.default.date_dim (87)
@@ -516,7 +516,7 @@ Condition : (((isnotnull(d_date#7) AND (d_date#7 >= 2000-08-03)) AND (d_date#7 <
 Input [2]: [d_date_sk#6, d_date#7]
 Arguments: [d_date_sk#6], [d_date_sk#6]
 
-(90) CometColumnarToRow [codegen id : 1]
+(90) ColumnarToRow [codegen id : 1]
 Input [1]: [d_date_sk#6]
 
 (91) BroadcastExchange

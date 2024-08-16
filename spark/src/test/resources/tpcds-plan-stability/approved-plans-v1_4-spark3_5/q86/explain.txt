@@ -6,7 +6,7 @@ TakeOrderedAndProject (23)
          +- Exchange (19)
             +- * HashAggregate (18)
                +- Exchange (17)
-                  +- * CometColumnarToRow (16)
+                  +- * ColumnarToRow (16)
                      +- CometHashAggregate (15)
                         +- CometExpand (14)
                            +- CometProject (13)
@@ -97,7 +97,7 @@ Input [4]: [ws_net_paid#2, i_category#10, i_class#11, spark_grouping_id#12]
 Keys [3]: [i_category#10, i_class#11, spark_grouping_id#12]
 Functions [1]: [partial_sum(UnscaledValue(ws_net_paid#2))]
 
-(16) CometColumnarToRow [codegen id : 1]
+(16) ColumnarToRow [codegen id : 1]
 Input [4]: [i_category#10, i_class#11, spark_grouping_id#12, sum#13]
 
 (17) Exchange
@@ -135,7 +135,7 @@ Arguments: 100, [lochierarchy#16 DESC NULLS LAST, CASE WHEN (lochierarchy#16 = 0
 
 Subquery:1 Hosting operator id = 1 Hosting Expression = ws_sold_date_sk#3 IN dynamicpruning#4
 BroadcastExchange (28)
-+- * CometColumnarToRow (27)
++- * ColumnarToRow (27)
    +- CometProject (26)
       +- CometFilter (25)
          +- CometScan parquet spark_catalog.default.date_dim (24)
@@ -156,7 +156,7 @@ Condition : (((isnotnull(d_month_seq#6) AND (d_month_seq#6 >= 1200)) AND (d_mont
 Input [2]: [d_date_sk#5, d_month_seq#6]
 Arguments: [d_date_sk#5], [d_date_sk#5]
 
-(27) CometColumnarToRow [codegen id : 1]
+(27) ColumnarToRow [codegen id : 1]
 Input [1]: [d_date_sk#5]
 
 (28) BroadcastExchange

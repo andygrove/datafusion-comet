@@ -10,7 +10,7 @@ WholeStageCodegen (5)
                   InputAdapter
                     Exchange [w_warehouse_name,w_warehouse_sk,i_item_sk,d_moy] #2
                       WholeStageCodegen (1)
-                        CometColumnarToRow
+                        ColumnarToRow
                           InputAdapter
                             CometHashAggregate [w_warehouse_name,w_warehouse_sk,i_item_sk,d_moy,n,avg,m2,sum,count,inv_quantity_on_hand]
                               CometProject [inv_quantity_on_hand,i_item_sk,w_warehouse_sk,w_warehouse_name,d_moy]
@@ -24,7 +24,7 @@ WholeStageCodegen (5)
                                               SubqueryBroadcast [d_date_sk] #1
                                                 BroadcastExchange #3
                                                   WholeStageCodegen (1)
-                                                    CometColumnarToRow
+                                                    ColumnarToRow
                                                       InputAdapter
                                                         CometProject [d_date_sk,d_moy]
                                                           CometFilter [d_date_sk,d_year,d_moy]
@@ -48,7 +48,7 @@ WholeStageCodegen (5)
                         InputAdapter
                           Exchange [w_warehouse_name,w_warehouse_sk,i_item_sk,d_moy] #8
                             WholeStageCodegen (2)
-                              CometColumnarToRow
+                              ColumnarToRow
                                 InputAdapter
                                   CometHashAggregate [w_warehouse_name,w_warehouse_sk,i_item_sk,d_moy,n,avg,m2,sum,count,inv_quantity_on_hand]
                                     CometProject [inv_quantity_on_hand,i_item_sk,w_warehouse_sk,w_warehouse_name,d_moy]
@@ -62,7 +62,7 @@ WholeStageCodegen (5)
                                                     SubqueryBroadcast [d_date_sk] #2
                                                       BroadcastExchange #9
                                                         WholeStageCodegen (1)
-                                                          CometColumnarToRow
+                                                          ColumnarToRow
                                                             InputAdapter
                                                               CometProject [d_date_sk,d_moy]
                                                                 CometFilter [d_date_sk,d_year,d_moy]

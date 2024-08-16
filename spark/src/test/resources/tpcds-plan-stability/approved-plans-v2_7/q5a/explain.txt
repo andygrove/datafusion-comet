@@ -10,7 +10,7 @@ TakeOrderedAndProject (83)
             :        +- Union (65)
             :           :- * HashAggregate (22)
             :           :  +- Exchange (21)
-            :           :     +- * CometColumnarToRow (20)
+            :           :     +- * ColumnarToRow (20)
             :           :        +- CometHashAggregate (19)
             :           :           +- CometProject (18)
             :           :              +- CometBroadcastHashJoin (17)
@@ -32,7 +32,7 @@ TakeOrderedAndProject (83)
             :           :                       +- CometScan parquet spark_catalog.default.store (14)
             :           :- * HashAggregate (41)
             :           :  +- Exchange (40)
-            :           :     +- * CometColumnarToRow (39)
+            :           :     +- * ColumnarToRow (39)
             :           :        +- CometHashAggregate (38)
             :           :           +- CometProject (37)
             :           :              +- CometBroadcastHashJoin (36)
@@ -51,7 +51,7 @@ TakeOrderedAndProject (83)
             :           :                       +- CometScan parquet spark_catalog.default.catalog_page (33)
             :           +- * HashAggregate (64)
             :              +- Exchange (63)
-            :                 +- * CometColumnarToRow (62)
+            :                 +- * ColumnarToRow (62)
             :                    +- CometHashAggregate (61)
             :                       +- CometProject (60)
             :                          +- CometBroadcastHashJoin (59)
@@ -177,7 +177,7 @@ Input [5]: [sales_price#8, profit#9, return_amt#10, net_loss#11, s_store_id#25]
 Keys [1]: [s_store_id#25]
 Functions [4]: [partial_sum(UnscaledValue(sales_price#8)), partial_sum(UnscaledValue(return_amt#10)), partial_sum(UnscaledValue(profit#9)), partial_sum(UnscaledValue(net_loss#11))]
 
-(20) CometColumnarToRow [codegen id : 1]
+(20) ColumnarToRow [codegen id : 1]
 Input [5]: [s_store_id#25, sum#26, sum#27, sum#28, sum#29]
 
 (21) Exchange
@@ -268,7 +268,7 @@ Input [5]: [sales_price#46, profit#47, return_amt#48, net_loss#49, cp_catalog_pa
 Keys [1]: [cp_catalog_page_id#62]
 Functions [4]: [partial_sum(UnscaledValue(sales_price#46)), partial_sum(UnscaledValue(return_amt#48)), partial_sum(UnscaledValue(profit#47)), partial_sum(UnscaledValue(net_loss#49))]
 
-(39) CometColumnarToRow [codegen id : 3]
+(39) ColumnarToRow [codegen id : 3]
 Input [5]: [cp_catalog_page_id#62, sum#63, sum#64, sum#65, sum#66]
 
 (40) Exchange
@@ -378,7 +378,7 @@ Input [5]: [sales_price#83, profit#84, return_amt#85, net_loss#86, web_site_id#1
 Keys [1]: [web_site_id#104]
 Functions [4]: [partial_sum(UnscaledValue(sales_price#83)), partial_sum(UnscaledValue(return_amt#85)), partial_sum(UnscaledValue(profit#84)), partial_sum(UnscaledValue(net_loss#86))]
 
-(62) CometColumnarToRow [codegen id : 5]
+(62) ColumnarToRow [codegen id : 5]
 Input [5]: [web_site_id#104, sum#105, sum#106, sum#107, sum#108]
 
 (63) Exchange
@@ -496,7 +496,7 @@ Arguments: 100, [channel#34 ASC NULLS FIRST, id#35 ASC NULLS FIRST], [channel#34
 
 Subquery:1 Hosting operator id = 1 Hosting Expression = ss_sold_date_sk#4 IN dynamicpruning#5
 BroadcastExchange (88)
-+- * CometColumnarToRow (87)
++- * ColumnarToRow (87)
    +- CometProject (86)
       +- CometFilter (85)
          +- CometScan parquet spark_catalog.default.date_dim (84)
@@ -517,7 +517,7 @@ Condition : (((isnotnull(d_date#23) AND (d_date#23 >= 1998-08-04)) AND (d_date#2
 Input [2]: [d_date_sk#22, d_date#23]
 Arguments: [d_date_sk#22], [d_date_sk#22]
 
-(87) CometColumnarToRow [codegen id : 1]
+(87) ColumnarToRow [codegen id : 1]
 Input [1]: [d_date_sk#22]
 
 (88) BroadcastExchange

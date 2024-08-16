@@ -6,7 +6,7 @@
          +- * BroadcastHashJoin Inner BuildRight (27)
             :- * Project (25)
             :  +- * BroadcastHashJoin Inner BuildRight (24)
-            :     :- * CometColumnarToRow (9)
+            :     :- * ColumnarToRow (9)
             :     :  +- CometProject (8)
             :     :     +- CometBroadcastHashJoin (7)
             :     :        :- CometFilter (2)
@@ -19,7 +19,7 @@
             :        +- * Filter (22)
             :           +- * HashAggregate (21)
             :              +- Exchange (20)
-            :                 +- * CometColumnarToRow (19)
+            :                 +- * ColumnarToRow (19)
             :                    +- CometHashAggregate (18)
             :                       +- CometProject (17)
             :                          +- CometBroadcastHashJoin (16)
@@ -72,7 +72,7 @@ Arguments: [ws_item_sk#1], [i_item_sk#5], Inner, BuildRight
 Input [4]: [ws_item_sk#1, ws_ext_discount_amt#2, ws_sold_date_sk#3, i_item_sk#5]
 Arguments: [ws_ext_discount_amt#2, ws_sold_date_sk#3, i_item_sk#5], [ws_ext_discount_amt#2, ws_sold_date_sk#3, i_item_sk#5]
 
-(9) CometColumnarToRow [codegen id : 4]
+(9) ColumnarToRow [codegen id : 4]
 Input [3]: [ws_ext_discount_amt#2, ws_sold_date_sk#3, i_item_sk#5]
 
 (10) Scan parquet spark_catalog.default.web_sales
@@ -120,7 +120,7 @@ Input [2]: [ws_item_sk#7, ws_ext_discount_amt#8]
 Keys [1]: [ws_item_sk#7]
 Functions [1]: [partial_avg(UnscaledValue(ws_ext_discount_amt#8))]
 
-(19) CometColumnarToRow [codegen id : 1]
+(19) ColumnarToRow [codegen id : 1]
 Input [3]: [ws_item_sk#7, sum#13, count#14]
 
 (20) Exchange
@@ -187,7 +187,7 @@ Results [1]: [MakeDecimal(sum(UnscaledValue(ws_ext_discount_amt#2))#20,17,2) AS 
 
 Subquery:1 Hosting operator id = 1 Hosting Expression = ws_sold_date_sk#3 IN dynamicpruning#4
 BroadcastExchange (36)
-+- * CometColumnarToRow (35)
++- * ColumnarToRow (35)
    +- CometProject (34)
       +- CometFilter (33)
          +- CometScan parquet spark_catalog.default.date_dim (32)
@@ -208,7 +208,7 @@ Condition : (((isnotnull(d_date#22) AND (d_date#22 >= 2000-01-27)) AND (d_date#2
 Input [2]: [d_date_sk#17, d_date#22]
 Arguments: [d_date_sk#17], [d_date_sk#17]
 
-(35) CometColumnarToRow [codegen id : 1]
+(35) ColumnarToRow [codegen id : 1]
 Input [1]: [d_date_sk#17]
 
 (36) BroadcastExchange

@@ -7,7 +7,7 @@
       :     +- * HashAggregate (22)
       :        +- Exchange (21)
       :           +- * HashAggregate (20)
-      :              +- * CometColumnarToRow (19)
+      :              +- * ColumnarToRow (19)
       :                 +- CometProject (18)
       :                    +- CometBroadcastHashJoin (17)
       :                       :- CometProject (12)
@@ -32,7 +32,7 @@
                +- * HashAggregate (42)
                   +- Exchange (41)
                      +- * HashAggregate (40)
-                        +- * CometColumnarToRow (39)
+                        +- * ColumnarToRow (39)
                            +- CometProject (38)
                               +- CometBroadcastHashJoin (37)
                                  :- CometProject (32)
@@ -137,7 +137,7 @@ Arguments: [inv_date_sk#4], [d_date_sk#9], Inner, BuildRight
 Input [7]: [inv_quantity_on_hand#3, inv_date_sk#4, i_item_sk#6, w_warehouse_sk#7, w_warehouse_name#8, d_date_sk#9, d_moy#11]
 Arguments: [inv_quantity_on_hand#3, i_item_sk#6, w_warehouse_sk#7, w_warehouse_name#8, d_moy#11], [inv_quantity_on_hand#3, i_item_sk#6, w_warehouse_sk#7, w_warehouse_name#8, d_moy#11]
 
-(19) CometColumnarToRow [codegen id : 1]
+(19) ColumnarToRow [codegen id : 1]
 Input [5]: [inv_quantity_on_hand#3, i_item_sk#6, w_warehouse_sk#7, w_warehouse_name#8, d_moy#11]
 
 (20) HashAggregate [codegen id : 1]
@@ -230,7 +230,7 @@ Arguments: [inv_date_sk#30], [d_date_sk#35], Inner, BuildRight
 Input [7]: [inv_quantity_on_hand#29, inv_date_sk#30, i_item_sk#32, w_warehouse_sk#33, w_warehouse_name#34, d_date_sk#35, d_moy#37]
 Arguments: [inv_quantity_on_hand#29, i_item_sk#32, w_warehouse_sk#33, w_warehouse_name#34, d_moy#37], [inv_quantity_on_hand#29, i_item_sk#32, w_warehouse_sk#33, w_warehouse_name#34, d_moy#37]
 
-(39) CometColumnarToRow [codegen id : 2]
+(39) ColumnarToRow [codegen id : 2]
 Input [5]: [inv_quantity_on_hand#29, i_item_sk#32, w_warehouse_sk#33, w_warehouse_name#34, d_moy#37]
 
 (40) HashAggregate [codegen id : 2]
@@ -281,7 +281,7 @@ Arguments: [w_warehouse_sk#7 ASC NULLS FIRST, i_item_sk#6 ASC NULLS FIRST, d_moy
 
 Subquery:1 Hosting operator id = 1 Hosting Expression = inv_date_sk#4 IN dynamicpruning#5
 BroadcastExchange (53)
-+- * CometColumnarToRow (52)
++- * ColumnarToRow (52)
    +- CometProject (51)
       +- CometFilter (50)
          +- CometScan parquet spark_catalog.default.date_dim (49)
@@ -302,7 +302,7 @@ Condition : ((((isnotnull(d_year#10) AND isnotnull(d_moy#11)) AND (d_year#10 = 2
 Input [3]: [d_date_sk#9, d_year#10, d_moy#11]
 Arguments: [d_date_sk#9, d_moy#11], [d_date_sk#9, d_moy#11]
 
-(52) CometColumnarToRow [codegen id : 1]
+(52) ColumnarToRow [codegen id : 1]
 Input [2]: [d_date_sk#9, d_moy#11]
 
 (53) BroadcastExchange
@@ -311,7 +311,7 @@ Arguments: HashedRelationBroadcastMode(List(cast(input[0, int, true] as bigint))
 
 Subquery:2 Hosting operator id = 25 Hosting Expression = inv_date_sk#30 IN dynamicpruning#31
 BroadcastExchange (58)
-+- * CometColumnarToRow (57)
++- * ColumnarToRow (57)
    +- CometProject (56)
       +- CometFilter (55)
          +- CometScan parquet spark_catalog.default.date_dim (54)
@@ -332,7 +332,7 @@ Condition : ((((isnotnull(d_year#36) AND isnotnull(d_moy#37)) AND (d_year#36 = 2
 Input [3]: [d_date_sk#35, d_year#36, d_moy#37]
 Arguments: [d_date_sk#35, d_moy#37], [d_date_sk#35, d_moy#37]
 
-(57) CometColumnarToRow [codegen id : 1]
+(57) ColumnarToRow [codegen id : 1]
 Input [2]: [d_date_sk#35, d_moy#37]
 
 (58) BroadcastExchange

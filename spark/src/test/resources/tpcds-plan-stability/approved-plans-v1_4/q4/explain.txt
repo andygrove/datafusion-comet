@@ -12,7 +12,7 @@ TakeOrderedAndProject (106)
       :     :     :     :  :- * Filter (17)
       :     :     :     :  :  +- * HashAggregate (16)
       :     :     :     :  :     +- Exchange (15)
-      :     :     :     :  :        +- * CometColumnarToRow (14)
+      :     :     :     :  :        +- * ColumnarToRow (14)
       :     :     :     :  :           +- CometHashAggregate (13)
       :     :     :     :  :              +- CometProject (12)
       :     :     :     :  :                 +- CometBroadcastHashJoin (11)
@@ -29,7 +29,7 @@ TakeOrderedAndProject (106)
       :     :     :     :  +- BroadcastExchange (34)
       :     :     :     :     +- * HashAggregate (33)
       :     :     :     :        +- Exchange (32)
-      :     :     :     :           +- * CometColumnarToRow (31)
+      :     :     :     :           +- * ColumnarToRow (31)
       :     :     :     :              +- CometHashAggregate (30)
       :     :     :     :                 +- CometProject (29)
       :     :     :     :                    +- CometBroadcastHashJoin (28)
@@ -47,7 +47,7 @@ TakeOrderedAndProject (106)
       :     :     :        +- * Filter (50)
       :     :     :           +- * HashAggregate (49)
       :     :     :              +- Exchange (48)
-      :     :     :                 +- * CometColumnarToRow (47)
+      :     :     :                 +- * ColumnarToRow (47)
       :     :     :                    +- CometHashAggregate (46)
       :     :     :                       +- CometProject (45)
       :     :     :                          +- CometBroadcastHashJoin (44)
@@ -62,7 +62,7 @@ TakeOrderedAndProject (106)
       :     :     +- BroadcastExchange (68)
       :     :        +- * HashAggregate (67)
       :     :           +- Exchange (66)
-      :     :              +- * CometColumnarToRow (65)
+      :     :              +- * ColumnarToRow (65)
       :     :                 +- CometHashAggregate (64)
       :     :                    +- CometProject (63)
       :     :                       +- CometBroadcastHashJoin (62)
@@ -78,7 +78,7 @@ TakeOrderedAndProject (106)
       :        +- * Filter (85)
       :           +- * HashAggregate (84)
       :              +- Exchange (83)
-      :                 +- * CometColumnarToRow (82)
+      :                 +- * ColumnarToRow (82)
       :                    +- CometHashAggregate (81)
       :                       +- CometProject (80)
       :                          +- CometBroadcastHashJoin (79)
@@ -93,7 +93,7 @@ TakeOrderedAndProject (106)
       +- BroadcastExchange (103)
          +- * HashAggregate (102)
             +- Exchange (101)
-               +- * CometColumnarToRow (100)
+               +- * ColumnarToRow (100)
                   +- CometHashAggregate (99)
                      +- CometProject (98)
                         +- CometBroadcastHashJoin (97)
@@ -172,7 +172,7 @@ Input [12]: [c_customer_id#2, c_first_name#3, c_last_name#4, c_preferred_cust_fl
 Keys [8]: [c_customer_id#2, c_first_name#3, c_last_name#4, c_preferred_cust_flag#5, c_birth_country#6, c_login#7, c_email_address#8, d_year#17]
 Functions [1]: [partial_sum(((((ss_ext_list_price#13 - ss_ext_wholesale_cost#12) - ss_ext_discount_amt#10) + ss_ext_sales_price#11) / 2))]
 
-(14) CometColumnarToRow [codegen id : 1]
+(14) ColumnarToRow [codegen id : 1]
 Input [10]: [c_customer_id#2, c_first_name#3, c_last_name#4, c_preferred_cust_flag#5, c_birth_country#6, c_login#7, c_email_address#8, d_year#17, sum#18, isEmpty#19]
 
 (15) Exchange
@@ -255,7 +255,7 @@ Input [12]: [c_customer_id#24, c_first_name#25, c_last_name#26, c_preferred_cust
 Keys [8]: [c_customer_id#24, c_first_name#25, c_last_name#26, c_preferred_cust_flag#27, c_birth_country#28, c_login#29, c_email_address#30, d_year#39]
 Functions [1]: [partial_sum(((((ss_ext_list_price#35 - ss_ext_wholesale_cost#34) - ss_ext_discount_amt#32) + ss_ext_sales_price#33) / 2))]
 
-(31) CometColumnarToRow [codegen id : 2]
+(31) ColumnarToRow [codegen id : 2]
 Input [10]: [c_customer_id#24, c_first_name#25, c_last_name#26, c_preferred_cust_flag#27, c_birth_country#28, c_login#29, c_email_address#30, d_year#39, sum#40, isEmpty#41]
 
 (32) Exchange
@@ -332,7 +332,7 @@ Input [12]: [c_customer_id#51, c_first_name#52, c_last_name#53, c_preferred_cust
 Keys [8]: [c_customer_id#51, c_first_name#52, c_last_name#53, c_preferred_cust_flag#54, c_birth_country#55, c_login#56, c_email_address#57, d_year#66]
 Functions [1]: [partial_sum(((((cs_ext_list_price#62 - cs_ext_wholesale_cost#61) - cs_ext_discount_amt#59) + cs_ext_sales_price#60) / 2))]
 
-(47) CometColumnarToRow [codegen id : 4]
+(47) ColumnarToRow [codegen id : 4]
 Input [10]: [c_customer_id#51, c_first_name#52, c_last_name#53, c_preferred_cust_flag#54, c_birth_country#55, c_login#56, c_email_address#57, d_year#66, sum#67, isEmpty#68]
 
 (48) Exchange
@@ -417,7 +417,7 @@ Input [12]: [c_customer_id#73, c_first_name#74, c_last_name#75, c_preferred_cust
 Keys [8]: [c_customer_id#73, c_first_name#74, c_last_name#75, c_preferred_cust_flag#76, c_birth_country#77, c_login#78, c_email_address#79, d_year#88]
 Functions [1]: [partial_sum(((((cs_ext_list_price#84 - cs_ext_wholesale_cost#83) - cs_ext_discount_amt#81) + cs_ext_sales_price#82) / 2))]
 
-(65) CometColumnarToRow [codegen id : 6]
+(65) ColumnarToRow [codegen id : 6]
 Input [10]: [c_customer_id#73, c_first_name#74, c_last_name#75, c_preferred_cust_flag#76, c_birth_country#77, c_login#78, c_email_address#79, d_year#88, sum#89, isEmpty#90]
 
 (66) Exchange
@@ -498,7 +498,7 @@ Input [12]: [c_customer_id#94, c_first_name#95, c_last_name#96, c_preferred_cust
 Keys [8]: [c_customer_id#94, c_first_name#95, c_last_name#96, c_preferred_cust_flag#97, c_birth_country#98, c_login#99, c_email_address#100, d_year#109]
 Functions [1]: [partial_sum(((((ws_ext_list_price#105 - ws_ext_wholesale_cost#104) - ws_ext_discount_amt#102) + ws_ext_sales_price#103) / 2))]
 
-(82) CometColumnarToRow [codegen id : 8]
+(82) ColumnarToRow [codegen id : 8]
 Input [10]: [c_customer_id#94, c_first_name#95, c_last_name#96, c_preferred_cust_flag#97, c_birth_country#98, c_login#99, c_email_address#100, d_year#109, sum#110, isEmpty#111]
 
 (83) Exchange
@@ -583,7 +583,7 @@ Input [12]: [c_customer_id#116, c_first_name#117, c_last_name#118, c_preferred_c
 Keys [8]: [c_customer_id#116, c_first_name#117, c_last_name#118, c_preferred_cust_flag#119, c_birth_country#120, c_login#121, c_email_address#122, d_year#131]
 Functions [1]: [partial_sum(((((ws_ext_list_price#127 - ws_ext_wholesale_cost#126) - ws_ext_discount_amt#124) + ws_ext_sales_price#125) / 2))]
 
-(100) CometColumnarToRow [codegen id : 10]
+(100) ColumnarToRow [codegen id : 10]
 Input [10]: [c_customer_id#116, c_first_name#117, c_last_name#118, c_preferred_cust_flag#119, c_birth_country#120, c_login#121, c_email_address#122, d_year#131, sum#132, isEmpty#133]
 
 (101) Exchange
@@ -619,7 +619,7 @@ Arguments: 100, [customer_id#42 ASC NULLS FIRST, customer_first_name#43 ASC NULL
 
 Subquery:1 Hosting operator id = 3 Hosting Expression = ss_sold_date_sk#14 IN dynamicpruning#15
 BroadcastExchange (110)
-+- * CometColumnarToRow (109)
++- * ColumnarToRow (109)
    +- CometFilter (108)
       +- CometScan parquet spark_catalog.default.date_dim (107)
 
@@ -635,7 +635,7 @@ ReadSchema: struct<d_date_sk:int,d_year:int>
 Input [2]: [d_date_sk#16, d_year#17]
 Condition : ((isnotnull(d_year#17) AND (d_year#17 = 2001)) AND isnotnull(d_date_sk#16))
 
-(109) CometColumnarToRow [codegen id : 1]
+(109) ColumnarToRow [codegen id : 1]
 Input [2]: [d_date_sk#16, d_year#17]
 
 (110) BroadcastExchange
@@ -644,7 +644,7 @@ Arguments: HashedRelationBroadcastMode(List(cast(input[0, int, false] as bigint)
 
 Subquery:2 Hosting operator id = 20 Hosting Expression = ss_sold_date_sk#36 IN dynamicpruning#37
 BroadcastExchange (114)
-+- * CometColumnarToRow (113)
++- * ColumnarToRow (113)
    +- CometFilter (112)
       +- CometScan parquet spark_catalog.default.date_dim (111)
 
@@ -660,7 +660,7 @@ ReadSchema: struct<d_date_sk:int,d_year:int>
 Input [2]: [d_date_sk#38, d_year#39]
 Condition : ((isnotnull(d_year#39) AND (d_year#39 = 2002)) AND isnotnull(d_date_sk#38))
 
-(113) CometColumnarToRow [codegen id : 1]
+(113) ColumnarToRow [codegen id : 1]
 Input [2]: [d_date_sk#38, d_year#39]
 
 (114) BroadcastExchange
