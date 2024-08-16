@@ -6,7 +6,7 @@
          :- * Filter (25)
          :  +- * HashAggregate (24)
          :     +- Exchange (23)
-         :        +- * ColumnarToRow (22)
+         :        +- CometColumnarToRow (22)
          :           +- CometHashAggregate (21)
          :              +- CometProject (20)
          :                 +- CometBroadcastHashJoin (19)
@@ -29,7 +29,7 @@
          :                          +- CometFilter (16)
          :                             +- CometScan parquet spark_catalog.default.household_demographics (15)
          +- BroadcastExchange (29)
-            +- * ColumnarToRow (28)
+            +- CometColumnarToRow (28)
                +- CometFilter (27)
                   +- CometScan parquet spark_catalog.default.customer (26)
 
@@ -135,21 +135,21 @@ Input [2]: [ss_customer_sk#1, ss_ticket_number#4]
 Keys [2]: [ss_ticket_number#4, ss_customer_sk#1]
 Functions [1]: [partial_count(1)]
 
-(22) ColumnarToRow [codegen id : 1]
+(22) CometColumnarToRow
 Input [3]: [ss_ticket_number#4, ss_customer_sk#1, count#16]
 
 (23) Exchange
 Input [3]: [ss_ticket_number#4, ss_customer_sk#1, count#16]
 Arguments: hashpartitioning(ss_ticket_number#4, ss_customer_sk#1, 5), ENSURE_REQUIREMENTS, [plan_id=1]
 
-(24) HashAggregate [codegen id : 3]
+(24) HashAggregate [codegen id : 1]
 Input [3]: [ss_ticket_number#4, ss_customer_sk#1, count#16]
 Keys [2]: [ss_ticket_number#4, ss_customer_sk#1]
 Functions [1]: [count(1)]
 Aggregate Attributes [1]: [count(1)#17]
 Results [3]: [ss_ticket_number#4, ss_customer_sk#1, count(1)#17 AS cnt#18]
 
-(25) Filter [codegen id : 3]
+(25) Filter [codegen id : 1]
 Input [3]: [ss_ticket_number#4, ss_customer_sk#1, cnt#18]
 Condition : ((cnt#18 >= 15) AND (cnt#18 <= 20))
 
@@ -164,20 +164,20 @@ ReadSchema: struct<c_customer_sk:int,c_salutation:string,c_first_name:string,c_l
 Input [5]: [c_customer_sk#19, c_salutation#20, c_first_name#21, c_last_name#22, c_preferred_cust_flag#23]
 Condition : isnotnull(c_customer_sk#19)
 
-(28) ColumnarToRow [codegen id : 2]
+(28) CometColumnarToRow
 Input [5]: [c_customer_sk#19, c_salutation#20, c_first_name#21, c_last_name#22, c_preferred_cust_flag#23]
 
 (29) BroadcastExchange
 Input [5]: [c_customer_sk#19, c_salutation#20, c_first_name#21, c_last_name#22, c_preferred_cust_flag#23]
 Arguments: HashedRelationBroadcastMode(List(cast(input[0, int, false] as bigint)),false), [plan_id=2]
 
-(30) BroadcastHashJoin [codegen id : 3]
+(30) BroadcastHashJoin [codegen id : 1]
 Left keys [1]: [ss_customer_sk#1]
 Right keys [1]: [c_customer_sk#19]
 Join type: Inner
 Join condition: None
 
-(31) Project [codegen id : 3]
+(31) Project [codegen id : 1]
 Output [6]: [c_last_name#22, c_first_name#21, c_salutation#20, c_preferred_cust_flag#23, ss_ticket_number#4, cnt#18]
 Input [8]: [ss_ticket_number#4, ss_customer_sk#1, cnt#18, c_customer_sk#19, c_salutation#20, c_first_name#21, c_last_name#22, c_preferred_cust_flag#23]
 
@@ -185,7 +185,7 @@ Input [8]: [ss_ticket_number#4, ss_customer_sk#1, cnt#18, c_customer_sk#19, c_sa
 Input [6]: [c_last_name#22, c_first_name#21, c_salutation#20, c_preferred_cust_flag#23, ss_ticket_number#4, cnt#18]
 Arguments: rangepartitioning(c_last_name#22 ASC NULLS FIRST, c_first_name#21 ASC NULLS FIRST, c_salutation#20 ASC NULLS FIRST, c_preferred_cust_flag#23 DESC NULLS LAST, ss_ticket_number#4 ASC NULLS FIRST, 5), ENSURE_REQUIREMENTS, [plan_id=3]
 
-(33) Sort [codegen id : 4]
+(33) Sort [codegen id : 2]
 Input [6]: [c_last_name#22, c_first_name#21, c_salutation#20, c_preferred_cust_flag#23, ss_ticket_number#4, cnt#18]
 Arguments: [c_last_name#22 ASC NULLS FIRST, c_first_name#21 ASC NULLS FIRST, c_salutation#20 ASC NULLS FIRST, c_preferred_cust_flag#23 DESC NULLS LAST, ss_ticket_number#4 ASC NULLS FIRST], true, 0
 
@@ -193,7 +193,7 @@ Arguments: [c_last_name#22 ASC NULLS FIRST, c_first_name#21 ASC NULLS FIRST, c_s
 
 Subquery:1 Hosting operator id = 1 Hosting Expression = ss_sold_date_sk#5 IN dynamicpruning#6
 BroadcastExchange (38)
-+- * ColumnarToRow (37)
++- CometColumnarToRow (37)
    +- CometProject (36)
       +- CometFilter (35)
          +- CometScan parquet spark_catalog.default.date_dim (34)
@@ -214,7 +214,7 @@ Condition : (((((d_dom#9 >= 1) AND (d_dom#9 <= 3)) OR ((d_dom#9 >= 25) AND (d_do
 Input [3]: [d_date_sk#7, d_year#8, d_dom#9]
 Arguments: [d_date_sk#7], [d_date_sk#7]
 
-(37) ColumnarToRow [codegen id : 1]
+(37) CometColumnarToRow
 Input [1]: [d_date_sk#7]
 
 (38) BroadcastExchange

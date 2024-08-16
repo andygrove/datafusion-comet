@@ -3,7 +3,7 @@ TakeOrderedAndProject (147)
 +- Union (146)
    :- * HashAggregate (39)
    :  +- Exchange (38)
-   :     +- * ColumnarToRow (37)
+   :     +- CometColumnarToRow (37)
    :        +- CometHashAggregate (36)
    :           +- CometProject (35)
    :              +- CometBroadcastHashJoin (34)
@@ -42,7 +42,7 @@ TakeOrderedAndProject (147)
    :                       +- CometScan parquet spark_catalog.default.item (31)
    :- * HashAggregate (65)
    :  +- Exchange (64)
-   :     +- * ColumnarToRow (63)
+   :     +- CometColumnarToRow (63)
    :        +- CometHashAggregate (62)
    :           +- CometProject (61)
    :              +- CometBroadcastHashJoin (60)
@@ -68,7 +68,7 @@ TakeOrderedAndProject (147)
    :                 +- ReusedExchange (59)
    :- * HashAggregate (92)
    :  +- Exchange (91)
-   :     +- * ColumnarToRow (90)
+   :     +- CometColumnarToRow (90)
    :        +- CometHashAggregate (89)
    :           +- CometProject (88)
    :              +- CometBroadcastHashJoin (87)
@@ -95,7 +95,7 @@ TakeOrderedAndProject (147)
    :                 +- ReusedExchange (86)
    :- * HashAggregate (119)
    :  +- Exchange (118)
-   :     +- * ColumnarToRow (117)
+   :     +- CometColumnarToRow (117)
    :        +- CometHashAggregate (116)
    :           +- CometProject (115)
    :              +- CometBroadcastHashJoin (114)
@@ -122,7 +122,7 @@ TakeOrderedAndProject (147)
    :                 +- ReusedExchange (113)
    +- * HashAggregate (145)
       +- Exchange (144)
-         +- * ColumnarToRow (143)
+         +- CometColumnarToRow (143)
             +- CometHashAggregate (142)
                +- CometProject (141)
                   +- CometBroadcastHashJoin (140)
@@ -321,14 +321,14 @@ Input [11]: [i_item_id#28, ca_country#24, ca_state#23, ca_county#22, agg1#29, ag
 Keys [4]: [i_item_id#28, ca_country#24, ca_state#23, ca_county#22]
 Functions [7]: [partial_avg(agg1#29), partial_avg(agg2#30), partial_avg(agg3#31), partial_avg(agg4#32), partial_avg(agg5#33), partial_avg(agg6#34), partial_avg(agg7#35)]
 
-(37) ColumnarToRow [codegen id : 1]
+(37) CometColumnarToRow
 Input [18]: [i_item_id#28, ca_country#24, ca_state#23, ca_county#22, sum#36, count#37, sum#38, count#39, sum#40, count#41, sum#42, count#43, sum#44, count#45, sum#46, count#47, sum#48, count#49]
 
 (38) Exchange
 Input [18]: [i_item_id#28, ca_country#24, ca_state#23, ca_county#22, sum#36, count#37, sum#38, count#39, sum#40, count#41, sum#42, count#43, sum#44, count#45, sum#46, count#47, sum#48, count#49]
 Arguments: hashpartitioning(i_item_id#28, ca_country#24, ca_state#23, ca_county#22, 5), ENSURE_REQUIREMENTS, [plan_id=1]
 
-(39) HashAggregate [codegen id : 2]
+(39) HashAggregate [codegen id : 1]
 Input [18]: [i_item_id#28, ca_country#24, ca_state#23, ca_county#22, sum#36, count#37, sum#38, count#39, sum#40, count#41, sum#42, count#43, sum#44, count#45, sum#46, count#47, sum#48, count#49]
 Keys [4]: [i_item_id#28, ca_country#24, ca_state#23, ca_county#22]
 Functions [7]: [avg(agg1#29), avg(agg2#30), avg(agg3#31), avg(agg4#32), avg(agg5#33), avg(agg6#34), avg(agg7#35)]
@@ -436,14 +436,14 @@ Input [10]: [i_item_id#28, ca_country#24, ca_state#23, agg1#29, agg2#30, agg3#31
 Keys [3]: [i_item_id#28, ca_country#24, ca_state#23]
 Functions [7]: [partial_avg(agg1#29), partial_avg(agg2#30), partial_avg(agg3#31), partial_avg(agg4#32), partial_avg(agg5#33), partial_avg(agg6#34), partial_avg(agg7#35)]
 
-(63) ColumnarToRow [codegen id : 3]
+(63) CometColumnarToRow
 Input [17]: [i_item_id#28, ca_country#24, ca_state#23, sum#65, count#66, sum#67, count#68, sum#69, count#70, sum#71, count#72, sum#73, count#74, sum#75, count#76, sum#77, count#78]
 
 (64) Exchange
 Input [17]: [i_item_id#28, ca_country#24, ca_state#23, sum#65, count#66, sum#67, count#68, sum#69, count#70, sum#71, count#72, sum#73, count#74, sum#75, count#76, sum#77, count#78]
 Arguments: hashpartitioning(i_item_id#28, ca_country#24, ca_state#23, 5), ENSURE_REQUIREMENTS, [plan_id=2]
 
-(65) HashAggregate [codegen id : 4]
+(65) HashAggregate [codegen id : 2]
 Input [17]: [i_item_id#28, ca_country#24, ca_state#23, sum#65, count#66, sum#67, count#68, sum#69, count#70, sum#71, count#72, sum#73, count#74, sum#75, count#76, sum#77, count#78]
 Keys [3]: [i_item_id#28, ca_country#24, ca_state#23]
 Functions [7]: [avg(agg1#29), avg(agg2#30), avg(agg3#31), avg(agg4#32), avg(agg5#33), avg(agg6#34), avg(agg7#35)]
@@ -555,14 +555,14 @@ Input [9]: [i_item_id#28, ca_country#24, agg1#29, agg2#30, agg3#31, agg4#32, agg
 Keys [2]: [i_item_id#28, ca_country#24]
 Functions [7]: [partial_avg(agg1#29), partial_avg(agg2#30), partial_avg(agg3#31), partial_avg(agg4#32), partial_avg(agg5#33), partial_avg(agg6#34), partial_avg(agg7#35)]
 
-(90) ColumnarToRow [codegen id : 5]
+(90) CometColumnarToRow
 Input [16]: [i_item_id#28, ca_country#24, sum#95, count#96, sum#97, count#98, sum#99, count#100, sum#101, count#102, sum#103, count#104, sum#105, count#106, sum#107, count#108]
 
 (91) Exchange
 Input [16]: [i_item_id#28, ca_country#24, sum#95, count#96, sum#97, count#98, sum#99, count#100, sum#101, count#102, sum#103, count#104, sum#105, count#106, sum#107, count#108]
 Arguments: hashpartitioning(i_item_id#28, ca_country#24, 5), ENSURE_REQUIREMENTS, [plan_id=3]
 
-(92) HashAggregate [codegen id : 6]
+(92) HashAggregate [codegen id : 3]
 Input [16]: [i_item_id#28, ca_country#24, sum#95, count#96, sum#97, count#98, sum#99, count#100, sum#101, count#102, sum#103, count#104, sum#105, count#106, sum#107, count#108]
 Keys [2]: [i_item_id#28, ca_country#24]
 Functions [7]: [avg(agg1#29), avg(agg2#30), avg(agg3#31), avg(agg4#32), avg(agg5#33), avg(agg6#34), avg(agg7#35)]
@@ -674,14 +674,14 @@ Input [8]: [i_item_id#28, agg1#29, agg2#30, agg3#31, agg4#32, agg5#33, agg6#34, 
 Keys [1]: [i_item_id#28]
 Functions [7]: [partial_avg(agg1#29), partial_avg(agg2#30), partial_avg(agg3#31), partial_avg(agg4#32), partial_avg(agg5#33), partial_avg(agg6#34), partial_avg(agg7#35)]
 
-(117) ColumnarToRow [codegen id : 7]
+(117) CometColumnarToRow
 Input [15]: [i_item_id#28, sum#126, count#127, sum#128, count#129, sum#130, count#131, sum#132, count#133, sum#134, count#135, sum#136, count#137, sum#138, count#139]
 
 (118) Exchange
 Input [15]: [i_item_id#28, sum#126, count#127, sum#128, count#129, sum#130, count#131, sum#132, count#133, sum#134, count#135, sum#136, count#137, sum#138, count#139]
 Arguments: hashpartitioning(i_item_id#28, 5), ENSURE_REQUIREMENTS, [plan_id=4]
 
-(119) HashAggregate [codegen id : 8]
+(119) HashAggregate [codegen id : 4]
 Input [15]: [i_item_id#28, sum#126, count#127, sum#128, count#129, sum#130, count#131, sum#132, count#133, sum#134, count#135, sum#136, count#137, sum#138, count#139]
 Keys [1]: [i_item_id#28]
 Functions [7]: [avg(agg1#29), avg(agg2#30), avg(agg3#31), avg(agg4#32), avg(agg5#33), avg(agg6#34), avg(agg7#35)]
@@ -789,14 +789,14 @@ Input [7]: [agg1#29, agg2#30, agg3#31, agg4#32, agg5#33, agg6#34, agg7#35]
 Keys: []
 Functions [7]: [partial_avg(agg1#29), partial_avg(agg2#30), partial_avg(agg3#31), partial_avg(agg4#32), partial_avg(agg5#33), partial_avg(agg6#34), partial_avg(agg7#35)]
 
-(143) ColumnarToRow [codegen id : 9]
+(143) CometColumnarToRow
 Input [14]: [sum#158, count#159, sum#160, count#161, sum#162, count#163, sum#164, count#165, sum#166, count#167, sum#168, count#169, sum#170, count#171]
 
 (144) Exchange
 Input [14]: [sum#158, count#159, sum#160, count#161, sum#162, count#163, sum#164, count#165, sum#166, count#167, sum#168, count#169, sum#170, count#171]
 Arguments: SinglePartition, ENSURE_REQUIREMENTS, [plan_id=5]
 
-(145) HashAggregate [codegen id : 10]
+(145) HashAggregate [codegen id : 5]
 Input [14]: [sum#158, count#159, sum#160, count#161, sum#162, count#163, sum#164, count#165, sum#166, count#167, sum#168, count#169, sum#170, count#171]
 Keys: []
 Functions [7]: [avg(agg1#29), avg(agg2#30), avg(agg3#31), avg(agg4#32), avg(agg5#33), avg(agg6#34), avg(agg7#35)]
@@ -813,7 +813,7 @@ Arguments: 100, [ca_country#24 ASC NULLS FIRST, ca_state#23 ASC NULLS FIRST, ca_
 
 Subquery:1 Hosting operator id = 1 Hosting Expression = cs_sold_date_sk#9 IN dynamicpruning#10
 BroadcastExchange (152)
-+- * ColumnarToRow (151)
++- CometColumnarToRow (151)
    +- CometProject (150)
       +- CometFilter (149)
          +- CometScan parquet spark_catalog.default.date_dim (148)
@@ -834,7 +834,7 @@ Condition : ((isnotnull(d_year#26) AND (d_year#26 = 2001)) AND isnotnull(d_date_
 Input [2]: [d_date_sk#25, d_year#26]
 Arguments: [d_date_sk#25], [d_date_sk#25]
 
-(151) ColumnarToRow [codegen id : 1]
+(151) CometColumnarToRow
 Input [1]: [d_date_sk#25]
 
 (152) BroadcastExchange

@@ -12,7 +12,7 @@ TakeOrderedAndProject (99)
             :           :  +- * BroadcastHashJoin LeftOuter BuildRight (31)
             :           :     :- * HashAggregate (17)
             :           :     :  +- Exchange (16)
-            :           :     :     +- * ColumnarToRow (15)
+            :           :     :     +- CometColumnarToRow (15)
             :           :     :        +- CometHashAggregate (14)
             :           :     :           +- CometProject (13)
             :           :     :              +- CometBroadcastHashJoin (12)
@@ -30,7 +30,7 @@ TakeOrderedAndProject (99)
             :           :     +- BroadcastExchange (30)
             :           :        +- * HashAggregate (29)
             :           :           +- Exchange (28)
-            :           :              +- * ColumnarToRow (27)
+            :           :              +- CometColumnarToRow (27)
             :           :                 +- CometHashAggregate (26)
             :           :                    +- CometProject (25)
             :           :                       +- CometBroadcastHashJoin (24)
@@ -45,7 +45,7 @@ TakeOrderedAndProject (99)
             :           :     :- BroadcastExchange (41)
             :           :     :  +- * HashAggregate (40)
             :           :     :     +- Exchange (39)
-            :           :     :        +- * ColumnarToRow (38)
+            :           :     :        +- CometColumnarToRow (38)
             :           :     :           +- CometHashAggregate (37)
             :           :     :              +- CometProject (36)
             :           :     :                 +- CometBroadcastHashJoin (35)
@@ -53,7 +53,7 @@ TakeOrderedAndProject (99)
             :           :     :                    +- ReusedExchange (34)
             :           :     +- * HashAggregate (49)
             :           :        +- Exchange (48)
-            :           :           +- * ColumnarToRow (47)
+            :           :           +- CometColumnarToRow (47)
             :           :              +- CometHashAggregate (46)
             :           :                 +- CometProject (45)
             :           :                    +- CometBroadcastHashJoin (44)
@@ -63,7 +63,7 @@ TakeOrderedAndProject (99)
             :              +- * BroadcastHashJoin LeftOuter BuildRight (79)
             :                 :- * HashAggregate (65)
             :                 :  +- Exchange (64)
-            :                 :     +- * ColumnarToRow (63)
+            :                 :     +- CometColumnarToRow (63)
             :                 :        +- CometHashAggregate (62)
             :                 :           +- CometProject (61)
             :                 :              +- CometBroadcastHashJoin (60)
@@ -78,7 +78,7 @@ TakeOrderedAndProject (99)
             :                 +- BroadcastExchange (78)
             :                    +- * HashAggregate (77)
             :                       +- Exchange (76)
-            :                          +- * ColumnarToRow (75)
+            :                          +- CometColumnarToRow (75)
             :                             +- CometHashAggregate (74)
             :                                +- CometProject (73)
             :                                   +- CometBroadcastHashJoin (72)
@@ -169,14 +169,14 @@ Input [3]: [ss_ext_sales_price#2, ss_net_profit#3, s_store_sk#8]
 Keys [1]: [s_store_sk#8]
 Functions [2]: [partial_sum(UnscaledValue(ss_ext_sales_price#2)), partial_sum(UnscaledValue(ss_net_profit#3))]
 
-(15) ColumnarToRow [codegen id : 1]
+(15) CometColumnarToRow
 Input [3]: [s_store_sk#8, sum#9, sum#10]
 
 (16) Exchange
 Input [3]: [s_store_sk#8, sum#9, sum#10]
 Arguments: hashpartitioning(s_store_sk#8, 5), ENSURE_REQUIREMENTS, [plan_id=1]
 
-(17) HashAggregate [codegen id : 4]
+(17) HashAggregate [codegen id : 2]
 Input [3]: [s_store_sk#8, sum#9, sum#10]
 Keys [1]: [s_store_sk#8]
 Functions [2]: [sum(UnscaledValue(ss_ext_sales_price#2)), sum(UnscaledValue(ss_net_profit#3))]
@@ -224,14 +224,14 @@ Input [3]: [sr_return_amt#16, sr_net_loss#17, s_store_sk#21]
 Keys [1]: [s_store_sk#21]
 Functions [2]: [partial_sum(UnscaledValue(sr_return_amt#16)), partial_sum(UnscaledValue(sr_net_loss#17))]
 
-(27) ColumnarToRow [codegen id : 2]
+(27) CometColumnarToRow
 Input [3]: [s_store_sk#21, sum#22, sum#23]
 
 (28) Exchange
 Input [3]: [s_store_sk#21, sum#22, sum#23]
 Arguments: hashpartitioning(s_store_sk#21, 5), ENSURE_REQUIREMENTS, [plan_id=2]
 
-(29) HashAggregate [codegen id : 3]
+(29) HashAggregate [codegen id : 1]
 Input [3]: [s_store_sk#21, sum#22, sum#23]
 Keys [1]: [s_store_sk#21]
 Functions [2]: [sum(UnscaledValue(sr_return_amt#16)), sum(UnscaledValue(sr_net_loss#17))]
@@ -242,13 +242,13 @@ Results [3]: [s_store_sk#21, MakeDecimal(sum(UnscaledValue(sr_return_amt#16))#24
 Input [3]: [s_store_sk#21, returns#26, profit_loss#27]
 Arguments: HashedRelationBroadcastMode(List(cast(input[0, int, true] as bigint)),false), [plan_id=3]
 
-(31) BroadcastHashJoin [codegen id : 4]
+(31) BroadcastHashJoin [codegen id : 2]
 Left keys [1]: [s_store_sk#8]
 Right keys [1]: [s_store_sk#21]
 Join type: LeftOuter
 Join condition: None
 
-(32) Project [codegen id : 4]
+(32) Project [codegen id : 2]
 Output [5]: [store channel AS channel#28, s_store_sk#8 AS id#29, sales#13, coalesce(returns#26, 0.00) AS returns#30, (profit#14 - coalesce(profit_loss#27, 0.00)) AS profit#31]
 Input [6]: [s_store_sk#8, sales#13, profit#14, s_store_sk#21, returns#26, profit_loss#27]
 
@@ -276,14 +276,14 @@ Input [3]: [cs_call_center_sk#32, cs_ext_sales_price#33, cs_net_profit#34]
 Keys [1]: [cs_call_center_sk#32]
 Functions [2]: [partial_sum(UnscaledValue(cs_ext_sales_price#33)), partial_sum(UnscaledValue(cs_net_profit#34))]
 
-(38) ColumnarToRow [codegen id : 5]
+(38) CometColumnarToRow
 Input [3]: [cs_call_center_sk#32, sum#38, sum#39]
 
 (39) Exchange
 Input [3]: [cs_call_center_sk#32, sum#38, sum#39]
 Arguments: hashpartitioning(cs_call_center_sk#32, 5), ENSURE_REQUIREMENTS, [plan_id=4]
 
-(40) HashAggregate [codegen id : 6]
+(40) HashAggregate [codegen id : 3]
 Input [3]: [cs_call_center_sk#32, sum#38, sum#39]
 Keys [1]: [cs_call_center_sk#32]
 Functions [2]: [sum(UnscaledValue(cs_ext_sales_price#33)), sum(UnscaledValue(cs_net_profit#34))]
@@ -318,7 +318,7 @@ Input [2]: [cr_return_amount#44, cr_net_loss#45]
 Keys: []
 Functions [2]: [partial_sum(UnscaledValue(cr_return_amount#44)), partial_sum(UnscaledValue(cr_net_loss#45))]
 
-(47) ColumnarToRow [codegen id : 7]
+(47) CometColumnarToRow
 Input [2]: [sum#49, sum#50]
 
 (48) Exchange
@@ -332,11 +332,11 @@ Functions [2]: [sum(UnscaledValue(cr_return_amount#44)), sum(UnscaledValue(cr_ne
 Aggregate Attributes [2]: [sum(UnscaledValue(cr_return_amount#44))#51, sum(UnscaledValue(cr_net_loss#45))#52]
 Results [2]: [MakeDecimal(sum(UnscaledValue(cr_return_amount#44))#51,17,2) AS returns#53, MakeDecimal(sum(UnscaledValue(cr_net_loss#45))#52,17,2) AS profit_loss#54]
 
-(50) BroadcastNestedLoopJoin [codegen id : 8]
+(50) BroadcastNestedLoopJoin [codegen id : 4]
 Join type: Inner
 Join condition: None
 
-(51) Project [codegen id : 8]
+(51) Project [codegen id : 4]
 Output [5]: [catalog channel AS channel#55, cs_call_center_sk#32 AS id#56, sales#42, returns#53, (profit#43 - profit_loss#54) AS profit#57]
 Input [5]: [cs_call_center_sk#32, sales#42, profit#43, returns#53, profit_loss#54]
 
@@ -393,14 +393,14 @@ Input [3]: [ws_ext_sales_price#59, ws_net_profit#60, wp_web_page_sk#64]
 Keys [1]: [wp_web_page_sk#64]
 Functions [2]: [partial_sum(UnscaledValue(ws_ext_sales_price#59)), partial_sum(UnscaledValue(ws_net_profit#60))]
 
-(63) ColumnarToRow [codegen id : 9]
+(63) CometColumnarToRow
 Input [3]: [wp_web_page_sk#64, sum#65, sum#66]
 
 (64) Exchange
 Input [3]: [wp_web_page_sk#64, sum#65, sum#66]
 Arguments: hashpartitioning(wp_web_page_sk#64, 5), ENSURE_REQUIREMENTS, [plan_id=7]
 
-(65) HashAggregate [codegen id : 12]
+(65) HashAggregate [codegen id : 6]
 Input [3]: [wp_web_page_sk#64, sum#65, sum#66]
 Keys [1]: [wp_web_page_sk#64]
 Functions [2]: [sum(UnscaledValue(ws_ext_sales_price#59)), sum(UnscaledValue(ws_net_profit#60))]
@@ -448,14 +448,14 @@ Input [3]: [wr_return_amt#72, wr_net_loss#73, wp_web_page_sk#77]
 Keys [1]: [wp_web_page_sk#77]
 Functions [2]: [partial_sum(UnscaledValue(wr_return_amt#72)), partial_sum(UnscaledValue(wr_net_loss#73))]
 
-(75) ColumnarToRow [codegen id : 10]
+(75) CometColumnarToRow
 Input [3]: [wp_web_page_sk#77, sum#78, sum#79]
 
 (76) Exchange
 Input [3]: [wp_web_page_sk#77, sum#78, sum#79]
 Arguments: hashpartitioning(wp_web_page_sk#77, 5), ENSURE_REQUIREMENTS, [plan_id=8]
 
-(77) HashAggregate [codegen id : 11]
+(77) HashAggregate [codegen id : 5]
 Input [3]: [wp_web_page_sk#77, sum#78, sum#79]
 Keys [1]: [wp_web_page_sk#77]
 Functions [2]: [sum(UnscaledValue(wr_return_amt#72)), sum(UnscaledValue(wr_net_loss#73))]
@@ -466,19 +466,19 @@ Results [3]: [wp_web_page_sk#77, MakeDecimal(sum(UnscaledValue(wr_return_amt#72)
 Input [3]: [wp_web_page_sk#77, returns#82, profit_loss#83]
 Arguments: HashedRelationBroadcastMode(List(cast(input[0, int, true] as bigint)),false), [plan_id=9]
 
-(79) BroadcastHashJoin [codegen id : 12]
+(79) BroadcastHashJoin [codegen id : 6]
 Left keys [1]: [wp_web_page_sk#64]
 Right keys [1]: [wp_web_page_sk#77]
 Join type: LeftOuter
 Join condition: None
 
-(80) Project [codegen id : 12]
+(80) Project [codegen id : 6]
 Output [5]: [web channel AS channel#84, wp_web_page_sk#64 AS id#85, sales#69, coalesce(returns#82, 0.00) AS returns#86, (profit#70 - coalesce(profit_loss#83, 0.00)) AS profit#87]
 Input [6]: [wp_web_page_sk#64, sales#69, profit#70, wp_web_page_sk#77, returns#82, profit_loss#83]
 
 (81) Union
 
-(82) HashAggregate [codegen id : 13]
+(82) HashAggregate [codegen id : 7]
 Input [5]: [channel#28, id#29, sales#13, returns#30, profit#31]
 Keys [2]: [channel#28, id#29]
 Functions [3]: [partial_sum(sales#13), partial_sum(returns#30), partial_sum(profit#31)]
@@ -489,7 +489,7 @@ Results [8]: [channel#28, id#29, sum#94, isEmpty#95, sum#96, isEmpty#97, sum#98,
 Input [8]: [channel#28, id#29, sum#94, isEmpty#95, sum#96, isEmpty#97, sum#98, isEmpty#99]
 Arguments: hashpartitioning(channel#28, id#29, 5), ENSURE_REQUIREMENTS, [plan_id=10]
 
-(84) HashAggregate [codegen id : 14]
+(84) HashAggregate [codegen id : 8]
 Input [8]: [channel#28, id#29, sum#94, isEmpty#95, sum#96, isEmpty#97, sum#98, isEmpty#99]
 Keys [2]: [channel#28, id#29]
 Functions [3]: [sum(sales#13), sum(returns#30), sum(profit#31)]
@@ -499,14 +499,14 @@ Results [5]: [channel#28, id#29, cast(sum(sales#13)#100 as decimal(37,2)) AS sal
 (85) ReusedExchange [Reuses operator id: 83]
 Output [8]: [channel#28, id#29, sum#94, isEmpty#95, sum#96, isEmpty#97, sum#98, isEmpty#99]
 
-(86) HashAggregate [codegen id : 28]
+(86) HashAggregate [codegen id : 16]
 Input [8]: [channel#28, id#29, sum#94, isEmpty#95, sum#96, isEmpty#97, sum#98, isEmpty#99]
 Keys [2]: [channel#28, id#29]
 Functions [3]: [sum(sales#13), sum(returns#30), sum(profit#31)]
 Aggregate Attributes [3]: [sum(sales#13)#100, sum(returns#30)#101, sum(profit#31)#102]
 Results [4]: [channel#28, sum(sales#13)#100 AS sales#106, sum(returns#30)#101 AS returns#107, sum(profit#31)#102 AS profit#108]
 
-(87) HashAggregate [codegen id : 28]
+(87) HashAggregate [codegen id : 16]
 Input [4]: [channel#28, sales#106, returns#107, profit#108]
 Keys [1]: [channel#28]
 Functions [3]: [partial_sum(sales#106), partial_sum(returns#107), partial_sum(profit#108)]
@@ -517,7 +517,7 @@ Results [7]: [channel#28, sum#115, isEmpty#116, sum#117, isEmpty#118, sum#119, i
 Input [7]: [channel#28, sum#115, isEmpty#116, sum#117, isEmpty#118, sum#119, isEmpty#120]
 Arguments: hashpartitioning(channel#28, 5), ENSURE_REQUIREMENTS, [plan_id=11]
 
-(89) HashAggregate [codegen id : 29]
+(89) HashAggregate [codegen id : 17]
 Input [7]: [channel#28, sum#115, isEmpty#116, sum#117, isEmpty#118, sum#119, isEmpty#120]
 Keys [1]: [channel#28]
 Functions [3]: [sum(sales#106), sum(returns#107), sum(profit#108)]
@@ -527,14 +527,14 @@ Results [5]: [channel#28, null AS id#124, sum(sales#106)#121 AS sales#125, sum(r
 (90) ReusedExchange [Reuses operator id: 83]
 Output [8]: [channel#28, id#29, sum#94, isEmpty#95, sum#96, isEmpty#97, sum#98, isEmpty#99]
 
-(91) HashAggregate [codegen id : 43]
+(91) HashAggregate [codegen id : 25]
 Input [8]: [channel#28, id#29, sum#94, isEmpty#95, sum#96, isEmpty#97, sum#98, isEmpty#99]
 Keys [2]: [channel#28, id#29]
 Functions [3]: [sum(sales#13), sum(returns#30), sum(profit#31)]
 Aggregate Attributes [3]: [sum(sales#13)#100, sum(returns#30)#101, sum(profit#31)#102]
 Results [3]: [sum(sales#13)#100 AS sales#106, sum(returns#30)#101 AS returns#107, sum(profit#31)#102 AS profit#108]
 
-(92) HashAggregate [codegen id : 43]
+(92) HashAggregate [codegen id : 25]
 Input [3]: [sales#106, returns#107, profit#108]
 Keys: []
 Functions [3]: [partial_sum(sales#106), partial_sum(returns#107), partial_sum(profit#108)]
@@ -545,7 +545,7 @@ Results [6]: [sum#134, isEmpty#135, sum#136, isEmpty#137, sum#138, isEmpty#139]
 Input [6]: [sum#134, isEmpty#135, sum#136, isEmpty#137, sum#138, isEmpty#139]
 Arguments: SinglePartition, ENSURE_REQUIREMENTS, [plan_id=12]
 
-(94) HashAggregate [codegen id : 44]
+(94) HashAggregate [codegen id : 26]
 Input [6]: [sum#134, isEmpty#135, sum#136, isEmpty#137, sum#138, isEmpty#139]
 Keys: []
 Functions [3]: [sum(sales#106), sum(returns#107), sum(profit#108)]
@@ -554,7 +554,7 @@ Results [5]: [null AS channel#143, null AS id#144, sum(sales#106)#140 AS sales#1
 
 (95) Union
 
-(96) HashAggregate [codegen id : 45]
+(96) HashAggregate [codegen id : 27]
 Input [5]: [channel#28, id#29, sales#103, returns#104, profit#105]
 Keys [5]: [channel#28, id#29, sales#103, returns#104, profit#105]
 Functions: []
@@ -565,7 +565,7 @@ Results [5]: [channel#28, id#29, sales#103, returns#104, profit#105]
 Input [5]: [channel#28, id#29, sales#103, returns#104, profit#105]
 Arguments: hashpartitioning(channel#28, id#29, sales#103, returns#104, profit#105, 5), ENSURE_REQUIREMENTS, [plan_id=13]
 
-(98) HashAggregate [codegen id : 46]
+(98) HashAggregate [codegen id : 28]
 Input [5]: [channel#28, id#29, sales#103, returns#104, profit#105]
 Keys [5]: [channel#28, id#29, sales#103, returns#104, profit#105]
 Functions: []
@@ -580,7 +580,7 @@ Arguments: 100, [channel#28 ASC NULLS FIRST, id#29 ASC NULLS FIRST], [channel#28
 
 Subquery:1 Hosting operator id = 1 Hosting Expression = ss_sold_date_sk#4 IN dynamicpruning#5
 BroadcastExchange (104)
-+- * ColumnarToRow (103)
++- CometColumnarToRow (103)
    +- CometProject (102)
       +- CometFilter (101)
          +- CometScan parquet spark_catalog.default.date_dim (100)
@@ -601,7 +601,7 @@ Condition : (((isnotnull(d_date#7) AND (d_date#7 >= 1998-08-04)) AND (d_date#7 <
 Input [2]: [d_date_sk#6, d_date#7]
 Arguments: [d_date_sk#6], [d_date_sk#6]
 
-(103) ColumnarToRow [codegen id : 1]
+(103) CometColumnarToRow
 Input [1]: [d_date_sk#6]
 
 (104) BroadcastExchange

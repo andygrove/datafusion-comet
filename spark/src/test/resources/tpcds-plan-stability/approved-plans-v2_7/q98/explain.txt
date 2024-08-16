@@ -7,7 +7,7 @@
             +- Exchange (18)
                +- * HashAggregate (17)
                   +- Exchange (16)
-                     +- * ColumnarToRow (15)
+                     +- CometColumnarToRow (15)
                         +- CometHashAggregate (14)
                            +- CometProject (13)
                               +- CometBroadcastHashJoin (12)
@@ -93,14 +93,14 @@ Input [6]: [ss_ext_sales_price#2, i_item_id#6, i_item_desc#7, i_current_price#8,
 Keys [5]: [i_item_id#6, i_item_desc#7, i_category#10, i_class#9, i_current_price#8]
 Functions [1]: [partial_sum(UnscaledValue(ss_ext_sales_price#2))]
 
-(15) ColumnarToRow [codegen id : 1]
+(15) CometColumnarToRow
 Input [6]: [i_item_id#6, i_item_desc#7, i_category#10, i_class#9, i_current_price#8, sum#13]
 
 (16) Exchange
 Input [6]: [i_item_id#6, i_item_desc#7, i_category#10, i_class#9, i_current_price#8, sum#13]
 Arguments: hashpartitioning(i_item_id#6, i_item_desc#7, i_category#10, i_class#9, i_current_price#8, 5), ENSURE_REQUIREMENTS, [plan_id=1]
 
-(17) HashAggregate [codegen id : 2]
+(17) HashAggregate [codegen id : 1]
 Input [6]: [i_item_id#6, i_item_desc#7, i_category#10, i_class#9, i_current_price#8, sum#13]
 Keys [5]: [i_item_id#6, i_item_desc#7, i_category#10, i_class#9, i_current_price#8]
 Functions [1]: [sum(UnscaledValue(ss_ext_sales_price#2))]
@@ -111,7 +111,7 @@ Results [7]: [i_item_id#6, i_item_desc#7, i_category#10, i_class#9, i_current_pr
 Input [7]: [i_item_id#6, i_item_desc#7, i_category#10, i_class#9, i_current_price#8, itemrevenue#15, _w0#16]
 Arguments: hashpartitioning(i_class#9, 5), ENSURE_REQUIREMENTS, [plan_id=2]
 
-(19) Sort [codegen id : 3]
+(19) Sort [codegen id : 2]
 Input [7]: [i_item_id#6, i_item_desc#7, i_category#10, i_class#9, i_current_price#8, itemrevenue#15, _w0#16]
 Arguments: [i_class#9 ASC NULLS FIRST], false, 0
 
@@ -119,7 +119,7 @@ Arguments: [i_class#9 ASC NULLS FIRST], false, 0
 Input [7]: [i_item_id#6, i_item_desc#7, i_category#10, i_class#9, i_current_price#8, itemrevenue#15, _w0#16]
 Arguments: [sum(_w0#16) windowspecdefinition(i_class#9, specifiedwindowframe(RowFrame, unboundedpreceding$(), unboundedfollowing$())) AS _we0#17], [i_class#9]
 
-(21) Project [codegen id : 4]
+(21) Project [codegen id : 3]
 Output [7]: [i_item_id#6, i_item_desc#7, i_category#10, i_class#9, i_current_price#8, itemrevenue#15, ((_w0#16 * 100) / _we0#17) AS revenueratio#18]
 Input [8]: [i_item_id#6, i_item_desc#7, i_category#10, i_class#9, i_current_price#8, itemrevenue#15, _w0#16, _we0#17]
 
@@ -127,7 +127,7 @@ Input [8]: [i_item_id#6, i_item_desc#7, i_category#10, i_class#9, i_current_pric
 Input [7]: [i_item_id#6, i_item_desc#7, i_category#10, i_class#9, i_current_price#8, itemrevenue#15, revenueratio#18]
 Arguments: rangepartitioning(i_category#10 ASC NULLS FIRST, i_class#9 ASC NULLS FIRST, i_item_id#6 ASC NULLS FIRST, i_item_desc#7 ASC NULLS FIRST, revenueratio#18 ASC NULLS FIRST, 5), ENSURE_REQUIREMENTS, [plan_id=3]
 
-(23) Sort [codegen id : 5]
+(23) Sort [codegen id : 4]
 Input [7]: [i_item_id#6, i_item_desc#7, i_category#10, i_class#9, i_current_price#8, itemrevenue#15, revenueratio#18]
 Arguments: [i_category#10 ASC NULLS FIRST, i_class#9 ASC NULLS FIRST, i_item_id#6 ASC NULLS FIRST, i_item_desc#7 ASC NULLS FIRST, revenueratio#18 ASC NULLS FIRST], true, 0
 
@@ -135,7 +135,7 @@ Arguments: [i_category#10 ASC NULLS FIRST, i_class#9 ASC NULLS FIRST, i_item_id#
 
 Subquery:1 Hosting operator id = 1 Hosting Expression = ss_sold_date_sk#3 IN dynamicpruning#4
 BroadcastExchange (28)
-+- * ColumnarToRow (27)
++- CometColumnarToRow (27)
    +- CometProject (26)
       +- CometFilter (25)
          +- CometScan parquet spark_catalog.default.date_dim (24)
@@ -156,7 +156,7 @@ Condition : (((isnotnull(d_date#12) AND (d_date#12 >= 1999-02-22)) AND (d_date#1
 Input [2]: [d_date_sk#11, d_date#12]
 Arguments: [d_date_sk#11], [d_date_sk#11]
 
-(27) ColumnarToRow [codegen id : 1]
+(27) CometColumnarToRow
 Input [1]: [d_date_sk#11]
 
 (28) BroadcastExchange

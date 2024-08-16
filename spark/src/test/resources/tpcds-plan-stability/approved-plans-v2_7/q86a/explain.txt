@@ -10,7 +10,7 @@ TakeOrderedAndProject (36)
                      +- Union (28)
                         :- * HashAggregate (17)
                         :  +- Exchange (16)
-                        :     +- * ColumnarToRow (15)
+                        :     +- CometColumnarToRow (15)
                         :        +- CometHashAggregate (14)
                         :           +- CometProject (13)
                         :              +- CometBroadcastHashJoin (12)
@@ -106,14 +106,14 @@ Input [3]: [ws_net_paid#2, i_class#8, i_category#9]
 Keys [2]: [i_category#9, i_class#8]
 Functions [1]: [partial_sum(UnscaledValue(ws_net_paid#2))]
 
-(15) ColumnarToRow [codegen id : 1]
+(15) CometColumnarToRow
 Input [3]: [i_category#9, i_class#8, sum#10]
 
 (16) Exchange
 Input [3]: [i_category#9, i_class#8, sum#10]
 Arguments: hashpartitioning(i_category#9, i_class#8, 5), ENSURE_REQUIREMENTS, [plan_id=1]
 
-(17) HashAggregate [codegen id : 2]
+(17) HashAggregate [codegen id : 1]
 Input [3]: [i_category#9, i_class#8, sum#10]
 Keys [2]: [i_category#9, i_class#8]
 Functions [1]: [sum(UnscaledValue(ws_net_paid#2))]
@@ -123,14 +123,14 @@ Results [6]: [cast(MakeDecimal(sum(UnscaledValue(ws_net_paid#2))#11,17,2) as dec
 (18) ReusedExchange [Reuses operator id: 16]
 Output [3]: [i_category#9, i_class#8, sum#16]
 
-(19) HashAggregate [codegen id : 4]
+(19) HashAggregate [codegen id : 2]
 Input [3]: [i_category#9, i_class#8, sum#16]
 Keys [2]: [i_category#9, i_class#8]
 Functions [1]: [sum(UnscaledValue(ws_net_paid#2))]
 Aggregate Attributes [1]: [sum(UnscaledValue(ws_net_paid#2))#11]
 Results [2]: [MakeDecimal(sum(UnscaledValue(ws_net_paid#2))#11,17,2) AS total_sum#17, i_category#9]
 
-(20) HashAggregate [codegen id : 4]
+(20) HashAggregate [codegen id : 2]
 Input [2]: [total_sum#17, i_category#9]
 Keys [1]: [i_category#9]
 Functions [1]: [partial_sum(total_sum#17)]
@@ -141,7 +141,7 @@ Results [3]: [i_category#9, sum#20, isEmpty#21]
 Input [3]: [i_category#9, sum#20, isEmpty#21]
 Arguments: hashpartitioning(i_category#9, 5), ENSURE_REQUIREMENTS, [plan_id=2]
 
-(22) HashAggregate [codegen id : 5]
+(22) HashAggregate [codegen id : 3]
 Input [3]: [i_category#9, sum#20, isEmpty#21]
 Keys [1]: [i_category#9]
 Functions [1]: [sum(total_sum#17)]
@@ -151,14 +151,14 @@ Results [6]: [sum(total_sum#17)#22 AS total_sum#23, i_category#9, null AS i_clas
 (23) ReusedExchange [Reuses operator id: 16]
 Output [3]: [i_category#9, i_class#8, sum#28]
 
-(24) HashAggregate [codegen id : 7]
+(24) HashAggregate [codegen id : 4]
 Input [3]: [i_category#9, i_class#8, sum#28]
 Keys [2]: [i_category#9, i_class#8]
 Functions [1]: [sum(UnscaledValue(ws_net_paid#2))]
 Aggregate Attributes [1]: [sum(UnscaledValue(ws_net_paid#2))#11]
 Results [1]: [MakeDecimal(sum(UnscaledValue(ws_net_paid#2))#11,17,2) AS total_sum#17]
 
-(25) HashAggregate [codegen id : 7]
+(25) HashAggregate [codegen id : 4]
 Input [1]: [total_sum#17]
 Keys: []
 Functions [1]: [partial_sum(total_sum#17)]
@@ -169,7 +169,7 @@ Results [2]: [sum#31, isEmpty#32]
 Input [2]: [sum#31, isEmpty#32]
 Arguments: SinglePartition, ENSURE_REQUIREMENTS, [plan_id=3]
 
-(27) HashAggregate [codegen id : 8]
+(27) HashAggregate [codegen id : 5]
 Input [2]: [sum#31, isEmpty#32]
 Keys: []
 Functions [1]: [sum(total_sum#17)]
@@ -178,7 +178,7 @@ Results [6]: [sum(total_sum#17)#33 AS total_sum#34, null AS i_category#35, null 
 
 (28) Union
 
-(29) HashAggregate [codegen id : 9]
+(29) HashAggregate [codegen id : 6]
 Input [6]: [total_sum#12, i_category#9, i_class#8, g_category#13, g_class#14, lochierarchy#15]
 Keys [6]: [total_sum#12, i_category#9, i_class#8, g_category#13, g_class#14, lochierarchy#15]
 Functions: []
@@ -189,7 +189,7 @@ Results [6]: [total_sum#12, i_category#9, i_class#8, g_category#13, g_class#14, 
 Input [6]: [total_sum#12, i_category#9, i_class#8, g_category#13, g_class#14, lochierarchy#15]
 Arguments: hashpartitioning(total_sum#12, i_category#9, i_class#8, g_category#13, g_class#14, lochierarchy#15, 5), ENSURE_REQUIREMENTS, [plan_id=4]
 
-(31) HashAggregate [codegen id : 10]
+(31) HashAggregate [codegen id : 7]
 Input [6]: [total_sum#12, i_category#9, i_class#8, g_category#13, g_class#14, lochierarchy#15]
 Keys [6]: [total_sum#12, i_category#9, i_class#8, g_category#13, g_class#14, lochierarchy#15]
 Functions: []
@@ -200,7 +200,7 @@ Results [5]: [total_sum#12, i_category#9, i_class#8, lochierarchy#15, CASE WHEN 
 Input [5]: [total_sum#12, i_category#9, i_class#8, lochierarchy#15, _w0#40]
 Arguments: hashpartitioning(lochierarchy#15, _w0#40, 5), ENSURE_REQUIREMENTS, [plan_id=5]
 
-(33) Sort [codegen id : 11]
+(33) Sort [codegen id : 8]
 Input [5]: [total_sum#12, i_category#9, i_class#8, lochierarchy#15, _w0#40]
 Arguments: [lochierarchy#15 ASC NULLS FIRST, _w0#40 ASC NULLS FIRST, total_sum#12 DESC NULLS LAST], false, 0
 
@@ -208,7 +208,7 @@ Arguments: [lochierarchy#15 ASC NULLS FIRST, _w0#40 ASC NULLS FIRST, total_sum#1
 Input [5]: [total_sum#12, i_category#9, i_class#8, lochierarchy#15, _w0#40]
 Arguments: [rank(total_sum#12) windowspecdefinition(lochierarchy#15, _w0#40, total_sum#12 DESC NULLS LAST, specifiedwindowframe(RowFrame, unboundedpreceding$(), currentrow$())) AS rank_within_parent#41], [lochierarchy#15, _w0#40], [total_sum#12 DESC NULLS LAST]
 
-(35) Project [codegen id : 12]
+(35) Project [codegen id : 9]
 Output [5]: [total_sum#12, i_category#9, i_class#8, lochierarchy#15, rank_within_parent#41]
 Input [6]: [total_sum#12, i_category#9, i_class#8, lochierarchy#15, _w0#40, rank_within_parent#41]
 
@@ -220,7 +220,7 @@ Arguments: 100, [lochierarchy#15 DESC NULLS LAST, CASE WHEN (lochierarchy#15 = 0
 
 Subquery:1 Hosting operator id = 1 Hosting Expression = ws_sold_date_sk#3 IN dynamicpruning#4
 BroadcastExchange (41)
-+- * ColumnarToRow (40)
++- CometColumnarToRow (40)
    +- CometProject (39)
       +- CometFilter (38)
          +- CometScan parquet spark_catalog.default.date_dim (37)
@@ -241,7 +241,7 @@ Condition : (((isnotnull(d_month_seq#6) AND (d_month_seq#6 >= 1212)) AND (d_mont
 Input [2]: [d_date_sk#5, d_month_seq#6]
 Arguments: [d_date_sk#5], [d_date_sk#5]
 
-(40) ColumnarToRow [codegen id : 1]
+(40) CometColumnarToRow
 Input [1]: [d_date_sk#5]
 
 (41) BroadcastExchange

@@ -8,7 +8,7 @@ TakeOrderedAndProject (71)
       :     :  :- * Filter (17)
       :     :  :  +- * HashAggregate (16)
       :     :  :     +- Exchange (15)
-      :     :  :        +- * ColumnarToRow (14)
+      :     :  :        +- CometColumnarToRow (14)
       :     :  :           +- CometHashAggregate (13)
       :     :  :              +- CometProject (12)
       :     :  :                 +- CometBroadcastHashJoin (11)
@@ -25,7 +25,7 @@ TakeOrderedAndProject (71)
       :     :  +- BroadcastExchange (34)
       :     :     +- * HashAggregate (33)
       :     :        +- Exchange (32)
-      :     :           +- * ColumnarToRow (31)
+      :     :           +- CometColumnarToRow (31)
       :     :              +- CometHashAggregate (30)
       :     :                 +- CometProject (29)
       :     :                    +- CometBroadcastHashJoin (28)
@@ -43,7 +43,7 @@ TakeOrderedAndProject (71)
       :        +- * Filter (50)
       :           +- * HashAggregate (49)
       :              +- Exchange (48)
-      :                 +- * ColumnarToRow (47)
+      :                 +- CometColumnarToRow (47)
       :                    +- CometHashAggregate (46)
       :                       +- CometProject (45)
       :                          +- CometBroadcastHashJoin (44)
@@ -58,7 +58,7 @@ TakeOrderedAndProject (71)
       +- BroadcastExchange (68)
          +- * HashAggregate (67)
             +- Exchange (66)
-               +- * ColumnarToRow (65)
+               +- CometColumnarToRow (65)
                   +- CometHashAggregate (64)
                      +- CometProject (63)
                         +- CometBroadcastHashJoin (62)
@@ -137,21 +137,21 @@ Input [5]: [c_customer_id#2, c_first_name#3, c_last_name#4, ss_net_paid#6, d_yea
 Keys [4]: [c_customer_id#2, c_first_name#3, c_last_name#4, d_year#10]
 Functions [1]: [partial_sum(UnscaledValue(ss_net_paid#6))]
 
-(14) ColumnarToRow [codegen id : 1]
+(14) CometColumnarToRow
 Input [5]: [c_customer_id#2, c_first_name#3, c_last_name#4, d_year#10, sum#11]
 
 (15) Exchange
 Input [5]: [c_customer_id#2, c_first_name#3, c_last_name#4, d_year#10, sum#11]
 Arguments: hashpartitioning(c_customer_id#2, c_first_name#3, c_last_name#4, d_year#10, 5), ENSURE_REQUIREMENTS, [plan_id=1]
 
-(16) HashAggregate [codegen id : 8]
+(16) HashAggregate [codegen id : 4]
 Input [5]: [c_customer_id#2, c_first_name#3, c_last_name#4, d_year#10, sum#11]
 Keys [4]: [c_customer_id#2, c_first_name#3, c_last_name#4, d_year#10]
 Functions [1]: [sum(UnscaledValue(ss_net_paid#6))]
 Aggregate Attributes [1]: [sum(UnscaledValue(ss_net_paid#6))#12]
 Results [2]: [c_customer_id#2 AS customer_id#13, MakeDecimal(sum(UnscaledValue(ss_net_paid#6))#12,17,2) AS year_total#14]
 
-(17) Filter [codegen id : 8]
+(17) Filter [codegen id : 4]
 Input [2]: [customer_id#13, year_total#14]
 Condition : (isnotnull(year_total#14) AND (year_total#14 > 0.00))
 
@@ -220,14 +220,14 @@ Input [5]: [c_customer_id#16, c_first_name#17, c_last_name#18, ss_net_paid#20, d
 Keys [4]: [c_customer_id#16, c_first_name#17, c_last_name#18, d_year#24]
 Functions [1]: [partial_sum(UnscaledValue(ss_net_paid#20))]
 
-(31) ColumnarToRow [codegen id : 2]
+(31) CometColumnarToRow
 Input [5]: [c_customer_id#16, c_first_name#17, c_last_name#18, d_year#24, sum#25]
 
 (32) Exchange
 Input [5]: [c_customer_id#16, c_first_name#17, c_last_name#18, d_year#24, sum#25]
 Arguments: hashpartitioning(c_customer_id#16, c_first_name#17, c_last_name#18, d_year#24, 5), ENSURE_REQUIREMENTS, [plan_id=2]
 
-(33) HashAggregate [codegen id : 3]
+(33) HashAggregate [codegen id : 1]
 Input [5]: [c_customer_id#16, c_first_name#17, c_last_name#18, d_year#24, sum#25]
 Keys [4]: [c_customer_id#16, c_first_name#17, c_last_name#18, d_year#24]
 Functions [1]: [sum(UnscaledValue(ss_net_paid#20))]
@@ -238,7 +238,7 @@ Results [4]: [c_customer_id#16 AS customer_id#26, c_first_name#17 AS customer_fi
 Input [4]: [customer_id#26, customer_first_name#27, customer_last_name#28, year_total#29]
 Arguments: HashedRelationBroadcastMode(List(input[0, string, true]),false), [plan_id=3]
 
-(35) BroadcastHashJoin [codegen id : 8]
+(35) BroadcastHashJoin [codegen id : 4]
 Left keys [1]: [customer_id#13]
 Right keys [1]: [customer_id#26]
 Join type: Inner
@@ -297,21 +297,21 @@ Input [5]: [c_customer_id#31, c_first_name#32, c_last_name#33, ws_net_paid#35, d
 Keys [4]: [c_customer_id#31, c_first_name#32, c_last_name#33, d_year#39]
 Functions [1]: [partial_sum(UnscaledValue(ws_net_paid#35))]
 
-(47) ColumnarToRow [codegen id : 4]
+(47) CometColumnarToRow
 Input [5]: [c_customer_id#31, c_first_name#32, c_last_name#33, d_year#39, sum#40]
 
 (48) Exchange
 Input [5]: [c_customer_id#31, c_first_name#32, c_last_name#33, d_year#39, sum#40]
 Arguments: hashpartitioning(c_customer_id#31, c_first_name#32, c_last_name#33, d_year#39, 5), ENSURE_REQUIREMENTS, [plan_id=4]
 
-(49) HashAggregate [codegen id : 5]
+(49) HashAggregate [codegen id : 2]
 Input [5]: [c_customer_id#31, c_first_name#32, c_last_name#33, d_year#39, sum#40]
 Keys [4]: [c_customer_id#31, c_first_name#32, c_last_name#33, d_year#39]
 Functions [1]: [sum(UnscaledValue(ws_net_paid#35))]
 Aggregate Attributes [1]: [sum(UnscaledValue(ws_net_paid#35))#41]
 Results [2]: [c_customer_id#31 AS customer_id#42, MakeDecimal(sum(UnscaledValue(ws_net_paid#35))#41,17,2) AS year_total#43]
 
-(50) Filter [codegen id : 5]
+(50) Filter [codegen id : 2]
 Input [2]: [customer_id#42, year_total#43]
 Condition : (isnotnull(year_total#43) AND (year_total#43 > 0.00))
 
@@ -319,13 +319,13 @@ Condition : (isnotnull(year_total#43) AND (year_total#43 > 0.00))
 Input [2]: [customer_id#42, year_total#43]
 Arguments: HashedRelationBroadcastMode(List(input[0, string, true]),false), [plan_id=5]
 
-(52) BroadcastHashJoin [codegen id : 8]
+(52) BroadcastHashJoin [codegen id : 4]
 Left keys [1]: [customer_id#13]
 Right keys [1]: [customer_id#42]
 Join type: Inner
 Join condition: None
 
-(53) Project [codegen id : 8]
+(53) Project [codegen id : 4]
 Output [7]: [customer_id#13, year_total#14, customer_id#26, customer_first_name#27, customer_last_name#28, year_total#29, year_total#43]
 Input [8]: [customer_id#13, year_total#14, customer_id#26, customer_first_name#27, customer_last_name#28, year_total#29, customer_id#42, year_total#43]
 
@@ -382,14 +382,14 @@ Input [5]: [c_customer_id#45, c_first_name#46, c_last_name#47, ws_net_paid#49, d
 Keys [4]: [c_customer_id#45, c_first_name#46, c_last_name#47, d_year#53]
 Functions [1]: [partial_sum(UnscaledValue(ws_net_paid#49))]
 
-(65) ColumnarToRow [codegen id : 6]
+(65) CometColumnarToRow
 Input [5]: [c_customer_id#45, c_first_name#46, c_last_name#47, d_year#53, sum#54]
 
 (66) Exchange
 Input [5]: [c_customer_id#45, c_first_name#46, c_last_name#47, d_year#53, sum#54]
 Arguments: hashpartitioning(c_customer_id#45, c_first_name#46, c_last_name#47, d_year#53, 5), ENSURE_REQUIREMENTS, [plan_id=6]
 
-(67) HashAggregate [codegen id : 7]
+(67) HashAggregate [codegen id : 3]
 Input [5]: [c_customer_id#45, c_first_name#46, c_last_name#47, d_year#53, sum#54]
 Keys [4]: [c_customer_id#45, c_first_name#46, c_last_name#47, d_year#53]
 Functions [1]: [sum(UnscaledValue(ws_net_paid#49))]
@@ -400,13 +400,13 @@ Results [2]: [c_customer_id#45 AS customer_id#55, MakeDecimal(sum(UnscaledValue(
 Input [2]: [customer_id#55, year_total#56]
 Arguments: HashedRelationBroadcastMode(List(input[0, string, true]),false), [plan_id=7]
 
-(69) BroadcastHashJoin [codegen id : 8]
+(69) BroadcastHashJoin [codegen id : 4]
 Left keys [1]: [customer_id#13]
 Right keys [1]: [customer_id#55]
 Join type: Inner
 Join condition: (CASE WHEN (year_total#43 > 0.00) THEN (year_total#56 / year_total#43) END > CASE WHEN (year_total#14 > 0.00) THEN (year_total#29 / year_total#14) END)
 
-(70) Project [codegen id : 8]
+(70) Project [codegen id : 4]
 Output [3]: [customer_id#26, customer_first_name#27, customer_last_name#28]
 Input [9]: [customer_id#13, year_total#14, customer_id#26, customer_first_name#27, customer_last_name#28, year_total#29, year_total#43, customer_id#55, year_total#56]
 
@@ -418,7 +418,7 @@ Arguments: 100, [customer_first_name#27 ASC NULLS FIRST, customer_id#26 ASC NULL
 
 Subquery:1 Hosting operator id = 3 Hosting Expression = ss_sold_date_sk#7 IN dynamicpruning#8
 BroadcastExchange (75)
-+- * ColumnarToRow (74)
++- CometColumnarToRow (74)
    +- CometFilter (73)
       +- CometScan parquet spark_catalog.default.date_dim (72)
 
@@ -434,7 +434,7 @@ ReadSchema: struct<d_date_sk:int,d_year:int>
 Input [2]: [d_date_sk#9, d_year#10]
 Condition : (((isnotnull(d_year#10) AND (d_year#10 = 2001)) AND d_year#10 IN (2001,2002)) AND isnotnull(d_date_sk#9))
 
-(74) ColumnarToRow [codegen id : 1]
+(74) CometColumnarToRow
 Input [2]: [d_date_sk#9, d_year#10]
 
 (75) BroadcastExchange
@@ -443,7 +443,7 @@ Arguments: HashedRelationBroadcastMode(List(cast(input[0, int, false] as bigint)
 
 Subquery:2 Hosting operator id = 20 Hosting Expression = ss_sold_date_sk#21 IN dynamicpruning#22
 BroadcastExchange (79)
-+- * ColumnarToRow (78)
++- CometColumnarToRow (78)
    +- CometFilter (77)
       +- CometScan parquet spark_catalog.default.date_dim (76)
 
@@ -459,7 +459,7 @@ ReadSchema: struct<d_date_sk:int,d_year:int>
 Input [2]: [d_date_sk#23, d_year#24]
 Condition : (((isnotnull(d_year#24) AND (d_year#24 = 2002)) AND d_year#24 IN (2001,2002)) AND isnotnull(d_date_sk#23))
 
-(78) ColumnarToRow [codegen id : 1]
+(78) CometColumnarToRow
 Input [2]: [d_date_sk#23, d_year#24]
 
 (79) BroadcastExchange
