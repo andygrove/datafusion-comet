@@ -427,6 +427,13 @@ object CometConf extends ShimCometConf {
       .intConf
       .createWithDefault(2)
 
+  val COMET_VECTOR_PREFETCH_ENABLED: ConfigEntry[Boolean] =
+    conf("spark.comet.vector.preFetch")
+      .internal()
+      .doc("TBD")
+      .booleanConf
+      .createWithDefault(true)
+
   val COMET_NATIVE_LOAD_REQUIRED: ConfigEntry[Boolean] = conf("spark.comet.nativeLoadRequired")
     .doc(
       "Whether to require Comet native library to load successfully when Comet is enabled. " +
