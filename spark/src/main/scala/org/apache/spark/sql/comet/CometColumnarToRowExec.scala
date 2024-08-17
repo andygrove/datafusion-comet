@@ -29,8 +29,6 @@ import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.util.Utils
 
-import org.apache.comet.vector.CometVector
-
 /**
  * This is currently an identical copy of Spark's ColumnarToRowExec except for removing the
  * code-gen features.
