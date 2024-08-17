@@ -430,7 +430,7 @@ object CometConf extends ShimCometConf {
   val COMET_VECTOR_PREFETCH_ENABLED: ConfigEntry[Boolean] =
     conf("spark.comet.vector.preFetch")
       .internal()
-      .doc("TBD")
+      .doc("Experimental setting for pre fetching column data to reduce JNI overhead")
       .booleanConf
       .createWithDefault(true)
 

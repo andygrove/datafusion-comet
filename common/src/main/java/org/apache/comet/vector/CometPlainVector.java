@@ -98,26 +98,29 @@ public class CometPlainVector extends CometDecodedVector {
 
   @Override
   public short getShort(int rowId) {
+    final long offset = rowId * 2L;
     if (valueBytes != null) {
-      return valueBytes.getShort(rowId);
+      return valueBytes.getShort((int) offset);
     }
-    return Platform.getShort(null, valueBufferAddress + rowId * 2L);
+    return Platform.getShort(null, valueBufferAddress + offset);
   }
 
   @Override
   public int getInt(int rowId) {
+    final long offset = rowId * 4L;
     if (valueBytes != null) {
-      return valueBytes.getInt(rowId);
+      return valueBytes.getInt((int) offset);
     }
-    return Platform.getInt(null, valueBufferAddress + rowId * 4L);
+    return Platform.getInt(null, valueBufferAddress + offset);
   }
 
   @Override
   public long getLong(int rowId) {
+    final long offset = rowId * 8L;
     if (valueBytes != null) {
-      return valueBytes.getLong(rowId);
+      return valueBytes.getLong((int) offset);
     }
-    return Platform.getLong(null, valueBufferAddress + rowId * 8L);
+    return Platform.getLong(null, valueBufferAddress + offset);
   }
 
   @Override
