@@ -44,6 +44,8 @@ case class CometColumnarToRowExec(child: SparkPlan)
   // supportsColumnar requires to be only called on driver side, see also SPARK-37779.
   assert(Utils.isInRunningSparkTask || child.supportsColumnar)
 
+  override def supportsColumnar: Boolean = false
+
   override def originalPlan: SparkPlan = child
 
   override def output: Seq[Attribute] = child.output
@@ -68,14 +70,12 @@ case class CometColumnarToRowExec(child: SparkPlan)
         numInputBatches += 1
         numOutputRows += batch.numRows()
 
-        // TODO add code that is optimized for dealing with CometVector
-        // but we can do something like ...
-        for (i <- 0 until batch.numCols()) {
-          val cv = batch.column(i).asInstanceOf[CometVector]
-          // cv.importVector
-        }
-
-        // this is the original Spark code
+        // This is the original Spark code that creates an iterator over `ColumnarBatch`
+        // to provide `Iterator[InternalRow]`. The implementation uses a `ColumnarBatchRow`
+        // instance that contains an array of `ColumnVector` which will be instances of
+        // `CometVector`, which in turn is a wrapper around Arrow's `ValueVector`.
+        // We can refactor this code to have more efficient interactions with `CometVector`
+        // so that we can bulk load data from JNI rather than fetch one value at a time.
         batch.rowIterator().asScala.map(toUnsafe)
       }
     }
