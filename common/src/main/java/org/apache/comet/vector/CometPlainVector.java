@@ -27,7 +27,6 @@ import org.apache.arrow.c.CDataDictionaryProvider;
 import org.apache.arrow.vector.*;
 import org.apache.arrow.vector.util.TransferPair;
 import org.apache.parquet.Preconditions;
-import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.unsafe.Platform;
 import org.apache.spark.unsafe.types.UTF8String;
 
@@ -36,8 +35,8 @@ public class CometPlainVector extends CometDecodedVector {
   private final long valueBufferAddress;
   private final boolean isBaseFixedWidthVector;
 
-  /** Value buffer bytes */
-  private ByteBuffer valueBytes;
+  private byte booleanByteCache;
+  private int booleanByteCacheIndex = -1;
 
   public CometPlainVector(ValueVector vector, boolean useDecimal128) {
     this(vector, useDecimal128, false);
@@ -56,71 +55,39 @@ public class CometPlainVector extends CometDecodedVector {
   }
 
   @Override
-  public void prefetch() {
-    if (dataType() == DataTypes.ByteType) {
-      loadValueBytes(1);
-    } else if (dataType() == DataTypes.ShortType) {
-      loadValueBytes(2);
-    } else if (dataType() == DataTypes.IntegerType) {
-      loadValueBytes(4);
-    } else if (dataType() == DataTypes.LongType) {
-      loadValueBytes(8);
-    }
-  }
-
-  private void loadValueBytes(int bytesPerValue) {
-    final int numBytes = numValues() * bytesPerValue;
-    final byte[] buffer = new byte[numBytes];
-    valueBytes = ByteBuffer.wrap(buffer);
-    valueBytes.order(ByteOrder.LITTLE_ENDIAN);
-    final long valueBufferAddress = getValueVector().getDataBuffer().memoryAddress();
-    Platform.copyMemory(null, valueBufferAddress, buffer, Platform.BYTE_ARRAY_OFFSET, numBytes);
-  }
-
-  @Override
   public void setNumNulls(int numNulls) {
     super.setNumNulls(numNulls);
+    this.booleanByteCacheIndex = -1;
   }
 
   @Override
   public boolean getBoolean(int rowId) {
     int byteIndex = rowId >> 3;
-    return ((getByte(byteIndex) >> (rowId & 7)) & 1) == 1;
+    if (byteIndex != booleanByteCacheIndex) {
+      booleanByteCache = getByte(byteIndex);
+      booleanByteCacheIndex = byteIndex;
+    }
+    return ((booleanByteCache >> (rowId & 7)) & 1) == 1;
   }
 
   @Override
   public byte getByte(int rowId) {
-    if (valueBytes != null) {
-      return valueBytes.get(rowId);
-    }
     return Platform.getByte(null, valueBufferAddress + rowId);
   }
 
   @Override
   public short getShort(int rowId) {
-    final long offset = rowId * 2L;
-    if (valueBytes != null) {
-      return valueBytes.getShort((int) offset);
-    }
-    return Platform.getShort(null, valueBufferAddress + offset);
+    return Platform.getShort(null, valueBufferAddress + rowId * 2L);
   }
 
   @Override
   public int getInt(int rowId) {
-    final long offset = rowId * 4L;
-    if (valueBytes != null) {
-      return valueBytes.getInt((int) offset);
-    }
-    return Platform.getInt(null, valueBufferAddress + offset);
+    return Platform.getInt(null, valueBufferAddress + rowId * 4L);
   }
 
   @Override
   public long getLong(int rowId) {
-    final long offset = rowId * 8L;
-    if (valueBytes != null) {
-      return valueBytes.getLong((int) offset);
-    }
-    return Platform.getLong(null, valueBufferAddress + offset);
+    return Platform.getLong(null, valueBufferAddress + rowId * 8L);
   }
 
   @Override

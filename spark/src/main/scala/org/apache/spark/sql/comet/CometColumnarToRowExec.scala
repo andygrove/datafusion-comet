@@ -84,21 +84,6 @@ case class CometColumnarToRowExec(child: SparkPlan)
         numInputBatches += 1
         numOutputRows += batch.numRows()
 
-        // call prefetch on each CometVector so that implementations can choose to
-        // bulk load data from JNI to avoid the overhead of lots of small JNI calls
-        // per "get" method
-        if (CometConf.COMET_VECTOR_PREFETCH_ENABLED.get(conf)) {
-          val start = System.nanoTime()
-          for (i <- 0 until batch.numCols()) {
-            batch.column(i) match {
-              case cv: CometVector =>
-                cv.prefetch()
-              case _ =>
-            }
-          }
-          prefetchTime.add(System.nanoTime() - start)
-        }
-
         // This is the original Spark code that creates an iterator over `ColumnarBatch`
         // to provide `Iterator[InternalRow]`. The implementation uses a `ColumnarBatchRow`
         // instance that contains an array of `ColumnVector` which will be instances of
@@ -160,12 +145,7 @@ case class CometColumnarToRowExec(child: SparkPlan)
       case (columnVectorClz, i) =>
         val colVarName = s"colInstance$i"
         val name = ctx.addMutableState(columnVectorClz, colVarName)
-        val prefetch = if (CometConf.COMET_VECTOR_PREFETCH_ENABLED.get(conf)) {
-          s"((${classOf[CometVector].getName}) $name).prefetch();"
-        } else {
-          ""
-        }
-        (name, s"$name = ($columnVectorClz) $batch.column($i);$prefetch")
+        (name, s"$name = ($columnVectorClz) $batch.column($i);")
     }.unzip
 
     val nextBatch = ctx.freshName("nextBatch")
