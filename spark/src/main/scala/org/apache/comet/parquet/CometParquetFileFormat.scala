@@ -181,6 +181,12 @@ object CometParquetFileFormat extends Logging with ShimSQLConf {
 
     // Comet specific configs
     hadoopConf.setBoolean(
+      ReadOptions.COMET_PARQUET_PARALLEL_IO_ENABLED,
+      CometConf.COMET_PARQUET_PARALLEL_IO_ENABLED.get())
+    hadoopConf.setInt(
+      ReadOptions.COMET_PARQUET_PARALLEL_IO_THREADS,
+      CometConf.COMET_PARQUET_PARALLEL_IO_THREADS.get())
+    hadoopConf.setBoolean(
       CometConf.COMET_PARQUET_ENABLE_DIRECT_BUFFER.key,
       CometConf.COMET_PARQUET_ENABLE_DIRECT_BUFFER.get())
     hadoopConf.setBoolean(

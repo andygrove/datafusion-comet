@@ -82,6 +82,25 @@ abstract class ParquetReadSuite extends CometTestBase {
     }
   }
 
+  test("propagate Parquet parallel reader configs") {
+    Seq(false, true).foreach { parallelIoEnabled =>
+      Seq(16, 32).foreach { parallelIoThreads =>
+        withSQLConf(
+          CometConf.COMET_PARQUET_PARALLEL_IO_ENABLED.key -> parallelIoEnabled.toString,
+          CometConf.COMET_PARQUET_PARALLEL_IO_THREADS.key -> parallelIoThreads.toString) {
+          val hadoopConf = new Configuration()
+          CometParquetFileFormat.populateConf(conf, hadoopConf)
+          assert(
+            parallelIoEnabled.toString ==
+              hadoopConf.get(ReadOptions.COMET_PARQUET_PARALLEL_IO_ENABLED))
+          assert(
+            parallelIoThreads.toString ==
+              hadoopConf.get(ReadOptions.COMET_PARQUET_PARALLEL_IO_THREADS))
+        }
+      }
+    }
+  }
+
   test("unsupported Spark types") {
     Seq(
       NullType -> false,

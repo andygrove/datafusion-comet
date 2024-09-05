@@ -29,6 +29,7 @@ import org.apache.spark.network.util.JavaUtils
 import org.apache.spark.sql.comet.util.Utils
 import org.apache.spark.sql.internal.SQLConf
 
+import org.apache.comet.parquet.ReadOptions
 import org.apache.comet.shims.ShimCometConf
 
 /**
@@ -388,6 +389,21 @@ object CometConf extends ShimCometConf {
     .doc("Whether to use Java direct byte buffer when reading Parquet. By default, this is false")
     .booleanConf
     .createWithDefault(false)
+
+  val COMET_PARQUET_PARALLEL_IO_ENABLED: ConfigEntry[Boolean] =
+    conf(s"spark.${ReadOptions.COMET_PARQUET_PARALLEL_IO_ENABLED}")
+      .doc("Whether to enable parallel IO when reading Parquet files. This can help with " +
+        "performance when reading from object stores.")
+      .booleanConf
+      .createWithDefault(ReadOptions.COMET_PARQUET_PARALLEL_IO_ENABLED_DEFAULT)
+
+  val COMET_PARQUET_PARALLEL_IO_THREADS: ConfigEntry[Int] =
+    conf(s"spark.${ReadOptions.COMET_PARQUET_PARALLEL_IO_THREADS}")
+      .doc(
+        s"The number of parallel threads to use when ${COMET_PARQUET_PARALLEL_IO_ENABLED.key} " +
+          "is enabled.")
+      .intConf
+      .createWithDefault(ReadOptions.COMET_PARQUET_PARALLEL_IO_THREADS_DEFAULT)
 
   val COMET_SCAN_PREFETCH_ENABLED: ConfigEntry[Boolean] =
     conf("spark.comet.scan.preFetch.enabled")
