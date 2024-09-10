@@ -39,7 +39,9 @@ use arrow_data::ffi::FFI_ArrowArray;
 use arrow_data::ArrayData;
 use arrow_schema::ffi::FFI_ArrowSchema;
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
-use datafusion::physical_plan::metrics::{BaselineMetrics, ExecutionPlanMetricsSet, MetricsSet};
+use datafusion::physical_plan::metrics::{
+    BaselineMetrics, ExecutionPlanMetricsSet, MetricBuilder, MetricsSet, Time,
+};
 use datafusion::{
     execution::TaskContext,
     physical_expr::*,
@@ -321,16 +323,20 @@ struct ScanStream<'a> {
     baseline_metrics: BaselineMetrics,
     /// Cast options
     cast_options: CastOptions<'a>,
+    /// elapsed time for casting columns to different data types during scan
+    cast_time: Time,
 }
 
 impl<'a> ScanStream<'a> {
     pub fn new(scan: ScanExec, schema: SchemaRef, partition: usize) -> Self {
         let baseline_metrics = BaselineMetrics::new(&scan.metrics, partition);
+        let cast_time = MetricBuilder::new(&scan.metrics).subset_time("cast_time", partition);
         Self {
             scan,
             schema,
             baseline_metrics,
             cast_options: CastOptions::default(),
+            cast_time,
         }
     }
 
@@ -351,33 +357,17 @@ impl<'a> ScanStream<'a> {
             .zip(schema_fields.iter())
             .map(|(column, f)| {
                 if !column.data_type().equals_datatype(f.data_type()) {
+                    let mut timer = self.cast_time.timer();
                     let c1 = cast_with_options(column, f.data_type(), &self.cast_options)?;
-                    cast_with_options(&c1, f.data_type(), &self.cast_options)
+                    let cast_array = cast_with_options(&c1, f.data_type(), &self.cast_options);
+                    timer.stop();
+                    cast_array
                 } else {
                     Ok(Arc::clone(column))
                 }
             })
             .collect::<Result<Vec<_>, _>>()?;
         let options = RecordBatchOptions::new().with_row_count(Some(num_rows));
-
-        // println!("BEFORE RecordBatch::try_new_with_options");
-        // println!(
-        //     "SCHEMA: {}",
-        //     self.schema
-        //         .fields()
-        //         .iter()
-        //         .map(|f| format!("{}: {}", f.name(), f.data_type()))
-        //         .collect::<Vec<String>>()
-        //         .join(", ")
-        // );
-        // println!(
-        //     "DATA TYPES: {}",
-        //     new_columns
-        //         .iter()
-        //         .map(|c| format!("{}", c.data_type()))
-        //         .collect::<Vec<String>>()
-        //         .join(", ")
-        // );
         RecordBatch::try_new_with_options(Arc::clone(&self.schema), new_columns, &options)
             .map_err(|e| arrow_datafusion_err!(e))
     }
