@@ -260,6 +260,7 @@ fn copy_or_unpack_array(array: &Arc<dyn Array>, mode: &CopyMode) -> Result<Array
     match array.data_type() {
         DataType::Dictionary(_, value_type) => {
             let options = CastOptions::default();
+            println!("CopyExec cast from dict to {}", value_type);
             cast_with_options(array, value_type.as_ref(), &options)
         }
         _ => {

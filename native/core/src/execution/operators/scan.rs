@@ -112,30 +112,6 @@ impl ScanExec {
         })
     }
 
-    /// Checks if the input data type `dt` is a dictionary type with primitive value type.
-    /// If so, unpacks it and returns the primitive value type.
-    ///
-    /// Otherwise, this returns the original data type.
-    ///
-    /// This is necessary since DataFusion doesn't handle dictionary array with values
-    /// being primitive type.
-    ///
-    /// TODO: revisit this once DF has improved its dictionary type support. Ideally we shouldn't
-    ///   do this in Comet but rather let DF to handle it for us.
-    fn unpack_dictionary_type(dt: &DataType) -> DataType {
-        if let DataType::Dictionary(_, vt) = dt {
-            if !matches!(
-                vt.as_ref(),
-                DataType::Utf8 | DataType::LargeUtf8 | DataType::Binary | DataType::LargeBinary
-            ) {
-                // return the underlying data type
-                return vt.as_ref().clone();
-            }
-        }
-
-        dt.clone()
-    }
-
     /// Feeds input batch into this `Scan`. Only used in unit test.
     pub fn set_input_batch(&mut self, input: InputBatch) {
         *self.batch.try_lock().unwrap() = Some(input);
@@ -248,7 +224,7 @@ fn scan_schema(input_batch: &InputBatch, data_types: &[DataType]) -> SchemaRef {
                 .iter()
                 .enumerate()
                 .map(|(idx, c)| {
-                    let datatype = ScanExec::unpack_dictionary_type(c.data_type());
+                    let datatype = /*ScanExec::unpack_dictionary_type(*/c.data_type().clone()/*)*/;
                     // We don't use the field name. Put a placeholder.
                     if matches!(datatype, DataType::Dictionary(_, _)) {
                         Field::new_dict(format!("col_{}", idx), datatype, true, idx as i64, false)
@@ -374,14 +350,34 @@ impl<'a> ScanStream<'a> {
             .iter()
             .zip(schema_fields.iter())
             .map(|(column, f)| {
-                if column.data_type() != f.data_type() {
-                    cast_with_options(column, f.data_type(), &self.cast_options)
+                if !column.data_type().equals_datatype(f.data_type()) {
+                    let c1 = cast_with_options(column, f.data_type(), &self.cast_options)?;
+                    cast_with_options(&c1, f.data_type(), &self.cast_options)
                 } else {
                     Ok(Arc::clone(column))
                 }
             })
             .collect::<Result<Vec<_>, _>>()?;
         let options = RecordBatchOptions::new().with_row_count(Some(num_rows));
+
+        // println!("BEFORE RecordBatch::try_new_with_options");
+        // println!(
+        //     "SCHEMA: {}",
+        //     self.schema
+        //         .fields()
+        //         .iter()
+        //         .map(|f| format!("{}: {}", f.name(), f.data_type()))
+        //         .collect::<Vec<String>>()
+        //         .join(", ")
+        // );
+        // println!(
+        //     "DATA TYPES: {}",
+        //     new_columns
+        //         .iter()
+        //         .map(|c| format!("{}", c.data_type()))
+        //         .collect::<Vec<String>>()
+        //         .join(", ")
+        // );
         RecordBatch::try_new_with_options(Arc::clone(&self.schema), new_columns, &options)
             .map_err(|e| arrow_datafusion_err!(e))
     }
