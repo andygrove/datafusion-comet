@@ -839,7 +839,7 @@ impl PhysicalPlanner {
                 let (scans, child) = self.create_plan(&children[0], inputs)?;
 
                 let child: Arc<dyn ExecutionPlan> =
-                    Arc::new(CopyExec::new(child, CopyMode::UnpackOrDeepCopy));
+                    Arc::new(CopyExec::new(child, CopyMode::UnpackOrClone));
 
                 let group_exprs: PhyExprResult = agg
                     .grouping_exprs
