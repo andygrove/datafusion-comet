@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "example", about = "An example of StructOpt usage.")]
+#[structopt(name = "comet-tool", about = "Comet command-line tools")]
 enum Opt {
     /// Utility to extract detailed native metrics from Spark executor's
     /// stderr log when `spark.comet.explain.native.enabled=true`.
