@@ -16,7 +16,7 @@
 # under the License.
 
 [workspace]
-members = ["core", "spark-expr", "proto"]
+members = ["core", "spark-expr", "proto", "tools"]
 resolver = "2"
 
 [workspace.package]

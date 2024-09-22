@@ -1,0 +1,17 @@
+[package]
+name = "comet-tools"
+version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+authors.workspace = true
+description.workspace = true
+readme.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+structopt = "0.3.26"
+regex = "1.10.6"
+
