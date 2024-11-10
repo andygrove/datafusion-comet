@@ -952,8 +952,8 @@ impl PhysicalPlanner {
                 if scan.source == "CometScan parquet  (unknown)" {
                     let data_schema = parse_message_type(&scan.data_schema).unwrap();
                     let required_schema = parse_message_type(&scan.required_schema).unwrap();
-                    println!("data_schema: {:?}", data_schema);
-                    println!("required_schema: {:?}", required_schema);
+                    // println!("data_schema: {:?}", data_schema);
+                    // println!("required_schema: {:?}", required_schema);
 
                     let data_schema_descriptor =
                         parquet::schema::types::SchemaDescriptor::new(Arc::new(data_schema));
@@ -964,7 +964,7 @@ impl PhysicalPlanner {
                         )
                         .unwrap(),
                     );
-                    println!("data_schema_arrow: {:?}", data_schema_arrow);
+                    // println!("data_schema_arrow: {:?}", data_schema_arrow);
 
                     let required_schema_descriptor =
                         parquet::schema::types::SchemaDescriptor::new(Arc::new(required_schema));
@@ -975,7 +975,7 @@ impl PhysicalPlanner {
                         )
                         .unwrap(),
                     );
-                    println!("required_schema_arrow: {:?}", required_schema_arrow);
+                    // println!("required_schema_arrow: {:?}", required_schema_arrow);
 
                     assert!(!required_schema_arrow.fields.is_empty());
 
@@ -985,7 +985,7 @@ impl PhysicalPlanner {
                     required_schema_arrow.fields.iter().for_each(|field| {
                         projection_vector.push(data_schema_arrow.index_of(field.name()).unwrap());
                     });
-                    println!("projection_vector: {:?}", projection_vector);
+                    // println!("projection_vector: {:?}", projection_vector);
 
                     assert_eq!(projection_vector.len(), required_schema_arrow.fields.len());
 
@@ -1008,8 +1008,8 @@ impl PhysicalPlanner {
                             ))
                         });
 
-                    println!("data_filters: {:?}", data_filters);
-                    println!("test_data_filters: {:?}", test_data_filters);
+                    // println!("data_filters: {:?}", data_filters);
+                    // println!("test_data_filters: {:?}", test_data_filters);
 
                     let object_store_url = ObjectStoreUrl::local_filesystem();
                     let paths: Vec<Url> = scan

@@ -3155,29 +3155,29 @@ object QueryPlanSerde extends Logging with ShimQueryPlanSerde with CometExprShim
           op match {
             case cometScan: CometScanExec =>
               // scalastyle:off println
-//              System.out.println(op.simpleStringWithNodeId())
-//              System.out.println(scanTypes.asJava) // Spark types for output.
-              System.out.println(cometScan.output) // This is the names of the output columns.
-//              System.out.println(cometScan.requiredSchema); // This is the projected columns.
-              System.out.println(
-                cometScan.dataFilters
-              ); // This is the filter expressions that have been pushed down.
+//              println(op.simpleStringWithNodeId())
+//              println(scanTypes.asJava) // Spark types for output.
+//              println(cometScan.output) // This is the names of the output columns.
+//              println(cometScan.requiredSchema); // This is the projected columns.
+//              println(
+//                cometScan.dataFilters
+//              ); // This is the filter expressions that have been pushed down.
 
               val dataFilters = cometScan.dataFilters.map(exprToProto(_, cometScan.output))
               scanBuilder.addAllDataFilters(dataFilters.map(_.get).asJava)
-//              System.out.println(cometScan.relation.location.inputFiles(0))
-//              System.out.println(cometScan.partitionFilters);
-//              System.out.println(cometScan.relation.partitionSchema)
-//              System.out.println(cometScan.metadata);
+//              println(cometScan.relation.location.inputFiles(0))
+//              println(cometScan.partitionFilters);
+//              println(cometScan.relation.partitionSchema)
+//              println(cometScan.metadata);
 
-//              System.out.println("requiredSchema:")
+//              println("requiredSchema:")
 //              cometScan.requiredSchema.fields.foreach(field => {
-//                System.out.println(field.dataType)
+//                println(field.dataType)
 //              })
 
-//              System.out.println("relation.dataSchema:")
+//              println("relation.dataSchema:")
 //              cometScan.relation.dataSchema.fields.foreach(field => {
-//                System.out.println(field.dataType)
+//                println(field.dataType)
 //              })
               // scalastyle:on println
 
