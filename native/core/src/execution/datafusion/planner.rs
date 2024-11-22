@@ -85,6 +85,7 @@ use datafusion::{
 use datafusion_functions_nested::concat::ArrayAppend;
 use datafusion_physical_expr::aggregate::{AggregateExprBuilder, AggregateFunctionExpr};
 
+use crate::execution::datafusion::spark_plan::SparkPlan;
 use datafusion_comet_proto::{
     spark_expression::{
         self, agg_expr::ExprStruct as AggExprStruct, expr::ExprStruct, literal::Value, AggExpr,
@@ -880,7 +881,11 @@ impl PhysicalPlanner {
                             .map(|r| (r, format!("col_{}", idx)))
                     })
                     .collect();
-                Ok((scans, Arc::new(ProjectionExec::try_new(exprs?, child)?)))
+                let projection = Arc::new(ProjectionExec::try_new(exprs?, child)?);
+                Ok((
+                    scans,
+                    Arc::new(SparkPlan::new(spark_plan.plan_id, projection)),
+                ))
             }
             OpStruct::Filter(filter) => {
                 assert!(children.len() == 1);
@@ -888,7 +893,8 @@ impl PhysicalPlanner {
                 let predicate =
                     self.create_expr(filter.predicate.as_ref().unwrap(), child.schema())?;
 
-                Ok((scans, Arc::new(FilterExec::try_new(predicate, child)?)))
+                let filter = Arc::new(FilterExec::try_new(predicate, child)?);
+                Ok((scans, Arc::new(SparkPlan::new(spark_plan.plan_id, filter))))
             }
             OpStruct::HashAgg(agg) => {
                 assert!(children.len() == 1);
@@ -940,8 +946,8 @@ impl PhysicalPlanner {
                     })
                     .collect();
 
-                let exec: Arc<dyn ExecutionPlan> = if agg.result_exprs.is_empty() {
-                    aggregate
+                if agg.result_exprs.is_empty() {
+                    Ok((scans, Arc::new(SparkPlan::new(spark_plan.plan_id, aggregate))))
                 } else {
                     // For final aggregation, DF's hash aggregate exec doesn't support Spark's
                     // aggregate result expressions like `COUNT(col) + 1`, but instead relying
@@ -950,17 +956,17 @@ impl PhysicalPlanner {
                     //
                     // Note that `result_exprs` should only be set for final aggregation on the
                     // Spark side.
-                    Arc::new(ProjectionExec::try_new(result_exprs?, aggregate)?)
-                };
-
-                Ok((scans, exec))
+                    let agg_project = Arc::new(ProjectionExec::try_new(result_exprs?, aggregate.clone())?);
+                    Ok((scans, Arc::new(SparkPlan::new_with_additional(spark_plan.plan_id, agg_project, vec![aggregate]))))
+                }
             }
             OpStruct::Limit(limit) => {
                 assert!(children.len() == 1);
                 let num = limit.limit;
                 let (scans, child) = self.create_plan(&children[0], inputs)?;
 
-                Ok((scans, Arc::new(LocalLimitExec::new(child, num as usize))))
+                let limit = Arc::new(LocalLimitExec::new(child, num as usize));
+                Ok((scans, Arc::new(SparkPlan::new(spark_plan.plan_id, limit))))
             }
             OpStruct::Sort(sort) => {
                 assert!(children.len() == 1);
@@ -980,10 +986,9 @@ impl PhysicalPlanner {
                 // https://github.com/apache/datafusion-comet/issues/963
                 let child = Self::wrap_in_copy_exec(child);
 
-                Ok((
-                    scans,
-                    Arc::new(SortExec::new(LexOrdering::new(exprs?), child).with_fetch(fetch)),
-                ))
+                let sort =
+                    Arc::new(SortExec::new(LexOrdering::new(exprs?), child).with_fetch(fetch));
+                Ok((scans, Arc::new(SparkPlan::new(spark_plan.plan_id, sort))))
             }
             OpStruct::Scan(scan) => {
                 let data_types = scan.fields.iter().map(to_arrow_datatype).collect_vec();
@@ -1008,7 +1013,10 @@ impl PhysicalPlanner {
                 // The `ScanExec` operator will take actual arrays from Spark during execution
                 let scan =
                     ScanExec::new(self.exec_context_id, input_source, &scan.source, data_types)?;
-                Ok((vec![scan.clone()], Arc::new(scan)))
+                Ok((
+                    vec![scan.clone()],
+                    Arc::new(SparkPlan::new(spark_plan.plan_id, Arc::new(scan))),
+                ))
             }
             OpStruct::ShuffleWriter(writer) => {
                 assert!(children.len() == 1);
@@ -1017,15 +1025,13 @@ impl PhysicalPlanner {
                 let partitioning = self
                     .create_partitioning(writer.partitioning.as_ref().unwrap(), child.schema())?;
 
-                Ok((
-                    scans,
-                    Arc::new(ShuffleWriterExec::try_new(
-                        child,
-                        partitioning,
-                        writer.output_data_file.clone(),
-                        writer.output_index_file.clone(),
-                    )?),
-                ))
+                let shuffle = Arc::new(ShuffleWriterExec::try_new(
+                    child,
+                    partitioning,
+                    writer.output_data_file.clone(),
+                    writer.output_index_file.clone(),
+                )?);
+                Ok((scans, Arc::new(SparkPlan::new(spark_plan.plan_id, shuffle))))
             }
             OpStruct::Expand(expand) => {
                 assert!(children.len() == 1);
@@ -1068,16 +1074,14 @@ impl PhysicalPlanner {
                 // the data corruption. Note that we only need to copy the input batch
                 // if the child operator is `ScanExec`, because other operators after `ScanExec`
                 // will create new arrays for the output batch.
-                let child = if can_reuse_input_batch(&child) {
+                let child: Arc<dyn ExecutionPlan> = if can_reuse_input_batch(&child) {
                     Arc::new(CopyExec::new(child, CopyMode::UnpackOrDeepCopy))
                 } else {
                     child
                 };
 
-                Ok((
-                    scans,
-                    Arc::new(CometExpandExec::new(projections, child, schema)),
-                ))
+                let expand = Arc::new(CometExpandExec::new(projections, child, schema));
+                Ok((scans, Arc::new(SparkPlan::new(spark_plan.plan_id, expand))))
             }
             OpStruct::SortMergeJoin(join) => {
                 let (join_params, scans) = self.parse_join_parameters(
@@ -1115,7 +1119,7 @@ impl PhysicalPlanner {
                     false,
                 )?);
 
-                Ok((scans, join))
+                Ok((scans, Arc::new(SparkPlan::new(spark_plan.plan_id, join))))
             }
             OpStruct::HashJoin(join) => {
                 let (join_params, scans) = self.parse_join_parameters(
@@ -1154,7 +1158,10 @@ impl PhysicalPlanner {
                     swap_hash_join(hash_join.as_ref(), PartitionMode::Partitioned)?
                 };
 
-                Ok((scans, hash_join))
+                Ok((
+                    scans,
+                    Arc::new(SparkPlan::new(spark_plan.plan_id, hash_join)),
+                ))
             }
             OpStruct::Window(wnd) => {
                 let (scans, child) = self.create_plan(&children[0], inputs)?;
@@ -1187,15 +1194,13 @@ impl PhysicalPlanner {
                     })
                     .collect();
 
-                Ok((
-                    scans,
-                    Arc::new(BoundedWindowAggExec::try_new(
-                        window_expr?,
-                        child,
-                        partition_exprs.to_vec(),
-                        InputOrderMode::Sorted,
-                    )?),
-                ))
+                let window = Arc::new(BoundedWindowAggExec::try_new(
+                    window_expr?,
+                    child,
+                    partition_exprs.to_vec(),
+                    InputOrderMode::Sorted,
+                )?);
+                Ok((scans, Arc::new(SparkPlan::new(spark_plan.plan_id, window))))
             }
         }
     }
