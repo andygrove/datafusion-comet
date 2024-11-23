@@ -97,8 +97,13 @@ impl ScanExec {
         // Dictionary-encoded primitive arrays are always unpacked.
         let first_batch = if let Some(input_source) = input_source.as_ref() {
             let mut timer = baseline_metrics.elapsed_compute().timer();
+
+            // Use Arrow FFI to get schema of first batch. We assume that all batches will
+            // have the same schema
+            let schema_addr = ScanExec::get_schema(exec_context_id, input_source.as_obj(), data_types.len())?;
+
             let batch =
-                ScanExec::get_next(exec_context_id, input_source.as_obj(), data_types.len())?;
+                ScanExec::get_next(exec_context_id, input_source.as_obj(), schema_addr, data_types.len())?;
             timer.stop();
             batch
         } else {
@@ -180,10 +185,74 @@ impl ScanExec {
         Ok(())
     }
 
+    /// Invokes JNI call to get schema.
+    fn get_schema(exec_context_id: i64, iter: &JObject, num_cols: usize) -> Result<Vec<i64>, CometError> {
+        if exec_context_id == TEST_EXEC_CONTEXT_ID {
+            // This is a unit test. We don't need to call JNI.
+            return Ok(vec![]);
+        }
+
+        if iter.is_null() {
+            return Err(CometError::from(ExecutionError::GeneralError(format!(
+                "Null batch iterator object. Plan id: {}",
+                exec_context_id
+            ))));
+        }
+
+        let mut env = JVMClasses::get_env()?;
+
+        let mut schema_addrs = Vec::with_capacity(num_cols);
+
+        for _ in 0..num_cols {
+            let arrow_schema = Rc::new(FFI_ArrowSchema::empty());
+            let schema_ptr= Rc::into_raw(arrow_schema) as i64;
+            schema_addrs.push(schema_ptr);
+        }
+
+        // Prepare the java array parameters
+        let long_schema_addrs = env.new_long_array(num_cols as jsize)?;
+
+        env.set_long_array_region(&long_schema_addrs, 0, &schema_addrs)?;
+
+        let schema_obj = JObject::from(long_schema_addrs);
+
+        let schema_obj = JValueGen::Object(schema_obj.as_ref());
+
+        // TODO process return boolean value
+        let _result: bool = unsafe {
+            jni_call!(&mut env,
+        comet_batch_iterator(iter).exportSchema(schema_obj) -> bool)?
+        };
+
+        // TODO process return boolean value
+        // if num_rows == -1 {
+        //     return Ok(InputBatch::EOF);
+        // }
+
+        let mut schema_pointers: Vec<i64> = Vec::with_capacity(num_cols);
+
+        for i in 0..num_cols {
+            let schema_ptr = schema_addrs[i];
+            schema_pointers.push(schema_ptr);
+            // Drop the Arcs to avoid memory leak
+            unsafe {
+                Rc::from_raw(schema_ptr as *const FFI_ArrowSchema);
+            }
+
+
+
+        }
+
+
+        Ok(schema_addrs)
+
+    }
+
     /// Invokes JNI call to get next batch.
     fn get_next(
         exec_context_id: i64,
         iter: &JObject,
+        schema_addr: Vec<i64>,
         num_cols: usize,
     ) -> Result<InputBatch, CometError> {
         if exec_context_id == TEST_EXEC_CONTEXT_ID {
@@ -201,36 +270,31 @@ impl ScanExec {
         let mut env = JVMClasses::get_env()?;
 
         let mut array_addrs = Vec::with_capacity(num_cols);
-        let mut schema_addrs = Vec::with_capacity(num_cols);
 
         for _ in 0..num_cols {
             let arrow_array = Rc::new(FFI_ArrowArray::empty());
-            let arrow_schema = Rc::new(FFI_ArrowSchema::empty());
-            let (array_ptr, schema_ptr) = (
-                Rc::into_raw(arrow_array) as i64,
-                Rc::into_raw(arrow_schema) as i64,
-            );
-
+            let array_ptr= Rc::into_raw(arrow_array) as i64;
             array_addrs.push(array_ptr);
-            schema_addrs.push(schema_ptr);
         }
 
         // Prepare the java array parameters
         let long_array_addrs = env.new_long_array(num_cols as jsize)?;
-        let long_schema_addrs = env.new_long_array(num_cols as jsize)?;
 
         env.set_long_array_region(&long_array_addrs, 0, &array_addrs)?;
-        env.set_long_array_region(&long_schema_addrs, 0, &schema_addrs)?;
 
         let array_obj = JObject::from(long_array_addrs);
-        let schema_obj = JObject::from(long_schema_addrs);
 
         let array_obj = JValueGen::Object(array_obj.as_ref());
+
+        let long_schema_addrs = env.new_long_array(num_cols as jsize)?;
+        env.set_long_array_region(&long_schema_addrs, 0, &schema_addr)?;
+        let schema_obj = JObject::from(long_schema_addrs);
         let schema_obj = JValueGen::Object(schema_obj.as_ref());
+
 
         let num_rows: i32 = unsafe {
             jni_call!(&mut env,
-        comet_batch_iterator(iter).next(array_obj, schema_obj) -> i32)?
+        comet_batch_iterator(iter).next(array_obj) -> i32)?
         };
 
         if num_rows == -1 {
@@ -239,23 +303,25 @@ impl ScanExec {
 
         let mut inputs: Vec<ArrayRef> = Vec::with_capacity(num_cols);
 
-        for i in 0..num_cols {
-            let array_ptr = array_addrs[i];
-            let schema_ptr = schema_addrs[i];
-            let array_data = ArrayData::from_spark((array_ptr, schema_ptr))?;
+        // for i in 0..num_cols {
+        //     let array_ptr = array_addrs[i];
+        //     let schema_ptr = schema_addrs[i];
+        //     let array_data = ArrayData::from_spark((array_ptr, schema_ptr))?;
+        //
+        //     // TODO: validate array input data
+        //
+        //     inputs.push(make_array(array_data));
+        //
+        //     // Drop the Arcs to avoid memory leak
+        //     unsafe {
+        //         Rc::from_raw(array_ptr as *const FFI_ArrowArray);
+        //         Rc::from_raw(schema_ptr as *const FFI_ArrowSchema);
+        //     }
+        // }
+        //
+        // Ok(InputBatch::new(inputs, Some(num_rows as usize)))
 
-            // TODO: validate array input data
-
-            inputs.push(make_array(array_data));
-
-            // Drop the Arcs to avoid memory leak
-            unsafe {
-                Rc::from_raw(array_ptr as *const FFI_ArrowArray);
-                Rc::from_raw(schema_ptr as *const FFI_ArrowSchema);
-            }
-        }
-
-        Ok(InputBatch::new(inputs, Some(num_rows as usize)))
+        todo!()
     }
 }
 

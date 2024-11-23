@@ -33,6 +33,7 @@ import org.apache.comet.vector.NativeUtil;
 public class CometBatchIterator {
   final Iterator<ColumnarBatch> input;
   final NativeUtil nativeUtil;
+  private ColumnarBatch currentBatch = null;
 
   CometBatchIterator(Iterator<ColumnarBatch> input, NativeUtil nativeUtil) {
     this.input = input;
@@ -40,19 +41,38 @@ public class CometBatchIterator {
   }
 
   /**
+   * Get the schema of the Arrow arrays.
+   *
+   * @param schemaAddrs The addresses of the ArrowSchema structures.
+   */
+  public boolean exportSchema(long[] schemaAddrs) {
+    if (currentBatch == null) {
+      if (input.hasNext()) {
+        currentBatch = input.next();
+      } else {
+        return false;
+      }
+    }
+    nativeUtil.exportSchema(schemaAddrs, currentBatch);
+    return true;
+  }
+
+  /**
    * Get the next batches of Arrow arrays.
    *
    * @param arrayAddrs The addresses of the ArrowArray structures.
-   * @param schemaAddrs The addresses of the ArrowSchema structures.
    * @return the number of rows of the current batch. -1 if there is no more batch.
    */
-  public int next(long[] arrayAddrs, long[] schemaAddrs) {
-    boolean hasBatch = input.hasNext();
-
-    if (!hasBatch) {
-      return -1;
+  public int next(long[] arrayAddrs) {
+    if (currentBatch == null) {
+      if (input.hasNext()) {
+        currentBatch = input.next();
+      } else {
+        return -1;
+      }
     }
-
-    return nativeUtil.exportBatch(arrayAddrs, schemaAddrs, input.next());
+    int rows = nativeUtil.exportBatch(arrayAddrs, currentBatch);
+    currentBatch = null;
+    return rows;
   }
 }
