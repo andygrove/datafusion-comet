@@ -40,8 +40,8 @@ impl<'a> CometBatchIterator<'a> {
 
         Ok(CometBatchIterator {
             class,
-            method_export_schema: env.get_method_id(Self::JVM_CLASS, "exportSchema", "([J)B")?,
-            method_export_schema_ret: ReturnType::Primitive(Primitive::Boolean),
+            method_export_schema: env.get_method_id(Self::JVM_CLASS, "exportSchema", "([J)V")?,
+            method_export_schema_ret: ReturnType::Primitive(Primitive::Void),
             method_next: env.get_method_id(Self::JVM_CLASS, "next", "([J)I")?,
             method_next_ret: ReturnType::Primitive(Primitive::Int),
         })

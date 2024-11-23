@@ -78,7 +78,7 @@ class NativeUtil {
     (arrays, schemas)
   }
 
-  def exportSchema(schemaAddrs: Array[Long], batch: ColumnarBatch): Unit = {
+  def exportSchema(schemaAddrs: Array[Long], batch: ColumnarBatch): Int = {
     (0 until batch.numCols()).foreach { index =>
       batch.column(index) match {
         case a: CometVector =>
@@ -106,6 +106,7 @@ class NativeUtil {
 
       }
     }
+    0
   }
 
   /**

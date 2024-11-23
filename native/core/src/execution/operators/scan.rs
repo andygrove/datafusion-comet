@@ -62,6 +62,7 @@ pub struct ScanExec {
     pub exec_context_id: i64,
     /// The input source of scan node. It is a global reference of JVM `CometBatchIterator` object.
     pub input_source: Option<Arc<GlobalRef>>,
+    arrow_schema_addrs: Vec<i64>,
     /// A description of the input source for informational purposes
     pub input_source_description: String,
     /// The data types of columns of the input batch. Converted from Spark schema.
@@ -95,19 +96,24 @@ impl ScanExec {
         // ScanExec will cast arrays from all future batches to the type determined here, so we
         // may end up either unpacking dictionary arrays or dictionary-encoding arrays.
         // Dictionary-encoded primitive arrays are always unpacked.
-        let first_batch = if let Some(input_source) = input_source.as_ref() {
+        let (first_batch, arrow_schema_addrs) = if let Some(input_source) = input_source.as_ref() {
             let mut timer = baseline_metrics.elapsed_compute().timer();
 
             // Use Arrow FFI to get schema of first batch. We assume that all batches will
             // have the same schema
-            let schema_addr = ScanExec::get_schema(exec_context_id, input_source.as_obj(), data_types.len())?;
+            let arrow_schema_addrs =
+                ScanExec::get_schema(exec_context_id, input_source.as_obj(), data_types.len())?;
 
-            let batch =
-                ScanExec::get_next(exec_context_id, input_source.as_obj(), schema_addr, data_types.len())?;
+            let batch = ScanExec::get_next(
+                exec_context_id,
+                input_source.as_obj(),
+                &arrow_schema_addrs,
+                data_types.len(),
+            )?;
             timer.stop();
-            batch
+            (batch, arrow_schema_addrs)
         } else {
-            InputBatch::EOF
+            (InputBatch::EOF, vec![])
         };
 
         let schema = scan_schema(&first_batch, &data_types);
@@ -123,6 +129,7 @@ impl ScanExec {
         Ok(Self {
             exec_context_id,
             input_source,
+            arrow_schema_addrs,
             input_source_description: input_source_description.to_string(),
             data_types,
             batch: Arc::new(Mutex::new(Some(first_batch))),
@@ -175,6 +182,7 @@ impl ScanExec {
             let next_batch = ScanExec::get_next(
                 self.exec_context_id,
                 self.input_source.as_ref().unwrap().as_obj(),
+                &self.arrow_schema_addrs,
                 self.data_types.len(),
             )?;
             *current_batch = Some(next_batch);
@@ -186,7 +194,11 @@ impl ScanExec {
     }
 
     /// Invokes JNI call to get schema.
-    fn get_schema(exec_context_id: i64, iter: &JObject, num_cols: usize) -> Result<Vec<i64>, CometError> {
+    fn get_schema(
+        exec_context_id: i64,
+        iter: &JObject,
+        num_cols: usize,
+    ) -> Result<Vec<i64>, CometError> {
         if exec_context_id == TEST_EXEC_CONTEXT_ID {
             // This is a unit test. We don't need to call JNI.
             return Ok(vec![]);
@@ -205,7 +217,7 @@ impl ScanExec {
 
         for _ in 0..num_cols {
             let arrow_schema = Rc::new(FFI_ArrowSchema::empty());
-            let schema_ptr= Rc::into_raw(arrow_schema) as i64;
+            let schema_ptr = Rc::into_raw(arrow_schema) as i64;
             schema_addrs.push(schema_ptr);
         }
 
@@ -219,9 +231,9 @@ impl ScanExec {
         let schema_obj = JValueGen::Object(schema_obj.as_ref());
 
         // TODO process return boolean value
-        let _result: bool = unsafe {
+        let _result = unsafe {
             jni_call!(&mut env,
-        comet_batch_iterator(iter).exportSchema(schema_obj) -> bool)?
+        comet_batch_iterator(iter).export_schema(schema_obj) -> i32)?
         };
 
         // TODO process return boolean value
@@ -238,21 +250,16 @@ impl ScanExec {
             unsafe {
                 Rc::from_raw(schema_ptr as *const FFI_ArrowSchema);
             }
-
-
-
         }
 
-
         Ok(schema_addrs)
-
     }
 
     /// Invokes JNI call to get next batch.
     fn get_next(
         exec_context_id: i64,
         iter: &JObject,
-        schema_addr: Vec<i64>,
+        schema_addr: &Vec<i64>,
         num_cols: usize,
     ) -> Result<InputBatch, CometError> {
         if exec_context_id == TEST_EXEC_CONTEXT_ID {
@@ -273,7 +280,7 @@ impl ScanExec {
 
         for _ in 0..num_cols {
             let arrow_array = Rc::new(FFI_ArrowArray::empty());
-            let array_ptr= Rc::into_raw(arrow_array) as i64;
+            let array_ptr = Rc::into_raw(arrow_array) as i64;
             array_addrs.push(array_ptr);
         }
 
@@ -286,11 +293,10 @@ impl ScanExec {
 
         let array_obj = JValueGen::Object(array_obj.as_ref());
 
-        let long_schema_addrs = env.new_long_array(num_cols as jsize)?;
-        env.set_long_array_region(&long_schema_addrs, 0, &schema_addr)?;
-        let schema_obj = JObject::from(long_schema_addrs);
-        let schema_obj = JValueGen::Object(schema_obj.as_ref());
-
+        // let long_schema_addrs = env.new_long_array(num_cols as jsize)?;
+        // env.set_long_array_region(&long_schema_addrs, 0, &schema_addr)?;
+        // let schema_obj = JObject::from(long_schema_addrs);
+        // let schema_obj = JValueGen::Object(schema_obj.as_ref());
 
         let num_rows: i32 = unsafe {
             jni_call!(&mut env,
@@ -303,25 +309,23 @@ impl ScanExec {
 
         let mut inputs: Vec<ArrayRef> = Vec::with_capacity(num_cols);
 
-        // for i in 0..num_cols {
-        //     let array_ptr = array_addrs[i];
-        //     let schema_ptr = schema_addrs[i];
-        //     let array_data = ArrayData::from_spark((array_ptr, schema_ptr))?;
-        //
-        //     // TODO: validate array input data
-        //
-        //     inputs.push(make_array(array_data));
-        //
-        //     // Drop the Arcs to avoid memory leak
-        //     unsafe {
-        //         Rc::from_raw(array_ptr as *const FFI_ArrowArray);
-        //         Rc::from_raw(schema_ptr as *const FFI_ArrowSchema);
-        //     }
-        // }
-        //
-        // Ok(InputBatch::new(inputs, Some(num_rows as usize)))
+        for i in 0..num_cols {
+            let array_ptr = array_addrs[i];
+            let schema_ptr = schema_addr[i];
+            let array_data = ArrayData::from_spark((array_ptr, schema_ptr))?;
 
-        todo!()
+            // TODO: validate array input data
+
+            inputs.push(make_array(array_data));
+
+            // Drop the Arcs to avoid memory leak
+            unsafe {
+                Rc::from_raw(array_ptr as *const FFI_ArrowArray);
+                Rc::from_raw(schema_ptr as *const FFI_ArrowSchema);
+            }
+        }
+
+        Ok(InputBatch::new(inputs, Some(num_rows as usize)))
     }
 }
 
