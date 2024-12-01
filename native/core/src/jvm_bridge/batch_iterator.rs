@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use jni::signature::Primitive;
 use jni::{
     errors::Result as JniResult,
     objects::{JClass, JMethodID},
@@ -38,8 +37,8 @@ impl<'a> CometBatchIterator<'a> {
 
         Ok(CometBatchIterator {
             class,
-            method_next: env.get_method_id(Self::JVM_CLASS, "next", "([J[J)I")?,
-            method_next_ret: ReturnType::Primitive(Primitive::Int),
+            method_next: env.get_method_id(Self::JVM_CLASS, "next", "()[B")?,
+            method_next_ret: ReturnType::Array,
         })
     }
 }

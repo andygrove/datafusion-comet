@@ -23,6 +23,7 @@ import scala.collection.Iterator;
 
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 
+import org.apache.comet.vector.CometArrowIpcWriter;
 import org.apache.comet.vector.NativeUtil;
 
 /**
@@ -33,26 +34,24 @@ import org.apache.comet.vector.NativeUtil;
 public class CometBatchIterator {
   final Iterator<ColumnarBatch> input;
   final NativeUtil nativeUtil;
+  final CometArrowIpcWriter cometWriter;
 
   CometBatchIterator(Iterator<ColumnarBatch> input, NativeUtil nativeUtil) {
     this.input = input;
     this.nativeUtil = nativeUtil;
+    this.cometWriter = new CometArrowIpcWriter();
   }
 
   /**
    * Get the next batches of Arrow arrays.
    *
-   * @param arrayAddrs The addresses of the ArrowArray structures.
-   * @param schemaAddrs The addresses of the ArrowSchema structures.
-   * @return the number of rows of the current batch. -1 if there is no more batch.
+   * @return IPC-encoded current batch, or empty byte array if there is no more batch.
    */
-  public int next(long[] arrayAddrs, long[] schemaAddrs) {
-    boolean hasBatch = input.hasNext();
-
-    if (!hasBatch) {
-      return -1;
+  public byte[] next() {
+    if (input.hasNext()) {
+      return cometWriter.writeBatch(input.next());
+    } else {
+      return cometWriter.close();
     }
-
-    return nativeUtil.exportBatch(arrayAddrs, schemaAddrs, input.next());
   }
 }

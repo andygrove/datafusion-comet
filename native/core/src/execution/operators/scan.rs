@@ -15,19 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use crate::jvm_bridge::BinaryWrapper;
 use crate::{
     errors::CometError,
-    execution::{
-        datafusion::planner::TEST_EXEC_CONTEXT_ID, operators::ExecutionError,
-        utils::SparkArrowConvert,
-    },
+    execution::{datafusion::planner::TEST_EXEC_CONTEXT_ID, operators::ExecutionError},
     jvm_bridge::{jni_call, JVMClasses},
 };
 use arrow::compute::{cast_with_options, CastOptions};
-use arrow_array::{make_array, ArrayRef, RecordBatch, RecordBatchOptions};
-use arrow_data::ffi::FFI_ArrowArray;
-use arrow_data::ArrayData;
-use arrow_schema::ffi::FFI_ArrowSchema;
+use arrow::ipc::reader::StreamReader;
+use arrow_array::{ArrayRef, RecordBatch, RecordBatchOptions};
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
 use datafusion::physical_plan::metrics::{
     BaselineMetrics, ExecutionPlanMetricsSet, MetricBuilder, MetricsSet, Time,
@@ -40,16 +36,16 @@ use datafusion::{
 use datafusion_common::{arrow_datafusion_err, DataFusionError, Result as DataFusionResult};
 use futures::Stream;
 use itertools::Itertools;
-use jni::objects::JValueGen;
+use jni::objects::JByteArray;
 use jni::objects::{GlobalRef, JObject};
-use jni::sys::jsize;
-use std::rc::Rc;
+use std::io::Read;
 use std::{
     any::Any,
     pin::Pin,
     sync::{Arc, Mutex},
     task::{Context, Poll},
 };
+use zstd::zstd_safe::WriteBuf;
 
 /// ScanExec reads batches of data from Spark via JNI. The source of the scan could be a file
 /// scan or the result of reading a broadcast or shuffle exchange. ScanExec isn't invoked
@@ -62,6 +58,9 @@ pub struct ScanExec {
     pub exec_context_id: i64,
     /// The input source of scan node. It is a global reference of JVM `CometBatchIterator` object.
     pub input_source: Option<Arc<GlobalRef>>,
+    /// Arrow IPC reader for decoding batches received from the JVM
+    buffer: CometArrowIpcBuffer,
+    // reader: Arc<Mutex<StreamReader<CometArrowIpcBuffer>>>,
     /// A description of the input source for informational purposes
     pub input_source_description: String,
     /// The data types of columns of the input batch. Converted from Spark schema.
@@ -95,15 +94,24 @@ impl ScanExec {
         // ScanExec will cast arrays from all future batches to the type determined here, so we
         // may end up either unpacking dictionary arrays or dictionary-encoding arrays.
         // Dictionary-encoded primitive arrays are always unpacked.
+
         let first_batch = if let Some(input_source) = input_source.as_ref() {
             let mut timer = baseline_metrics.elapsed_compute().timer();
-            let batch =
-                ScanExec::get_next(exec_context_id, input_source.as_obj(), data_types.len())?;
+            let batch = ScanExec::get_next(
+                exec_context_id,
+                input_source.as_obj(),
+                data_types.len(),
+                true,
+            )?;
             timer.stop();
             batch
         } else {
             InputBatch::EOF
         };
+        let buffer = CometArrowIpcBuffer::default();
+        if let InputBatch::RecordBatch(bytes, _) = &first_batch {
+            buffer.append(bytes);
+        }
 
         let schema = scan_schema(&first_batch, &data_types);
 
@@ -118,6 +126,7 @@ impl ScanExec {
         Ok(Self {
             exec_context_id,
             input_source,
+            buffer,
             input_source_description: input_source_description.to_string(),
             data_types,
             batch: Arc::new(Mutex::new(Some(first_batch))),
@@ -171,6 +180,7 @@ impl ScanExec {
                 self.exec_context_id,
                 self.input_source.as_ref().unwrap().as_obj(),
                 self.data_types.len(),
+                false,
             )?;
             *current_batch = Some(next_batch);
         }
@@ -184,7 +194,8 @@ impl ScanExec {
     fn get_next(
         exec_context_id: i64,
         iter: &JObject,
-        num_cols: usize,
+        _num_cols: usize,
+        first: bool,
     ) -> Result<InputBatch, CometError> {
         if exec_context_id == TEST_EXEC_CONTEXT_ID {
             // This is a unit test. We don't need to call JNI.
@@ -200,62 +211,54 @@ impl ScanExec {
 
         let mut env = JVMClasses::get_env()?;
 
-        let mut array_addrs = Vec::with_capacity(num_cols);
-        let mut schema_addrs = Vec::with_capacity(num_cols);
-
-        for _ in 0..num_cols {
-            let arrow_array = Rc::new(FFI_ArrowArray::empty());
-            let arrow_schema = Rc::new(FFI_ArrowSchema::empty());
-            let (array_ptr, schema_ptr) = (
-                Rc::into_raw(arrow_array) as i64,
-                Rc::into_raw(arrow_schema) as i64,
-            );
-
-            array_addrs.push(array_ptr);
-            schema_addrs.push(schema_ptr);
-        }
-
-        // Prepare the java array parameters
-        let long_array_addrs = env.new_long_array(num_cols as jsize)?;
-        let long_schema_addrs = env.new_long_array(num_cols as jsize)?;
-
-        env.set_long_array_region(&long_array_addrs, 0, &array_addrs)?;
-        env.set_long_array_region(&long_schema_addrs, 0, &schema_addrs)?;
-
-        let array_obj = JObject::from(long_array_addrs);
-        let schema_obj = JObject::from(long_schema_addrs);
-
-        let array_obj = JValueGen::Object(array_obj.as_ref());
-        let schema_obj = JValueGen::Object(schema_obj.as_ref());
-
-        let num_rows: i32 = unsafe {
+        let bytes = unsafe {
             jni_call!(&mut env,
-        comet_batch_iterator(iter).next(array_obj, schema_obj) -> i32)?
+        comet_batch_iterator(iter).next() -> BinaryWrapper)?
         };
 
-        if num_rows == -1 {
-            return Ok(InputBatch::EOF);
+        let bytes: &JByteArray = bytes.get().into();
+        let slice = env.convert_byte_array(bytes).unwrap();
+
+        return Ok(InputBatch::RecordBatch(slice, first));
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CometArrowIpcBuffer {
+    buffer: Arc<Mutex<Vec<u8>>>,
+}
+
+impl Default for CometArrowIpcBuffer {
+    fn default() -> Self {
+        Self {
+            buffer: Arc::new(Mutex::new(Vec::with_capacity(8192))),
         }
+    }
+}
 
-        let mut inputs: Vec<ArrayRef> = Vec::with_capacity(num_cols);
+impl CometArrowIpcBuffer {
+    fn append(&self, new_bytes: &[u8]) {
+        let mut buffer = self.buffer.lock().unwrap();
+        buffer.extend_from_slice(new_bytes);
+    }
+}
 
-        for i in 0..num_cols {
-            let array_ptr = array_addrs[i];
-            let schema_ptr = schema_addrs[i];
-            let array_data = ArrayData::from_spark((array_ptr, schema_ptr))?;
-
-            // TODO: validate array input data
-
-            inputs.push(make_array(array_data));
-
-            // Drop the Arcs to avoid memory leak
-            unsafe {
-                Rc::from_raw(array_ptr as *const FFI_ArrowArray);
-                Rc::from_raw(schema_ptr as *const FFI_ArrowSchema);
+impl Read for CometArrowIpcBuffer {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let mut buffer = self.buffer.lock().unwrap();
+        let buf_capacity = buf.capacity();
+        if buffer.len() >= buf_capacity {
+            buf.clone_from_slice(&buffer[0..buf_capacity]);
+            buffer.drain(..buf_capacity);
+            Ok(buf_capacity)
+        } else {
+            let len = buffer.len();
+            for i in 0..len {
+                buf[i] = buffer[i];
             }
+            buffer.clear();
+            Ok(len)
         }
-
-        Ok(InputBatch::new(inputs, Some(num_rows as usize)))
     }
 }
 
@@ -363,6 +366,7 @@ impl DisplayAs for ScanExec {
 struct ScanStream<'a> {
     /// The `Scan` node producing input batches
     scan: ScanExec,
+    reader: Arc<Mutex<StreamReader<CometArrowIpcBuffer>>>,
     /// Schema representing the data
     schema: SchemaRef,
     /// Metrics
@@ -381,8 +385,14 @@ impl<'a> ScanStream<'a> {
         baseline_metrics: BaselineMetrics,
     ) -> Self {
         let cast_time = MetricBuilder::new(&scan.metrics).subset_time("cast_time", partition);
+        // cannot create reader until the buffer already has some bytes
+        let reader = Arc::new(Mutex::new(
+            StreamReader::try_new(scan.buffer.clone(), None).unwrap(),
+        ));
+
         Self {
             scan,
+            reader,
             schema,
             baseline_metrics,
             cast_options: CastOptions::default(),
@@ -444,6 +454,26 @@ impl<'a> Stream for ScanStream<'a> {
                 let maybe_batch = self.build_record_batch(columns, *num_rows);
                 Poll::Ready(Some(maybe_batch))
             }
+            InputBatch::RecordBatch(bytes, first) => {
+                if !first {
+                    self.scan.buffer.append(bytes.as_slice());
+                }
+                match self.reader.lock().unwrap().next() {
+                    Some(Ok(batch)) => {
+                        println!("calling reader.next() returned a batch");
+                        self.baseline_metrics.record_output(batch.num_rows());
+                        Poll::Ready(Some(Ok(batch.clone())))
+                    }
+                    Some(Err(e)) => {
+                        println!("calling reader.next() returned an error");
+                        Poll::Ready(Some(Err(e.into())))
+                    }
+                    None => {
+                        println!("calling reader.next() returned EOF");
+                        Poll::Ready(None)
+                    }
+                }
+            }
         };
 
         *scan_batch = None;
@@ -470,6 +500,8 @@ pub enum InputBatch {
     /// It is possible to have zero-column batch with non-zero number of rows,
     /// i.e. reading empty schema from scan.
     Batch(Vec<ArrayRef>, usize),
+
+    RecordBatch(Vec<u8>, bool),
 }
 
 impl InputBatch {
@@ -491,12 +523,39 @@ impl InputBatch {
 
         InputBatch::Batch(columns, num_rows)
     }
+}
 
-    /// Get the number of rows in this batch
-    fn num_rows(&self) -> usize {
-        match self {
-            Self::EOF => 0,
-            Self::Batch(_, num_rows) => *num_rows,
-        }
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_comet_ipc_buffer_1() {
+        let mut buffer = create_buffer();
+        let mut buf = vec![0; 3];
+        let len = buffer.read(&mut buf).unwrap();
+        assert_eq!(3, len);
+    }
+
+    #[test]
+    fn test_comet_ipc_buffer_2() {
+        let mut buffer = create_buffer();
+        let mut buf = vec![0; 5];
+        let len = buffer.read(&mut buf).unwrap();
+        assert_eq!(5, len);
+    }
+
+    #[test]
+    fn test_comet_ipc_buffer_3() {
+        let mut buffer = create_buffer();
+        let mut buf = vec![0; 10];
+        let len = buffer.read(&mut buf).unwrap();
+        assert_eq!(5, len);
+    }
+
+    fn create_buffer() -> CometArrowIpcBuffer {
+        let buffer = CometArrowIpcBuffer::default();
+        buffer.append(b"hello");
+        buffer
     }
 }
