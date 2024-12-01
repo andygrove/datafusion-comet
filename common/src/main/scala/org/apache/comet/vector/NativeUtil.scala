@@ -261,11 +261,32 @@ class CometArrowIpcWriter {
       // create Arrow schema
       val fields = (0 until batch.numCols()).map { i =>
         val fieldName = s"col_$i"
-        val arrowType = valueVectors(i).getField.getType
-        new Field(fieldName, FieldType.nullable(arrowType), null)
+        val vv = valueVectors(i)
+        val arrowType = vv.getField.getType
+
+        // TODO
+        val metadata = null
+        val nullable = true
+        val children = null
+
+        val fieldType = new FieldType(nullable, arrowType, vv.getField.getDictionary, metadata)
+        new Field(fieldName, fieldType, children)
       }
       val arrowSchema = new Schema(fields.asJava)
       println(s"arrowSchema: $arrowSchema")
+
+      /*
+Arrow IPC Schema: Schema { fields: [
+Field { name: "col_0", data_type: Int32, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: {} },
+Field { name: "col_1", data_type: Int32, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: {} },
+Field { name: "col_2", data_type: Int32, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: {} }], metadata: {} }
+
+    Other Schema: Schema { fields: [
+Field { name: "col_0", data_type: Int32, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: {} },
+Field { name: "col_1", data_type: Utf8, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: {} },
+Field { name: "col_2", data_type: Utf8, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: {} }], metadata: {} }
+
+       */
 
       root = VectorSchemaRoot.create(arrowSchema, CometArrowAllocator)
       streamWriter = new ArrowStreamWriter(root, dictProvider.orNull, os)
