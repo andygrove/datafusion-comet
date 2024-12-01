@@ -246,23 +246,27 @@ object NativeUtil {
 class CometArrowIpcWriter {
   private val stream = new ByteArrayOutputStream()
   private val os = new BufferedOutputStream(stream)
-//  private val dict = new CDataDictionaryProvider()
   private var streamWriter: ArrowStreamWriter = _
   private var root: VectorSchemaRoot = _
 
   // scalastyle:off println
 
   def writeBatch(batch: ColumnarBatch): Array[Byte] = {
-    val (valueVectors, _) = Utils.getBatchFieldVectors(batch)
+    println("writeBatch")
+    val (valueVectors, dictProvider) = Utils.getBatchFieldVectors(batch)
 
     if (root == null) {
       val fields = (0 until batch.numCols()).map { i =>
-        StructField(s"col_$i", batch.column(i).dataType(), nullable = true)
+        val vector = batch.column(i)
+        val fieldName = s"col_$i"
+        StructField(fieldName, vector.dataType(), nullable = true)
       }
       val sparkSchema: StructType = new StructType(fields.toArray)
+      println(s"sparkSchema: $sparkSchema")
       val arrowSchema = Utils.toArrowSchema(sparkSchema, "UTC") // TODO timezone
+      println(s"arrowSchema: $arrowSchema")
       root = VectorSchemaRoot.create(arrowSchema, CometArrowAllocator)
-      streamWriter = new ArrowStreamWriter(root, null, os)
+      streamWriter = new ArrowStreamWriter(root, dictProvider.orNull, os)
       streamWriter.start()
     }
 
@@ -270,9 +274,12 @@ class CometArrowIpcWriter {
     (0 until batch.numCols()).foreach { colIndex =>
       val fromVector = valueVectors(colIndex)
       val toVector = root.getVector(colIndex)
+      if (fromVector.getMinorType != toVector.getMinorType) {
+        println("breakpoint")
+      }
       toVector.allocateNew()
       (0 until batch.numRows()).foreach { rowIndex =>
-        toVector.copyFrom(rowIndex, rowIndex, fromVector)
+        toVector.copyFromSafe(rowIndex, rowIndex, fromVector)
       }
       toVector.setValueCount(batch.numRows())
     }
@@ -286,8 +293,10 @@ class CometArrowIpcWriter {
   }
 
   def close(): Array[Byte] = {
-    streamWriter.end()
-    streamWriter.close()
+    if (streamWriter != null) {
+      streamWriter.end()
+      streamWriter.close()
+    }
     os.flush()
     val bytes = stream.toByteArray
     stream.reset()

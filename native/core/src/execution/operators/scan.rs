@@ -23,7 +23,7 @@ use crate::{
 };
 use arrow::compute::{cast_with_options, CastOptions};
 use arrow::ipc::reader::StreamReader;
-use arrow_array::{Array, ArrayRef, Int32Array, RecordBatch, RecordBatchOptions};
+use arrow_array::{Array, ArrayRef, RecordBatch, RecordBatchOptions};
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
 use datafusion::physical_plan::metrics::{
     BaselineMetrics, ExecutionPlanMetricsSet, MetricBuilder, MetricsSet, Time,
@@ -468,9 +468,6 @@ impl<'a> Stream for ScanStream<'a> {
                             "calling reader.next() returned a batch with {} rows",
                             batch.num_rows()
                         );
-                        let x = batch.column(0).as_any().downcast_ref::<Int32Array>().unwrap();
-                        println!("ScanStream: first value: {}", x.value(0));
-                        println!("ScanStream: nulls: {:?}", x.null_count());
                         self.baseline_metrics.record_output(batch.num_rows());
                         Poll::Ready(Some(Ok(batch.clone())))
                     }
