@@ -22,14 +22,15 @@ package org.apache.comet.vector
 import java.io.{BufferedOutputStream, ByteArrayOutputStream}
 
 import scala.collection.mutable
+import scala.collection.JavaConverters._
 
 import org.apache.arrow.c.{ArrowArray, ArrowImporter, ArrowSchema, CDataDictionaryProvider, Data}
 import org.apache.arrow.vector.{IntVector, VectorSchemaRoot}
 import org.apache.arrow.vector.dictionary.DictionaryProvider
 import org.apache.arrow.vector.ipc.ArrowStreamWriter
+import org.apache.arrow.vector.types.pojo.{Field, FieldType, Schema}
 import org.apache.spark.SparkException
 import org.apache.spark.sql.comet.util.Utils
-import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 import org.apache.comet.CometArrowAllocator
@@ -256,15 +257,16 @@ class CometArrowIpcWriter {
     val (valueVectors, dictProvider) = Utils.getBatchFieldVectors(batch)
 
     if (root == null) {
+
+      // create Arrow schema
       val fields = (0 until batch.numCols()).map { i =>
-        val vector = batch.column(i)
         val fieldName = s"col_$i"
-        StructField(fieldName, vector.dataType(), nullable = true)
+        val arrowType = valueVectors(i).getField.getType
+        new Field(fieldName, FieldType.nullable(arrowType), null)
       }
-      val sparkSchema: StructType = new StructType(fields.toArray)
-      println(s"sparkSchema: $sparkSchema")
-      val arrowSchema = Utils.toArrowSchema(sparkSchema, "UTC") // TODO timezone
+      val arrowSchema = new Schema(fields.asJava)
       println(s"arrowSchema: $arrowSchema")
+
       root = VectorSchemaRoot.create(arrowSchema, CometArrowAllocator)
       streamWriter = new ArrowStreamWriter(root, dictProvider.orNull, os)
       streamWriter.start()
