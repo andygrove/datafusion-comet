@@ -24,7 +24,7 @@ import java.io.{BufferedOutputStream, ByteArrayOutputStream}
 import scala.collection.mutable
 
 import org.apache.arrow.c.{ArrowArray, ArrowImporter, ArrowSchema, CDataDictionaryProvider, Data}
-import org.apache.arrow.vector.VectorSchemaRoot
+import org.apache.arrow.vector.{IntVector, VectorSchemaRoot}
 import org.apache.arrow.vector.dictionary.DictionaryProvider
 import org.apache.arrow.vector.ipc.ArrowStreamWriter
 import org.apache.spark.SparkException
@@ -259,15 +259,19 @@ class CometArrowIpcWriter {
 
     if (root == null) {
       val fields = (0 until batch.numCols()).map { i =>
-        StructField(s"col$i", batch.column(i).dataType(), true)
+        println(s"field has ${valueVectors(i).getValueCount} values");
+        StructField(valueVectors(i).getName, batch.column(i).dataType(), true)
       }
       val sparkSchema: StructType = new StructType(fields.toArray)
       val arrowSchema = Utils.toArrowSchema(sparkSchema, "UTC") // TODO timezone
+      println(s"Schema: $arrowSchema")
       root = VectorSchemaRoot.create(arrowSchema, CometArrowAllocator)
       valueVectors.zipWithIndex.foreach { x =>
         x._1.setValueCount(batch.numRows())
+        println(s"first value: ${x._1.asInstanceOf[IntVector].get(0)}")
         root.addVector(x._2, x._1)
       }
+      println(s"Created VectorSchemaRoot with ${root.getFieldVectors.size()} columns")
       root.setRowCount(batch.numRows())
       streamWriter = new ArrowStreamWriter(root, dict, os)
       streamWriter.start()

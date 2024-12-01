@@ -328,7 +328,7 @@ impl ExecutionPlan for ScanExec {
             self.schema(),
             partition,
             self.baseline_metrics.clone(),
-        )))
+        )?))
     }
 
     fn properties(&self) -> &PlanProperties {
@@ -380,24 +380,25 @@ struct ScanStream<'a> {
 impl<'a> ScanStream<'a> {
     pub fn new(
         scan: ScanExec,
-        schema: SchemaRef,
+        _schema: SchemaRef,
         partition: usize,
         baseline_metrics: BaselineMetrics,
-    ) -> Self {
+    ) -> datafusion_common::Result<Self> {
         let cast_time = MetricBuilder::new(&scan.metrics).subset_time("cast_time", partition);
         // cannot create reader until the buffer already has some bytes
         let reader = Arc::new(Mutex::new(
-            StreamReader::try_new(scan.buffer.clone(), None).unwrap(),
+            StreamReader::try_new(scan.buffer.clone(), None)?,
         ));
+        let schema = reader.lock().unwrap().schema();
 
-        Self {
+        Ok(Self {
             scan,
             reader,
             schema,
             baseline_metrics,
             cast_options: CastOptions::default(),
             cast_time,
-        }
+        })
     }
 
     fn build_record_batch(
