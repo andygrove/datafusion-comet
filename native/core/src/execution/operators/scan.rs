@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use crate::execution::datafusion::shuffle_writer::EmptyStream;
 use crate::jvm_bridge::BinaryWrapper;
 use crate::{
     errors::CometError,
@@ -110,7 +111,9 @@ impl ScanExec {
         };
         let buffer = CometArrowIpcBuffer::default();
         if let InputBatch::RecordBatch(bytes, _) = &first_batch {
-            buffer.append(bytes);
+            if !bytes.is_empty() {
+                buffer.append(bytes);
+            }
         }
 
         let schema = scan_schema(&first_batch, &data_types);
@@ -238,8 +241,13 @@ impl Default for CometArrowIpcBuffer {
 
 impl CometArrowIpcBuffer {
     fn append(&self, new_bytes: &[u8]) {
+        assert!(!new_bytes.is_empty());
         let mut buffer = self.buffer.lock().unwrap();
         buffer.extend_from_slice(new_bytes);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.buffer.lock().unwrap().is_empty()
     }
 }
 
@@ -323,12 +331,16 @@ impl ExecutionPlan for ScanExec {
         partition: usize,
         _: Arc<TaskContext>,
     ) -> datafusion::common::Result<SendableRecordBatchStream> {
-        Ok(Box::pin(ScanStream::new(
-            self.clone(),
-            self.schema(),
-            partition,
-            self.baseline_metrics.clone(),
-        )?))
+        if self.buffer.is_empty() {
+            Ok(Box::pin(EmptyStream::try_new(self.schema())?))
+        } else {
+            Ok(Box::pin(ScanStream::new(
+                self.clone(),
+                self.schema(),
+                partition,
+                self.baseline_metrics.clone(),
+            )?))
+        }
     }
 
     fn properties(&self) -> &PlanProperties {
@@ -386,13 +398,12 @@ impl<'a> ScanStream<'a> {
     ) -> datafusion_common::Result<Self> {
         let cast_time = MetricBuilder::new(&scan.metrics).subset_time("cast_time", partition);
         // cannot create reader until the buffer already has some bytes
-        let reader = Arc::new(Mutex::new(
-            StreamReader::try_new(scan.buffer.clone(), None)?,
-        ));
-        let schema = reader.lock().unwrap().schema();
+        let reader = Arc::new(Mutex::new(StreamReader::try_new(
+            scan.buffer.clone(),
+            None,
+        )?));
 
-        println!("Arrow IPC Schema: {:?}", schema);
-        println!("Other Schema: {:?}", _schema);
+        let schema = reader.lock().unwrap().schema();
 
         Ok(Self {
             scan,
@@ -459,24 +470,21 @@ impl<'a> Stream for ScanStream<'a> {
                 Poll::Ready(Some(maybe_batch))
             }
             InputBatch::RecordBatch(bytes, first) => {
+                if bytes.is_empty() {
+                    return Poll::Ready(None);
+                }
                 if !first {
                     self.scan.buffer.append(bytes.as_slice());
                 }
                 match self.reader.lock().unwrap().next() {
                     Some(Ok(batch)) => {
-                        println!(
-                            "calling reader.next() returned a batch with {} rows",
-                            batch.num_rows()
-                        );
                         self.baseline_metrics.record_output(batch.num_rows());
                         Poll::Ready(Some(Ok(batch.clone())))
                     }
                     Some(Err(e)) => {
-                        println!("calling reader.next() returned an error");
                         Poll::Ready(Some(Err(e.into())))
                     }
                     None => {
-                        println!("calling reader.next() returned EOF");
                         Poll::Ready(None)
                     }
                 }

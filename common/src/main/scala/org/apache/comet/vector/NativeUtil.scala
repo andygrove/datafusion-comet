@@ -21,11 +21,11 @@ package org.apache.comet.vector
 
 import java.io.{BufferedOutputStream, ByteArrayOutputStream}
 
-import scala.collection.mutable
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 
 import org.apache.arrow.c.{ArrowArray, ArrowImporter, ArrowSchema, CDataDictionaryProvider, Data}
-import org.apache.arrow.vector.{IntVector, VectorSchemaRoot}
+import org.apache.arrow.vector.VectorSchemaRoot
 import org.apache.arrow.vector.dictionary.DictionaryProvider
 import org.apache.arrow.vector.ipc.ArrowStreamWriter
 import org.apache.arrow.vector.types.pojo.{Field, FieldType, Schema}
@@ -253,7 +253,7 @@ class CometArrowIpcWriter {
   // scalastyle:off println
 
   def writeBatch(batch: ColumnarBatch): Array[Byte] = {
-    println("writeBatch")
+    println("CometArrowIpcWriter.writeBatch()")
     val (valueVectors, dictProvider) = Utils.getBatchFieldVectors(batch)
 
     if (root == null) {
@@ -273,20 +273,7 @@ class CometArrowIpcWriter {
         new Field(fieldName, fieldType, children)
       }
       val arrowSchema = new Schema(fields.asJava)
-      println(s"arrowSchema: $arrowSchema")
-
-      /*
-Arrow IPC Schema: Schema { fields: [
-Field { name: "col_0", data_type: Int32, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: {} },
-Field { name: "col_1", data_type: Int32, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: {} },
-Field { name: "col_2", data_type: Int32, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: {} }], metadata: {} }
-
-    Other Schema: Schema { fields: [
-Field { name: "col_0", data_type: Int32, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: {} },
-Field { name: "col_1", data_type: Utf8, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: {} },
-Field { name: "col_2", data_type: Utf8, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: {} }], metadata: {} }
-
-       */
+      println(s"CometArrowIpcWriter.writeBatch() arrowSchema: $arrowSchema")
 
       root = VectorSchemaRoot.create(arrowSchema, CometArrowAllocator)
       streamWriter = new ArrowStreamWriter(root, dictProvider.orNull, os)
@@ -294,13 +281,10 @@ Field { name: "col_2", data_type: Utf8, nullable: true, dict_id: 0, dict_is_orde
     }
 
     root.clear()
+    root.allocateNew()
     (0 until batch.numCols()).foreach { colIndex =>
       val fromVector = valueVectors(colIndex)
       val toVector = root.getVector(colIndex)
-      if (fromVector.getMinorType != toVector.getMinorType) {
-        println("breakpoint")
-      }
-      toVector.allocateNew()
       (0 until batch.numRows()).foreach { rowIndex =>
         toVector.copyFromSafe(rowIndex, rowIndex, fromVector)
       }
@@ -308,6 +292,7 @@ Field { name: "col_2", data_type: Utf8, nullable: true, dict_id: 0, dict_is_orde
     }
     root.setRowCount(batch.numRows())
 
+    println(s"CometArrowIpcWriter.writeBatch() writing batch")
     streamWriter.writeBatch()
     os.flush()
     val bytes = stream.toByteArray
