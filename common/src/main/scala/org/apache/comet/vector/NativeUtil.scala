@@ -258,13 +258,17 @@ class CometArrowIpcWriter {
     val (valueVectors, dictProviders) = Utils.getBatchFieldVectors(batch)
 
     if (root == null) {
-      println("CometArrowIpcWriter.writeBatch() AAA")
       val fields = (0 until batch.numCols()).map { i =>
         StructField(s"col$i", batch.column(i).dataType(), true)
       }
       val sparkSchema: StructType = new StructType(fields.toArray)
       val arrowSchema = Utils.toArrowSchema(sparkSchema, "UTC") // TODO timezone
       root = VectorSchemaRoot.create(arrowSchema, CometArrowAllocator)
+      valueVectors.zipWithIndex.foreach { x =>
+        x._1.setValueCount(batch.numRows())
+        root.addVector(x._2, x._1)
+      }
+      root.setRowCount(batch.numRows())
       streamWriter = new ArrowStreamWriter(root, dict, os)
       streamWriter.start()
     } else {

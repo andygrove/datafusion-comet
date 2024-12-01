@@ -460,7 +460,10 @@ impl<'a> Stream for ScanStream<'a> {
                 }
                 match self.reader.lock().unwrap().next() {
                     Some(Ok(batch)) => {
-                        println!("calling reader.next() returned a batch");
+                        println!(
+                            "calling reader.next() returned a batch with {} rows",
+                            batch.num_rows()
+                        );
                         self.baseline_metrics.record_output(batch.num_rows());
                         Poll::Ready(Some(Ok(batch.clone())))
                     }
