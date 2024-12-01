@@ -246,48 +246,37 @@ object NativeUtil {
 class CometArrowIpcWriter {
   private val stream = new ByteArrayOutputStream()
   private val os = new BufferedOutputStream(stream)
-  private val dict = new CDataDictionaryProvider()
+//  private val dict = new CDataDictionaryProvider()
   private var streamWriter: ArrowStreamWriter = _
   private var root: VectorSchemaRoot = _
 
   // scalastyle:off println
 
   def writeBatch(batch: ColumnarBatch): Array[Byte] = {
-    println("CometArrowIpcWriter.writeBatch() BEGIN")
-
-    val (valueVectors, dictProviders) = Utils.getBatchFieldVectors(batch)
+    val (valueVectors, _) = Utils.getBatchFieldVectors(batch)
 
     if (root == null) {
       val fields = (0 until batch.numCols()).map { i =>
-        println(s"field has ${valueVectors(i).getValueCount} values");
-        StructField(s"_$i", batch.column(i).dataType(), true)
+        StructField(s"col_$i", batch.column(i).dataType(), nullable = true)
       }
       val sparkSchema: StructType = new StructType(fields.toArray)
       val arrowSchema = Utils.toArrowSchema(sparkSchema, "UTC") // TODO timezone
-      println(s"Schema: $arrowSchema")
       root = VectorSchemaRoot.create(arrowSchema, CometArrowAllocator)
-      valueVectors.zipWithIndex.foreach { x =>
-        x._1.setValueCount(batch.numRows())
-        println(s"first value: ${x._1.asInstanceOf[IntVector].get(0)}")
-        root.addVector(x._2, x._1)
-      }
-      println(s"Created VectorSchemaRoot with ${root.getFieldVectors.size()} columns")
-      root.setRowCount(batch.numRows())
-      streamWriter = new ArrowStreamWriter(root, dict, os)
+      streamWriter = new ArrowStreamWriter(root, null, os)
       streamWriter.start()
-    } else {
-      println("CometArrowIpcWriter.writeBatch() BBB")
-      root.clear()
-      (0 until batch.numCols()).foreach { colIndex =>
-        val fromVector = valueVectors(colIndex)
-        val toVector = root.getVector(colIndex)
-        toVector.allocateNew()
-        (0 until batch.numRows()).foreach { rowIndex =>
-          toVector.copyFrom(rowIndex, rowIndex, fromVector)
-        }
-        toVector.setValueCount(batch.numRows())
-      }
     }
+
+    root.clear()
+    (0 until batch.numCols()).foreach { colIndex =>
+      val fromVector = valueVectors(colIndex)
+      val toVector = root.getVector(colIndex)
+      toVector.allocateNew()
+      (0 until batch.numRows()).foreach { rowIndex =>
+        toVector.copyFrom(rowIndex, rowIndex, fromVector)
+      }
+      toVector.setValueCount(batch.numRows())
+    }
+    root.setRowCount(batch.numRows())
 
     streamWriter.writeBatch()
     os.flush()
