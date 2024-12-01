@@ -260,7 +260,7 @@ class CometArrowIpcWriter {
     if (root == null) {
       val fields = (0 until batch.numCols()).map { i =>
         println(s"field has ${valueVectors(i).getValueCount} values");
-        StructField(valueVectors(i).getName, batch.column(i).dataType(), true)
+        StructField(s"_$i", batch.column(i).dataType(), true)
       }
       val sparkSchema: StructType = new StructType(fields.toArray)
       val arrowSchema = Utils.toArrowSchema(sparkSchema, "UTC") // TODO timezone

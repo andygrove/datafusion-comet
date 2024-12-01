@@ -391,6 +391,9 @@ impl<'a> ScanStream<'a> {
         ));
         let schema = reader.lock().unwrap().schema();
 
+        println!("Arrow IPC Schema: {:?}", schema);
+        println!("Other Schema: {:?}", _schema);
+
         Ok(Self {
             scan,
             reader,
