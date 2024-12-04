@@ -123,7 +123,6 @@ impl ScanExec {
             baseline_metrics,
             jvm_fetch_time,
             arrow_ffi_time,
-            schema,
         })
     }
 
