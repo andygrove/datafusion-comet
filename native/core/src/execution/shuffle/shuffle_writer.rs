@@ -850,11 +850,9 @@ impl ShuffleRepartitioner {
     async fn shuffle_write(&mut self) -> Result<SendableRecordBatchStream> {
         let num_output_partitions = self.num_output_partitions;
         let buffered_partitions = &mut self.buffered_partitions;
-        let mut output_batches: Vec<Vec<u8>> = vec![vec![]; num_output_partitions];
 
         for i in 0..num_output_partitions {
             buffered_partitions[i].flush()?;
-            output_batches[i] = std::mem::take(&mut buffered_partitions[i].frozen);
         }
 
         let mut spills = self.spills.lock().await;
@@ -875,11 +873,10 @@ impl ShuffleRepartitioner {
             let mut timer = self.metrics.baseline.elapsed_compute().timer();
 
             offsets[i] = output_data.stream_position()?;
-            output_data.write_all(&output_batches[i])?;
+            output_data.write_all(&mut buffered_partitions[i].frozen)?;
+            buffered_partitions[i].frozen.clear();
 
             timer.stop();
-
-            output_batches[i].clear();
 
             // append partition in each spills
             for spill in &output_spills {
