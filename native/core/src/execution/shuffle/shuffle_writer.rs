@@ -21,6 +21,7 @@ use crate::{
     common::bit::ceil,
     errors::{CometError, CometResult},
 };
+use arrow::compute::filter_record_batch;
 use arrow::{datatypes::*, ipc::writer::StreamWriter};
 use async_trait::async_trait;
 use bytes::Buf;
@@ -29,7 +30,7 @@ use datafusion::{
     arrow::{
         array::*,
         datatypes::{DataType, SchemaRef, TimeUnit},
-        error::{ArrowError, Result as ArrowResult},
+        error::ArrowError,
         record_batch::RecordBatch,
     },
     error::{DataFusionError, Result},
@@ -66,14 +67,6 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::time::Instant;
-
-/// The status of appending rows to a partition buffer.
-enum AppendRowStatus {
-    /// The difference in memory usage after appending rows
-    MemDiff(Result<isize>),
-    /// The index of the next row to append
-    StartIndex(usize),
-}
 
 /// The shuffle writer operator maps each input partition to M output partitions based on a
 /// partitioning scheme. No guarantees are made about the order of the resulting partitions.
@@ -207,7 +200,7 @@ struct PartitionBuffer {
     /// The "frozen" Arrow IPC bytes of active data. They are frozen when `flush` is called.
     frozen: Vec<u8>,
     /// Array builders for appending rows into buffering batches.
-    active: Vec<Box<dyn ArrayBuilder>>,
+    active: Option<RecordBatch>,
     /// The estimation of memory size of active builders in bytes when they are filled.
     active_slots_mem_size: usize,
     /// Number of rows in active builders.
@@ -233,7 +226,7 @@ impl PartitionBuffer {
         Self {
             schema,
             frozen: vec![],
-            active: vec![],
+            active: None,
             active_slots_mem_size: 0,
             num_active_rows: 0,
             batch_size,
@@ -246,78 +239,78 @@ impl PartitionBuffer {
     fn init_active_if_necessary(&mut self, metrics: &ShuffleRepartitionerMetrics) -> Result<isize> {
         let mut mem_diff = 0;
 
-        if self.active.is_empty() {
-            // Estimate the memory size of active builders
-            if self.active_slots_mem_size == 0 {
-                self.active_slots_mem_size = self
-                    .schema
-                    .fields()
-                    .iter()
-                    .map(|field| slot_size(self.batch_size, field.data_type()))
-                    .sum::<usize>();
-            }
-
-            let mut mempool_timer = metrics.mempool_time.timer();
-            self.reservation.try_grow(self.active_slots_mem_size)?;
-            mempool_timer.stop();
-
-            let mut repart_timer = metrics.repart_time.timer();
-            self.active = new_array_builders(&self.schema, self.batch_size);
-            repart_timer.stop();
-
-            mem_diff += self.active_slots_mem_size as isize;
-        }
+        // if self.active.is_none() {
+        //     // Estimate the memory size of active builders
+        //     if self.active_slots_mem_size == 0 {
+        //         self.active_slots_mem_size = self
+        //             .schema
+        //             .fields()
+        //             .iter()
+        //             .map(|field| slot_size(self.batch_size, field.data_type()))
+        //             .sum::<usize>();
+        //     }
+        //
+        //     let mut mempool_timer = metrics.mempool_time.timer();
+        //     self.reservation.try_grow(self.active_slots_mem_size)?;
+        //     mempool_timer.stop();
+        //
+        //     let mut repart_timer = metrics.repart_time.timer();
+        //     self.active = new_array_builders(&self.schema, self.batch_size);
+        //     repart_timer.stop();
+        //
+        //     mem_diff += self.active_slots_mem_size as isize;
+        // }
         Ok(mem_diff)
     }
 
     /// Appends rows of specified indices from columns into active array builders.
-    fn append_rows(
-        &mut self,
-        columns: &[ArrayRef],
-        indices: &[usize],
-        start_index: usize,
-        metrics: &ShuffleRepartitionerMetrics,
-    ) -> AppendRowStatus {
-        let mut mem_diff = 0;
-        let mut start = start_index;
-
-        // lazy init because some partition may be empty
-        let init = self.init_active_if_necessary(metrics);
-        if init.is_err() {
-            return AppendRowStatus::StartIndex(start);
-        }
-        mem_diff += init.unwrap();
-
-        while start < indices.len() {
-            let end = (start + self.batch_size).min(indices.len());
-
-            let mut repart_timer = metrics.repart_time.timer();
-            self.active
-                .iter_mut()
-                .zip(columns)
-                .for_each(|(builder, column)| {
-                    append_columns(builder, column, &indices[start..end], column.data_type());
-                });
-            self.num_active_rows += end - start;
-            repart_timer.stop();
-
-            if self.num_active_rows >= self.batch_size {
-                let flush = self.flush(&metrics.ipc_time);
-                if let Err(e) = flush {
-                    return AppendRowStatus::MemDiff(Err(e));
-                }
-                mem_diff += flush.unwrap();
-
-                let init = self.init_active_if_necessary(metrics);
-                if init.is_err() {
-                    return AppendRowStatus::StartIndex(end);
-                }
-                mem_diff += init.unwrap();
-            }
-            start = end;
-        }
-        AppendRowStatus::MemDiff(Ok(mem_diff))
-    }
+    // fn append_rows(
+    //     &mut self,
+    //     columns: &[ArrayRef],
+    //     indices: &[usize],
+    //     start_index: usize,
+    //     metrics: &ShuffleRepartitionerMetrics,
+    // ) -> AppendRowStatus {
+    //     let mut mem_diff = 0;
+    //     let mut start = start_index;
+    //
+    //     // lazy init because some partition may be empty
+    //     let init = self.init_active_if_necessary(metrics);
+    //     if init.is_err() {
+    //         return AppendRowStatus::StartIndex(start);
+    //     }
+    //     mem_diff += init.unwrap();
+    //
+    //     while start < indices.len() {
+    //         let end = (start + self.batch_size).min(indices.len());
+    //
+    //         let mut repart_timer = metrics.repart_time.timer();
+    //         self.active
+    //             .iter_mut()
+    //             .zip(columns)
+    //             .for_each(|(builder, column)| {
+    //                 append_columns(builder, column, &indices[start..end], column.data_type());
+    //             });
+    //         self.num_active_rows += end - start;
+    //         repart_timer.stop();
+    //
+    //         if self.num_active_rows >= self.batch_size {
+    //             let flush = self.flush(&metrics.ipc_time);
+    //             if let Err(e) = flush {
+    //                 return AppendRowStatus::MemDiff(Err(e));
+    //             }
+    //             mem_diff += flush.unwrap();
+    //
+    //             let init = self.init_active_if_necessary(metrics);
+    //             if init.is_err() {
+    //                 return AppendRowStatus::StartIndex(end);
+    //             }
+    //             mem_diff += init.unwrap();
+    //         }
+    //         start = end;
+    //     }
+    //     AppendRowStatus::MemDiff(Ok(mem_diff))
+    // }
 
     /// flush active data into frozen bytes
     fn flush(&mut self, ipc_time: &Time) -> Result<isize> {
@@ -328,11 +321,10 @@ impl PartitionBuffer {
 
         // active -> staging
         let active = std::mem::take(&mut self.active);
-        let num_rows = self.num_active_rows;
         self.num_active_rows = 0;
         self.reservation.try_shrink(self.active_slots_mem_size)?;
 
-        let frozen_batch = make_batch(Arc::clone(&self.schema), active, num_rows)?;
+        let frozen_batch = active.unwrap();
 
         let frozen_capacity_old = self.frozen.capacity();
         let mut cursor = Cursor::new(&mut self.frozen);
@@ -771,120 +763,37 @@ impl ShuffleRepartitioner {
         let num_output_partitions = self.num_output_partitions;
         match &self.partitioning {
             Partitioning::Hash(exprs, _) => {
-                let (partition_starts, shuffled_partition_ids): (Vec<usize>, Vec<usize>) = {
-                    let mut timer = self.metrics.repart_time.timer();
-                    let arrays = exprs
-                        .iter()
-                        .map(|expr| expr.evaluate(&input)?.into_array(input.num_rows()))
-                        .collect::<Result<Vec<_>>>()?;
+                // evaluate partitioning expressions
+                let arrays = exprs
+                    .iter()
+                    .map(|expr| expr.evaluate(&input)?.into_array(input.num_rows()))
+                    .collect::<Result<Vec<_>>>()?;
 
-                    // use identical seed as spark hash partition
-                    let hashes_buf = &mut self.hashes_buf[..arrays[0].len()];
-                    hashes_buf.fill(42_u32);
+                // use identical seed as spark hash partition
+                let hashes_buf = &mut self.hashes_buf[..arrays[0].len()];
+                hashes_buf.fill(42_u32);
 
-                    // Hash arrays and compute buckets based on number of partitions
-                    let partition_ids = &mut self.partition_ids[..arrays[0].len()];
-                    create_murmur3_hashes(&arrays, hashes_buf)?
-                        .iter()
-                        .enumerate()
-                        .for_each(|(idx, hash)| {
-                            partition_ids[idx] = pmod(*hash, num_output_partitions) as u64
-                        });
-
-                    // count each partition size
-                    let mut partition_counters = vec![0usize; num_output_partitions];
-                    partition_ids
-                        .iter()
-                        .for_each(|partition_id| partition_counters[*partition_id as usize] += 1);
-
-                    // accumulate partition counters into partition ends
-                    // e.g. partition counter: [1, 3, 2, 1] => [1, 4, 6, 7]
-                    let mut partition_ends = partition_counters;
-                    let mut accum = 0;
-                    partition_ends.iter_mut().for_each(|v| {
-                        *v += accum;
-                        accum = *v;
+                // Hash arrays and compute buckets based on number of partitions
+                let partition_ids = &mut self.partition_ids[..arrays[0].len()];
+                create_murmur3_hashes(&arrays, hashes_buf)?
+                    .iter()
+                    .enumerate()
+                    .for_each(|(idx, hash)| {
+                        partition_ids[idx] = pmod(*hash, num_output_partitions) as u64
                     });
 
-                    // calculate shuffled partition ids
-                    // e.g. partition ids: [3, 1, 1, 1, 2, 2, 0] => [6, 1, 2, 3, 4, 5, 0] which is the
-                    // row indices for rows ordered by their partition id. For example, first partition
-                    // 0 has one row index [6], partition 1 has row indices [1, 2, 3], etc.
-                    let mut shuffled_partition_ids = vec![0usize; input.num_rows()];
-                    for (index, partition_id) in partition_ids.iter().enumerate().rev() {
-                        partition_ends[*partition_id as usize] -= 1;
-                        let end = partition_ends[*partition_id as usize];
-                        shuffled_partition_ids[end] = index;
-                    }
-
-                    // after calculating, partition ends become partition starts
-                    let mut partition_starts = partition_ends;
-                    partition_starts.push(input.num_rows());
-                    timer.stop();
-                    Ok::<(Vec<usize>, Vec<usize>), DataFusionError>((
-                        partition_starts,
-                        shuffled_partition_ids,
-                    ))
-                }?;
-
-                // For each interval of row indices of partition, taking rows from input batch and
-                // appending into output buffer.
-                for (partition_id, (&start, &end)) in partition_starts
-                    .iter()
-                    .tuple_windows()
-                    .enumerate()
-                    .filter(|(_, (start, end))| start < end)
-                {
-                    let mut mem_diff = self
-                        .append_rows_to_partition(
-                            input.columns(),
-                            &shuffled_partition_ids[start..end],
-                            partition_id,
-                        )
-                        .await?;
-
-                    if mem_diff > 0 {
-                        let mem_increase = mem_diff as usize;
-
-                        let try_grow = {
-                            let mut mempool_timer = self.metrics.mempool_time.timer();
-                            let result = self.reservation.try_grow(mem_increase);
-                            mempool_timer.stop();
-                            result
-                        };
-
-                        if try_grow.is_err() {
-                            self.spill().await?;
-                            let mut mempool_timer = self.metrics.mempool_time.timer();
-                            self.reservation.free();
-                            self.reservation.try_grow(mem_increase)?;
-                            mempool_timer.stop();
-                            mem_diff = 0;
-                        }
-                    }
-
-                    if mem_diff < 0 {
-                        let mem_used = self.reservation.size();
-                        let mem_decrease = mem_used.min(-mem_diff as usize);
-                        let mut mempool_timer = self.metrics.mempool_time.timer();
-                        self.reservation.shrink(mem_decrease);
-                        mempool_timer.stop();
-                    }
+                for i in 0..num_output_partitions {
+                    let selection_vector = partition_ids
+                        .iter()
+                        .map(|idx| *idx == i as u64)
+                        .collect_vec();
+                    let selection_vector = BooleanArray::from(selection_vector);
+                    let partition_batch = filter_record_batch(&input, &selection_vector)?;
+                    self.buffered_partitions[i].active = Some(partition_batch);
                 }
             }
             Partitioning::UnknownPartitioning(n) if *n == 1 => {
-                let buffered_partitions = &mut self.buffered_partitions;
-
-                assert!(
-                    buffered_partitions.len() == 1,
-                    "Expected 1 partition but got {}",
-                    buffered_partitions.len()
-                );
-
-                let indices = (0..input.num_rows()).collect::<Vec<usize>>();
-
-                self.append_rows_to_partition(input.columns(), &indices, 0)
-                    .await?;
+                self.buffered_partitions[0].active = Some(input);
             }
             other => {
                 // this should be unreachable as long as the validation logic
@@ -1030,59 +939,6 @@ impl ShuffleRepartitioner {
         });
         Ok(used)
     }
-
-    /// Appends rows of specified indices from columns into active array builders in the specified partition.
-    async fn append_rows_to_partition(
-        &mut self,
-        columns: &[ArrayRef],
-        indices: &[usize],
-        partition_id: usize,
-    ) -> Result<isize> {
-        let mut mem_diff = 0;
-
-        let output = &mut self.buffered_partitions[partition_id];
-
-        // If the range of indices is not big enough, just appending the rows into
-        // active array builders instead of directly adding them as a record batch.
-        let mut start_index: usize = 0;
-        let mut output_ret = output.append_rows(columns, indices, start_index, &self.metrics);
-
-        loop {
-            match output_ret {
-                AppendRowStatus::MemDiff(l) => {
-                    mem_diff += l?;
-                    break;
-                }
-                AppendRowStatus::StartIndex(new_start) => {
-                    // Cannot allocate enough memory for the array builders in the partition,
-                    // spill partitions and retry.
-                    self.spill().await?;
-
-                    let mut mempool_timer = self.metrics.mempool_time.timer();
-                    self.reservation.free();
-                    let output = &mut self.buffered_partitions[partition_id];
-                    output.reservation.free();
-                    mempool_timer.stop();
-
-                    start_index = new_start;
-                    output_ret = output.append_rows(columns, indices, start_index, &self.metrics);
-
-                    if let AppendRowStatus::StartIndex(new_start) = output_ret {
-                        if new_start == start_index {
-                            // If the start index is not updated, it means that the partition
-                            // is still not able to allocate enough memory for the array builders.
-                            return Err(DataFusionError::Internal(
-                                "Partition is still not able to allocate enough memory for the array builders after spilling."
-                                    .to_string(),
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(mem_diff)
-    }
 }
 
 /// consume the `buffered_partitions` and do spill into a single temp shuffle output file
@@ -1158,313 +1014,6 @@ async fn external_shuffle(
         block_on(repartitioner.insert_batch(batch?))?;
     }
     repartitioner.shuffle_write().await
-}
-
-fn new_array_builders(schema: &SchemaRef, batch_size: usize) -> Vec<Box<dyn ArrayBuilder>> {
-    schema
-        .fields()
-        .iter()
-        .map(|field| {
-            let dt = field.data_type();
-            if matches!(dt, DataType::Dictionary(_, _)) {
-                make_dict_builder(dt, batch_size)
-            } else {
-                make_builder(dt, batch_size)
-            }
-        })
-        .collect::<Vec<_>>()
-}
-
-macro_rules! primitive_dict_builder_inner_helper {
-    ($kt:ty, $vt:ty, $capacity:ident) => {
-        Box::new(PrimitiveDictionaryBuilder::<$kt, $vt>::with_capacity(
-            $capacity,
-            $capacity / 100,
-        ))
-    };
-}
-
-macro_rules! primitive_dict_builder_helper {
-    ($kt:ty, $vt:ident, $capacity:ident) => {
-        match $vt.as_ref() {
-            DataType::Int8 => {
-                primitive_dict_builder_inner_helper!($kt, Int8Type, $capacity)
-            }
-            DataType::Int16 => {
-                primitive_dict_builder_inner_helper!($kt, Int16Type, $capacity)
-            }
-            DataType::Int32 => {
-                primitive_dict_builder_inner_helper!($kt, Int32Type, $capacity)
-            }
-            DataType::Int64 => {
-                primitive_dict_builder_inner_helper!($kt, Int64Type, $capacity)
-            }
-            DataType::UInt8 => {
-                primitive_dict_builder_inner_helper!($kt, UInt8Type, $capacity)
-            }
-            DataType::UInt16 => {
-                primitive_dict_builder_inner_helper!($kt, UInt16Type, $capacity)
-            }
-            DataType::UInt32 => {
-                primitive_dict_builder_inner_helper!($kt, UInt32Type, $capacity)
-            }
-            DataType::UInt64 => {
-                primitive_dict_builder_inner_helper!($kt, UInt64Type, $capacity)
-            }
-            DataType::Float32 => {
-                primitive_dict_builder_inner_helper!($kt, Float32Type, $capacity)
-            }
-            DataType::Float64 => {
-                primitive_dict_builder_inner_helper!($kt, Float64Type, $capacity)
-            }
-            DataType::Decimal128(p, s) => {
-                let keys_builder = PrimitiveBuilder::<$kt>::new();
-                let values_builder =
-                    Decimal128Builder::new().with_data_type(DataType::Decimal128(*p, *s));
-                Box::new(
-                    PrimitiveDictionaryBuilder::<$kt, Decimal128Type>::new_from_empty_builders(
-                        keys_builder,
-                        values_builder,
-                    ),
-                )
-            }
-            DataType::Timestamp(TimeUnit::Microsecond, timezone) => {
-                let keys_builder = PrimitiveBuilder::<$kt>::new();
-                let values_builder = TimestampMicrosecondBuilder::new()
-                    .with_data_type(DataType::Timestamp(TimeUnit::Microsecond, timezone.clone()));
-                Box::new(
-                    PrimitiveDictionaryBuilder::<$kt, TimestampMicrosecondType>::new_from_empty_builders(
-                        keys_builder,
-                        values_builder,
-                    ),
-                )
-            }
-            DataType::Date32 => {
-                primitive_dict_builder_inner_helper!($kt, Date32Type, $capacity)
-            }
-            DataType::Date64 => {
-                primitive_dict_builder_inner_helper!($kt, Date64Type, $capacity)
-            }
-            t => unimplemented!("{:?} is not supported", t),
-        }
-    };
-}
-
-macro_rules! byte_dict_builder_inner_helper {
-    ($kt:ty, $capacity:ident, $builder:ident) => {
-        Box::new($builder::<$kt>::with_capacity(
-            $capacity,
-            $capacity / 100,
-            $capacity,
-        ))
-    };
-}
-
-/// Returns a dictionary array builder with capacity `capacity` that corresponds to the datatype
-/// `DataType` This function is useful to construct arrays from an arbitrary vectors with
-/// known/expected schema.
-/// TODO: move this to the upstream.
-fn make_dict_builder(datatype: &DataType, capacity: usize) -> Box<dyn ArrayBuilder> {
-    match datatype {
-        DataType::Dictionary(key_type, value_type) if value_type.is_primitive() => {
-            match key_type.as_ref() {
-                DataType::Int8 => primitive_dict_builder_helper!(Int8Type, value_type, capacity),
-                DataType::Int16 => primitive_dict_builder_helper!(Int16Type, value_type, capacity),
-                DataType::Int32 => primitive_dict_builder_helper!(Int32Type, value_type, capacity),
-                DataType::Int64 => primitive_dict_builder_helper!(Int64Type, value_type, capacity),
-                DataType::UInt8 => primitive_dict_builder_helper!(UInt8Type, value_type, capacity),
-                DataType::UInt16 => {
-                    primitive_dict_builder_helper!(UInt16Type, value_type, capacity)
-                }
-                DataType::UInt32 => {
-                    primitive_dict_builder_helper!(UInt32Type, value_type, capacity)
-                }
-                DataType::UInt64 => {
-                    primitive_dict_builder_helper!(UInt64Type, value_type, capacity)
-                }
-                _ => unreachable!(""),
-            }
-        }
-        DataType::Dictionary(key_type, value_type)
-            if matches!(value_type.as_ref(), DataType::Utf8) =>
-        {
-            match key_type.as_ref() {
-                DataType::Int8 => {
-                    byte_dict_builder_inner_helper!(Int8Type, capacity, StringDictionaryBuilder)
-                }
-                DataType::Int16 => {
-                    byte_dict_builder_inner_helper!(Int16Type, capacity, StringDictionaryBuilder)
-                }
-                DataType::Int32 => {
-                    byte_dict_builder_inner_helper!(Int32Type, capacity, StringDictionaryBuilder)
-                }
-                DataType::Int64 => {
-                    byte_dict_builder_inner_helper!(Int64Type, capacity, StringDictionaryBuilder)
-                }
-                DataType::UInt8 => {
-                    byte_dict_builder_inner_helper!(UInt8Type, capacity, StringDictionaryBuilder)
-                }
-                DataType::UInt16 => {
-                    byte_dict_builder_inner_helper!(UInt16Type, capacity, StringDictionaryBuilder)
-                }
-                DataType::UInt32 => {
-                    byte_dict_builder_inner_helper!(UInt32Type, capacity, StringDictionaryBuilder)
-                }
-                DataType::UInt64 => {
-                    byte_dict_builder_inner_helper!(UInt64Type, capacity, StringDictionaryBuilder)
-                }
-                _ => unreachable!(""),
-            }
-        }
-        DataType::Dictionary(key_type, value_type)
-            if matches!(value_type.as_ref(), DataType::LargeUtf8) =>
-        {
-            match key_type.as_ref() {
-                DataType::Int8 => byte_dict_builder_inner_helper!(
-                    Int8Type,
-                    capacity,
-                    LargeStringDictionaryBuilder
-                ),
-                DataType::Int16 => byte_dict_builder_inner_helper!(
-                    Int16Type,
-                    capacity,
-                    LargeStringDictionaryBuilder
-                ),
-                DataType::Int32 => byte_dict_builder_inner_helper!(
-                    Int32Type,
-                    capacity,
-                    LargeStringDictionaryBuilder
-                ),
-                DataType::Int64 => byte_dict_builder_inner_helper!(
-                    Int64Type,
-                    capacity,
-                    LargeStringDictionaryBuilder
-                ),
-                DataType::UInt8 => byte_dict_builder_inner_helper!(
-                    UInt8Type,
-                    capacity,
-                    LargeStringDictionaryBuilder
-                ),
-                DataType::UInt16 => {
-                    byte_dict_builder_inner_helper!(
-                        UInt16Type,
-                        capacity,
-                        LargeStringDictionaryBuilder
-                    )
-                }
-                DataType::UInt32 => {
-                    byte_dict_builder_inner_helper!(
-                        UInt32Type,
-                        capacity,
-                        LargeStringDictionaryBuilder
-                    )
-                }
-                DataType::UInt64 => {
-                    byte_dict_builder_inner_helper!(
-                        UInt64Type,
-                        capacity,
-                        LargeStringDictionaryBuilder
-                    )
-                }
-                _ => unreachable!(""),
-            }
-        }
-        DataType::Dictionary(key_type, value_type)
-            if matches!(value_type.as_ref(), DataType::Binary) =>
-        {
-            match key_type.as_ref() {
-                DataType::Int8 => {
-                    byte_dict_builder_inner_helper!(Int8Type, capacity, BinaryDictionaryBuilder)
-                }
-                DataType::Int16 => {
-                    byte_dict_builder_inner_helper!(Int16Type, capacity, BinaryDictionaryBuilder)
-                }
-                DataType::Int32 => {
-                    byte_dict_builder_inner_helper!(Int32Type, capacity, BinaryDictionaryBuilder)
-                }
-                DataType::Int64 => {
-                    byte_dict_builder_inner_helper!(Int64Type, capacity, BinaryDictionaryBuilder)
-                }
-                DataType::UInt8 => {
-                    byte_dict_builder_inner_helper!(UInt8Type, capacity, BinaryDictionaryBuilder)
-                }
-                DataType::UInt16 => {
-                    byte_dict_builder_inner_helper!(UInt16Type, capacity, BinaryDictionaryBuilder)
-                }
-                DataType::UInt32 => {
-                    byte_dict_builder_inner_helper!(UInt32Type, capacity, BinaryDictionaryBuilder)
-                }
-                DataType::UInt64 => {
-                    byte_dict_builder_inner_helper!(UInt64Type, capacity, BinaryDictionaryBuilder)
-                }
-                _ => unreachable!(""),
-            }
-        }
-        DataType::Dictionary(key_type, value_type)
-            if matches!(value_type.as_ref(), DataType::LargeBinary) =>
-        {
-            match key_type.as_ref() {
-                DataType::Int8 => byte_dict_builder_inner_helper!(
-                    Int8Type,
-                    capacity,
-                    LargeBinaryDictionaryBuilder
-                ),
-                DataType::Int16 => byte_dict_builder_inner_helper!(
-                    Int16Type,
-                    capacity,
-                    LargeBinaryDictionaryBuilder
-                ),
-                DataType::Int32 => byte_dict_builder_inner_helper!(
-                    Int32Type,
-                    capacity,
-                    LargeBinaryDictionaryBuilder
-                ),
-                DataType::Int64 => byte_dict_builder_inner_helper!(
-                    Int64Type,
-                    capacity,
-                    LargeBinaryDictionaryBuilder
-                ),
-                DataType::UInt8 => byte_dict_builder_inner_helper!(
-                    UInt8Type,
-                    capacity,
-                    LargeBinaryDictionaryBuilder
-                ),
-                DataType::UInt16 => {
-                    byte_dict_builder_inner_helper!(
-                        UInt16Type,
-                        capacity,
-                        LargeBinaryDictionaryBuilder
-                    )
-                }
-                DataType::UInt32 => {
-                    byte_dict_builder_inner_helper!(
-                        UInt32Type,
-                        capacity,
-                        LargeBinaryDictionaryBuilder
-                    )
-                }
-                DataType::UInt64 => {
-                    byte_dict_builder_inner_helper!(
-                        UInt64Type,
-                        capacity,
-                        LargeBinaryDictionaryBuilder
-                    )
-                }
-                _ => unreachable!(""),
-            }
-        }
-        t => panic!("Data type {t:?} is not currently supported"),
-    }
-}
-
-fn make_batch(
-    schema: SchemaRef,
-    mut arrays: Vec<Box<dyn ArrayBuilder>>,
-    row_count: usize,
-) -> ArrowResult<RecordBatch> {
-    let columns = arrays.iter_mut().map(|array| array.finish()).collect();
-    let options = RecordBatchOptions::new().with_row_count(Option::from(row_count));
-    RecordBatch::try_new_with_options(schema, columns, &options)
 }
 
 /// Checksum algorithms for writing IPC bytes.
