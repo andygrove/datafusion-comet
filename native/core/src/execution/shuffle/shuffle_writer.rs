@@ -200,7 +200,7 @@ struct PartitionBuffer {
     /// The "frozen" Arrow IPC bytes of active data. They are frozen when `flush` is called.
     frozen: Vec<u8>,
     /// Array builders for appending rows into buffering batches.
-    active: Option<RecordBatch>,
+    active: Vec<RecordBatch>,
     /// The estimation of memory size of active builders in bytes when they are filled.
     active_slots_mem_size: usize,
     /// Number of rows in active builders.
@@ -226,7 +226,7 @@ impl PartitionBuffer {
         Self {
             schema,
             frozen: vec![],
-            active: None,
+            active: vec![],
             active_slots_mem_size: 0,
             num_active_rows: 0,
             batch_size,
@@ -238,6 +238,7 @@ impl PartitionBuffer {
     /// Returns error if memory reservation fails.
     fn init_active_if_necessary(&mut self, metrics: &ShuffleRepartitionerMetrics) -> Result<isize> {
         let mut mem_diff = 0;
+        // TODO reinstate this logic
 
         // if self.active.is_none() {
         //     // Estimate the memory size of active builders
@@ -271,16 +272,15 @@ impl PartitionBuffer {
         let mut mem_diff = 0isize;
 
         // active -> staging
-        let active = std::mem::take(&mut self.active);
         self.num_active_rows = 0;
         self.reservation.try_shrink(self.active_slots_mem_size)?;
 
-        let frozen_batch = active.unwrap();
-
         let frozen_capacity_old = self.frozen.capacity();
-        let mut cursor = Cursor::new(&mut self.frozen);
-        cursor.seek(SeekFrom::End(0))?;
-        write_ipc_compressed(&frozen_batch, &mut cursor, ipc_time)?;
+        for frozen_batch in std::mem::take(&mut self.active) {
+            let mut cursor = Cursor::new(&mut self.frozen);
+            cursor.seek(SeekFrom::End(0))?;
+            write_ipc_compressed(&frozen_batch, &mut cursor, ipc_time)?;
+        }
 
         mem_diff += (self.frozen.capacity() - frozen_capacity_old) as isize;
         Ok(mem_diff)
@@ -516,13 +516,18 @@ impl ShuffleRepartitioner {
                         .iter()
                         .map(|idx| *idx == i as u64)
                         .collect_vec();
+
+                    // TODO reserve memory / spilling
                     let selection_vector = BooleanArray::from(selection_vector);
                     let partition_batch = filter_record_batch(&input, &selection_vector)?;
-                    self.buffered_partitions[i].active = Some(partition_batch);
+                    self.buffered_partitions[i].active.push(partition_batch);
+
+                    // TODO only flush when reach max batch size
+                    self.buffered_partitions[i].flush(&self.metrics.ipc_time)?;
                 }
             }
             Partitioning::UnknownPartitioning(n) if *n == 1 => {
-                self.buffered_partitions[0].active = Some(input);
+                self.buffered_partitions[0].active.push(input);
             }
             other => {
                 // this should be unreachable as long as the validation logic
