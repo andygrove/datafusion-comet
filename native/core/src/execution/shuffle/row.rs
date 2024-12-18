@@ -28,7 +28,7 @@ use crate::{
         utils::bytes_to_i128,
     },
 };
-use arrow::compute::cast;
+use arrow::compute::{cast, concat_batches};
 use arrow_array::{
     builder::{
         ArrayBuilder, BinaryBuilder, BinaryDictionaryBuilder, BooleanBuilder, Date32Builder,

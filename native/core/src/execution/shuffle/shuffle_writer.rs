@@ -264,9 +264,18 @@ impl PartitionBuffer {
         Ok(mem_diff)
     }
 
+    fn append(&mut self, batch: RecordBatch, metrics: &ShuffleRepartitionerMetrics) -> Result<()> {
+        self.num_active_rows += batch.num_rows();
+        self.active.push(batch);
+        if self.num_active_rows >= self.batch_size {
+            self.flush(&metrics.ipc_time)?;
+        }
+        Ok(())
+    }
+
     /// flush active data into frozen bytes
     fn flush(&mut self, ipc_time: &Time) -> Result<isize> {
-        if self.active.is_empty() {
+        if self.num_active_rows == 0 {
             return Ok(0);
         }
         let mut mem_diff = 0isize;
@@ -276,28 +285,16 @@ impl PartitionBuffer {
 
         let frozen_capacity_old = self.frozen.capacity();
         let frozen_batches = std::mem::take(&mut self.active);
+        self.num_active_rows = 0;
 
-        let first_batch = &frozen_batches[0];
-        let mut all_same_schema = true;
-        for i in 0..frozen_batches.len() {
-            if first_batch.schema() != frozen_batches[i].schema() {
-                all_same_schema = false;
-                break;
-            }
-        }
+        // TODO this assumes that all batches have the same schema
+        let batch = concat_batches(
+            &frozen_batches[0].schema(),
+            frozen_batches.iter().collect_vec(),
+        )?;
         let mut cursor = Cursor::new(&mut self.frozen);
-        if all_same_schema {
-            // TODO avoid concat and just stream the batches to ipc
-            let batch = concat_batches(&first_batch.schema(), frozen_batches.iter().collect_vec())?;
-            cursor.seek(SeekFrom::End(0))?;
-            write_ipc_compressed(&batch, &mut cursor, ipc_time)?;
-        } else {
-            // TODO this will probably perform badly
-            for frozen_batch in frozen_batches {
-                cursor.seek(SeekFrom::End(0))?;
-                write_ipc_compressed(&frozen_batch, &mut cursor, ipc_time)?;
-            }
-        }
+        cursor.seek(SeekFrom::End(0))?;
+        write_ipc_compressed(&batch, &mut cursor, ipc_time)?;
         mem_diff += (self.frozen.capacity() - frozen_capacity_old) as isize;
         Ok(mem_diff)
     }
@@ -508,6 +505,8 @@ impl ShuffleRepartitioner {
         let num_output_partitions = self.num_output_partitions;
         match &self.partitioning {
             Partitioning::Hash(exprs, _) => {
+
+                let mut repart_timer = self.metrics.repart_time.timer();
                 // evaluate partitioning expressions
                 let arrays = exprs
                     .iter()
@@ -527,7 +526,10 @@ impl ShuffleRepartitioner {
                         partition_ids[idx] = pmod(*hash, num_output_partitions) as u64
                     });
 
+                repart_timer.stop();
+
                 for i in 0..num_output_partitions {
+                    let mut repart_timer = self.metrics.repart_time.timer();
                     let selection_vector = partition_ids
                         .iter()
                         .map(|idx| *idx == i as u64)
@@ -536,31 +538,14 @@ impl ShuffleRepartitioner {
                     // TODO reserve memory / spilling
                     let selection_vector = BooleanArray::from(selection_vector);
                     let partition_batch = filter_record_batch(&input, &selection_vector)?;
+                    repart_timer.stop();
                     if partition_batch.num_rows() > 0 {
-                        self.buffered_partitions[i].active.push(partition_batch);
-                        // if self.buffered_partitions[i]
-                        //     .active
-                        //     .iter()
-                        //     .map(|b| b.num_rows())
-                        //     .sum::<usize>()
-                        //     > self.batch_size
-                        // {
-                        //     self.buffered_partitions[i].flush(&self.metrics.ipc_time)?;
-                        // }
+                        self.buffered_partitions[i].append(partition_batch, &self.metrics)?;
                     }
                 }
             }
             Partitioning::UnknownPartitioning(n) if *n == 1 => {
-                self.buffered_partitions[0].active.push(input);
-                // if self.buffered_partitions[0]
-                //     .active
-                //     .iter()
-                //     .map(|b| b.num_rows())
-                //     .sum::<usize>()
-                //     > self.batch_size
-                // {
-                //     self.buffered_partitions[0].flush(&self.metrics.ipc_time)?;
-                // }
+                self.buffered_partitions[0].append(input, &self.metrics)?;
             }
             other => {
                 // this should be unreachable as long as the validation logic
