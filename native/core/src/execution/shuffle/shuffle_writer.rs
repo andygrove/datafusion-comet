@@ -1692,7 +1692,7 @@ mod test {
             &Time::default(),
         )
         .unwrap();
-        assert_eq!(61445, output.len());
+        assert_eq!(61744, output.len());
 
         // generate file that can be tested on JVM side in org.apache.spark.CometShuffleCodecSuite
         write_ipc_file("/tmp/shuffle.lz4", &output);

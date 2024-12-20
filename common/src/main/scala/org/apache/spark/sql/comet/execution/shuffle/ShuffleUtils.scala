@@ -21,22 +21,46 @@ package org.apache.spark.sql.comet.execution.shuffle
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
-import org.apache.spark.internal.config.IO_COMPRESSION_CODEC
+import org.apache.spark.internal.config.{IO_COMPRESSION_CODEC, SHUFFLE_COMPRESS}
 import org.apache.spark.io.CompressionCodec
-import org.apache.spark.sql.internal.SQLConf
-
 import org.apache.comet.CometConf
+import org.apache.commons.compress.compressors.lz4.FramedLZ4CompressorInputStream
+
+import java.io.{InputStream, OutputStream}
 
 private[spark] object ShuffleUtils extends Logging {
-  lazy val compressionCodecForShuffling: CompressionCodec = {
+  // optional compression codec to use when compressing shuffle files
+  lazy val compressionCodecForShuffling: Option[CompressionCodec] = {
     val sparkConf = SparkEnv.get.conf
-    val codecName = CometConf.COMET_EXEC_SHUFFLE_CODEC.get(SQLConf.get)
-
-    // only zstd compression is supported at the moment
-    if (codecName != "zstd") {
-      logWarning(
-        s"Overriding config ${IO_COMPRESSION_CODEC}=${codecName} in shuffling, force using zstd")
+    val shuffleCompressionEnabled = sparkConf.getBoolean(SHUFFLE_COMPRESS.key, true)
+    val sparkShuffleCodec = sparkConf.get(IO_COMPRESSION_CODEC.key, "lz4")
+    val cometShuffleCodec = CometConf.COMET_EXEC_SHUFFLE_COMPRESSION_CODEC.get()
+    if (shuffleCompressionEnabled) {
+      if (sparkShuffleCodec != cometShuffleCodec) {
+        logWarning(
+          s"Overriding config $IO_COMPRESSION_CODEC=$sparkShuffleCodec in shuffling, " +
+            s"force using $cometShuffleCodec")
+      }
+      cometShuffleCodec match {
+        case "zstd" =>
+          Some(CompressionCodec.createCodec(sparkConf, "zstd"))
+        case "lz4" => Some(Lz4FrameCodec)
+        case other =>
+          throw new UnsupportedOperationException(
+            s"Unsupported shuffle compression codec: $other")
+      }
+    } else {
+      None
     }
-    CompressionCodec.createCodec(sparkConf, "zstd")
   }
+}
+
+object Lz4FrameCodec extends CompressionCodec {
+
+  override def compressedOutputStream(s: OutputStream): OutputStream = {
+    throw new UnsupportedOperationException()
+  }
+
+  override def compressedInputStream(s: InputStream): InputStream =
+    new FramedLZ4CompressorInputStream(s)
 }
