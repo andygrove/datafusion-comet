@@ -62,6 +62,7 @@ use tokio::runtime::Runtime;
 use crate::execution::operators::ScanExec;
 use crate::execution::spark_plan::SparkPlan;
 use log::info;
+use crate::execution::shuffle::read_ipc_compressed;
 
 /// Comet native execution context. Kept alive across JNI calls.
 struct ExecutionContext {
@@ -540,6 +541,27 @@ pub extern "system" fn Java_org_apache_comet_Native_sortRowPartitionsNative(
         // SAFETY: JVM unsafe memory allocation is aligned with long.
         let array = unsafe { std::slice::from_raw_parts_mut(address as *mut i64, size as usize) };
         array.rdxsort();
+
+        Ok(())
+    })
+}
+
+
+#[no_mangle]
+/// Used by Comet native shuffle reader
+pub extern "system" fn Java_org_apache_comet_Native_decodeShuffleBlock(
+    e: JNIEnv,
+    _class: JClass,
+    address: jlong,
+    size: jlong,
+) {
+    try_unwrap_or_throw(&e, |_| {
+        let ipc_encoded_bytes = unsafe { std::slice::from_raw_parts(address as *const u8, size as usize) };
+        let start = Instant::now();
+        let batch = read_ipc_compressed(ipc_encoded_bytes)?;
+        println!("native decode batch in {:?}", start.elapsed());
+
+        // TODO return batch via FFI
 
         Ok(())
     })

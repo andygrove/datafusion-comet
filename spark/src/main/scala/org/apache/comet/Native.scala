@@ -139,4 +139,6 @@ class Native extends NativeBase {
    *   the size of the array.
    */
   @native def sortRowPartitionsNative(addr: Long, size: Long): Unit
+
+  @native def decodeShuffleBlock(addr: Long, size: Long): Unit
 }
