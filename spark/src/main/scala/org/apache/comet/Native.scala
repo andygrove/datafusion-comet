@@ -19,6 +19,8 @@
 
 package org.apache.comet
 
+import java.nio.ByteBuffer
+
 import org.apache.spark.CometTaskMemoryManager
 import org.apache.spark.sql.comet.CometMetricNode
 
@@ -150,7 +152,7 @@ class Native extends NativeBase {
    *   the size of the array.
    */
   @native def decodeShuffleBlock(
-      shuffleBlock: Array[Byte],
+      shuffleBlock: ByteBuffer,
       arrayAddrs: Array[Long],
       schemaAddrs: Array[Long]): Long
 

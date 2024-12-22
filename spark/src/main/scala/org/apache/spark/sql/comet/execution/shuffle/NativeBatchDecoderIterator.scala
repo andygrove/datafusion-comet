@@ -100,8 +100,9 @@ case class NativeBatchDecoderIterator(var in: InputStream, taskContext: TaskCont
     val fieldCount = longBuf.getLong.toInt
 
     // read body
-    val buffer = new Array[Byte](compressedLength - 8)
-    fillBuffer(in, buffer)
+    // TODO avoid allocating a new buffer for each batch
+    val buffer = ByteBuffer.allocateDirect(compressedLength - 8)
+    while (buffer.hasRemaining && channel.read(buffer) >= 0) {}
 
     // make native call to decode batch
     nextBatch = nativeUtil.getNextBatch(
@@ -120,17 +121,6 @@ case class NativeBatchDecoderIterator(var in: InputStream, taskContext: TaskCont
       ret
     } else {
       throw new IllegalStateException()
-    }
-  }
-
-  private def fillBuffer(in: InputStream, buffer: Array[Byte]): Unit = {
-    var bytesRead = 0
-    while (bytesRead < buffer.length) {
-      val result = in.read(buffer, bytesRead, buffer.length - bytesRead)
-      if (result == -1) {
-        throw new EOFException(s"Expected ${buffer.length} bytes, only $bytesRead available")
-      }
-      bytesRead += result
     }
   }
 

@@ -52,6 +52,7 @@ use crate::{
 use datafusion_comet_proto::spark_operator::Operator;
 use datafusion_common::ScalarValue;
 use futures::stream::StreamExt;
+use jni::objects::JByteBuffer;
 use jni::{
     objects::GlobalRef,
     sys::{jboolean, jdouble, jintArray, jobjectArray, jstring},
@@ -551,16 +552,21 @@ pub extern "system" fn Java_org_apache_comet_Native_sortRowPartitionsNative(
 pub unsafe extern "system" fn Java_org_apache_comet_Native_decodeShuffleBlock(
     e: JNIEnv,
     _class: JClass,
-    byte_array: jbyteArray,
+    byte_buffer: JByteBuffer,
     array_addrs: jlongArray,
     schema_addrs: jlongArray,
 ) -> jlong {
     try_unwrap_or_throw(&e, |mut env| {
+        let raw_pointer = env.get_direct_buffer_address(&byte_buffer)?;
+        let length = env.get_direct_buffer_capacity(&byte_buffer)?;
+        let slice: &mut [u8] = unsafe { std::slice::from_raw_parts_mut(raw_pointer, length) };
+        /* byte[] approach
         let value_array = unsafe { JPrimitiveArray::from_raw(byte_array) };
         let length = env.get_array_length(&value_array)?;
         let elements = unsafe { env.get_array_elements(&value_array, ReleaseMode::NoCopyBack)? };
         let raw_pointer = elements.as_ptr();
         let slice = unsafe { std::slice::from_raw_parts(raw_pointer, length as usize) };
+        */
         let batch = read_ipc_compressed(slice)?;
         prepare_output(&mut env, array_addrs, schema_addrs, batch, false)
     })
