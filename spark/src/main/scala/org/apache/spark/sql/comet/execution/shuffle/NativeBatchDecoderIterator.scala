@@ -37,6 +37,7 @@ import org.apache.comet.vector.NativeUtil
  */
 case class NativeBatchDecoderIterator(
     var in: InputStream,
+    var dataBuf: ByteBuffer,
     taskContext: TaskContext,
     decodeTime: SQLMetric)
     extends Iterator[ColumnarBatch] {
@@ -44,7 +45,6 @@ case class NativeBatchDecoderIterator(
   private var nextBatch: Option[ColumnarBatch] = None
   private var finished = false;
   private val longBuf = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
-  private var dataBuf: ByteBuffer = _
   private val native = new Native()
   private val nativeUtil = new NativeUtil()
 

@@ -20,6 +20,7 @@
 package org.apache.spark.sql.comet.execution.shuffle
 
 import java.io.InputStream
+import java.nio.ByteBuffer
 
 import org.apache.spark.{InterruptibleIterator, MapOutputTracker, SparkEnv, TaskContext}
 import org.apache.spark.internal.{config, Logging}
@@ -97,13 +98,17 @@ class CometBlockStoreShuffleReader[K, C](
       }
     }
 
+    // reuse direct ByteBuffer across instances of NativeBatchDecoderIterator
+    var dataBuf: ByteBuffer = null
+
     val recordIter: Iterator[(Int, ColumnarBatch)] = fetchIterator
       .flatMap(blockIdAndStream => {
         if (currentReadIterator != null) {
+          dataBuf = currentReadIterator.dataBuf
           currentReadIterator.close()
         }
         currentReadIterator =
-          NativeBatchDecoderIterator(blockIdAndStream._2, context, dep.decodeTime)
+          NativeBatchDecoderIterator(blockIdAndStream._2, dataBuf, context, dep.decodeTime)
         currentReadIterator
       })
       .map(b => (0, b))
