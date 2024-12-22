@@ -66,7 +66,6 @@ import org.apache.spark.shuffle.sort.CometShuffleExternalSorter;
 import org.apache.spark.shuffle.sort.SortShuffleManager;
 import org.apache.spark.shuffle.sort.UnsafeShuffleWriter;
 import org.apache.spark.sql.catalyst.expressions.UnsafeRow;
-import org.apache.spark.sql.comet.shuffle.CometShuffleDependency;
 import org.apache.spark.sql.types.StructType;
 import org.apache.spark.storage.BlockManager;
 import org.apache.spark.storage.TimeTrackingOutputStream;

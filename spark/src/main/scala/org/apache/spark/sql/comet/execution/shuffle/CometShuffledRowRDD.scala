@@ -17,7 +17,7 @@
  * under the License.
  */
 
-package org.apache.spark.sql.comet.shuffle
+package org.apache.spark.sql.comet.execution.shuffle
 
 import org.apache.spark._
 import org.apache.spark.rdd.RDD

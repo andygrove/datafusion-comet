@@ -17,7 +17,7 @@
  * under the License.
  */
 
-package org.apache.spark.sql.comet.shuffle
+package org.apache.spark.sql.comet.execution.shuffle
 
 import scala.reflect.ClassTag
 

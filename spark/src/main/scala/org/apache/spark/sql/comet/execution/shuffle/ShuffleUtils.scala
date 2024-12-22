@@ -17,7 +17,7 @@
  * under the License.
  */
 
-package org.apache.spark.sql.comet.shuffle
+package org.apache.spark.sql.comet.execution.shuffle
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
