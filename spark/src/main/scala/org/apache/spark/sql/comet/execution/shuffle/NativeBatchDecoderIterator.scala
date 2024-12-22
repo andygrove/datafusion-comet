@@ -19,7 +19,7 @@
 
 package org.apache.spark.sql.comet.execution.shuffle
 
-import java.io.{EOFException, InputStream}
+import java.io.{EOFException, InputStream, IOException}
 import java.nio.{ByteBuffer, ByteOrder}
 import java.nio.channels.{Channels, ReadableByteChannel}
 
@@ -101,6 +101,9 @@ case class NativeBatchDecoderIterator(
     // read field count from header
     longBuf.clear()
     while (longBuf.hasRemaining && channel.read(longBuf) >= 0) {}
+    if (longBuf.hasRemaining) {
+      throw new EOFException("Data corrupt: unexpected EOF while reading field count")
+    }
     longBuf.flip()
     val fieldCount = longBuf.getLong.toInt
 
@@ -112,6 +115,9 @@ case class NativeBatchDecoderIterator(
     dataBuf.clear()
     dataBuf.limit(bytesToRead)
     while (dataBuf.hasRemaining && channel.read(dataBuf) >= 0) {}
+    if (dataBuf.hasRemaining) {
+      throw new EOFException("Data corrupt: unexpected EOF while reading compressed batch")
+    }
 
     // make native call to decode batch
     val startTime = System.nanoTime()
