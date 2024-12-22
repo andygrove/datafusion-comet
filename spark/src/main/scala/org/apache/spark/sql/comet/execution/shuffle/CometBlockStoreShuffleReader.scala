@@ -102,7 +102,8 @@ class CometBlockStoreShuffleReader[K, C](
         if (currentReadIterator != null) {
           currentReadIterator.close()
         }
-        currentReadIterator = NativeBatchDecoderIterator(blockIdAndStream._2, context)
+        currentReadIterator =
+          NativeBatchDecoderIterator(blockIdAndStream._2, context, dep.decodeTime)
         currentReadIterator
       })
       .map(b => (0, b))

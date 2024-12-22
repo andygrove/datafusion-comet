@@ -24,6 +24,7 @@ import java.nio.{ByteBuffer, ByteOrder}
 import java.nio.channels.{Channels, ReadableByteChannel}
 
 import org.apache.spark.TaskContext
+import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 import org.apache.comet.Native
@@ -34,7 +35,10 @@ import org.apache.comet.vector.NativeUtil
  * native ShuffleWriterExec and then calls native code to decompress and decode the shuffle blocks
  * and use Arrow FFI to return the Arrow record batch.
  */
-case class NativeBatchDecoderIterator(var in: InputStream, taskContext: TaskContext)
+case class NativeBatchDecoderIterator(
+    var in: InputStream,
+    taskContext: TaskContext,
+    decodeTime: SQLMetric)
     extends Iterator[ColumnarBatch] {
   private val SPARK_LZ4_MAGIC = Array[Byte](76, 90, 52, 66, 108, 111, 99, 107) // "LZ4Block"
   private var nextBatch: Option[ColumnarBatch] = None
@@ -105,11 +109,13 @@ case class NativeBatchDecoderIterator(var in: InputStream, taskContext: TaskCont
     while (buffer.hasRemaining && channel.read(buffer) >= 0) {}
 
     // make native call to decode batch
+    val startTime = System.nanoTime()
     nextBatch = nativeUtil.getNextBatch(
       fieldCount,
       (arrayAddrs, schemaAddrs) => {
         native.decodeShuffleBlock(buffer, arrayAddrs, schemaAddrs)
       })
+    decodeTime.add(System.nanoTime() - startTime)
 
     true
   }
