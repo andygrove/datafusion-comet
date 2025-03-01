@@ -117,7 +117,9 @@ class CometExpressionSuite extends CometTestBase with AdaptiveSparkPlanHelper {
     Seq(true, false).foreach { dictionaryEnabled =>
       withTempDir { dir =>
         val path = new Path(dir.toURI.toString, "test.parquet")
-        makeParquetFileAllTypes(path, dictionaryEnabled = dictionaryEnabled, 10000)
+        withSQLConf(CometConf.COMET_SCAN_ALLOW_INCOMPATIBLE.key -> "false") {
+          makeParquetFileAllTypes(path, dictionaryEnabled = dictionaryEnabled, 10000)
+        }
         withParquetTable(path.toString, "tbl") {
           checkSparkAnswerAndOperator("select * FROM tbl WHERE _2 > 100")
         }
@@ -1273,32 +1275,36 @@ class CometExpressionSuite extends CometTestBase with AdaptiveSparkPlanHelper {
           -128,
           128,
           randomSize = 100)
-        withParquetTable(path.toString, "tbl") {
-          for (s <- Seq(-5, -1, 0, 1, 5, -1000, 1000, -323, -308, 308, -15, 15, -16, 16, null)) {
-            // array tests
-            // TODO: enable test for floats (_6, _7, _8, _13)
-            for (c <- Seq(2, 3, 4, 5, 9, 10, 11, 12, 15, 16, 17)) {
-              checkSparkAnswerAndOperator(s"select _${c}, round(_${c}, ${s}) FROM tbl")
-            }
-            // scalar tests
-            // Exclude the constant folding optimizer in order to actually execute the native round
-            // operations for scalar (literal) values.
-            // TODO: comment in the tests for float once supported
-            withSQLConf(
-              "spark.sql.optimizer.excludedRules" -> "org.apache.spark.sql.catalyst.optimizer.ConstantFolding") {
-              for (n <- Seq("0.0", "-0.0", "0.5", "-0.5", "1.2", "-1.2")) {
-                checkSparkAnswerAndOperator(s"select round(cast(${n} as tinyint), ${s}) FROM tbl")
-                // checkSparkAnswerAndCometOperators(s"select round(cast(${n} as float), ${s}) FROM tbl")
-                checkSparkAnswerAndOperator(
-                  s"select round(cast(${n} as decimal(38, 18)), ${s}) FROM tbl")
-                checkSparkAnswerAndOperator(
-                  s"select round(cast(${n} as decimal(20, 0)), ${s}) FROM tbl")
+        withSQLConf(CometConf.COMET_SCAN_ALLOW_INCOMPATIBLE.key -> "true") {
+          withParquetTable(path.toString, "tbl") {
+            for (s <- Seq(-5, -1, 0, 1, 5, -1000, 1000, -323, -308, 308, -15, 15, -16, 16,
+                null)) {
+              // array tests
+              // TODO: enable test for floats (_6, _7, _8, _13)
+              for (c <- Seq(2, 3, 4, 5, 9, 10, 11, 12, 15, 16, 17)) {
+                checkSparkAnswerAndOperator(s"select _${c}, round(_${c}, ${s}) FROM tbl")
               }
-              // checkSparkAnswer(s"select round(double('infinity'), ${s}) FROM tbl")
-              // checkSparkAnswer(s"select round(double('-infinity'), ${s}) FROM tbl")
-              // checkSparkAnswer(s"select round(double('NaN'), ${s}) FROM tbl")
-              // checkSparkAnswer(
-              //   s"select round(double('0.000000000000000000000000000000000001'), ${s}) FROM tbl")
+              // scalar tests
+              // Exclude the constant folding optimizer in order to actually execute the native round
+              // operations for scalar (literal) values.
+              // TODO: comment in the tests for float once supported
+              withSQLConf(
+                "spark.sql.optimizer.excludedRules" -> "org.apache.spark.sql.catalyst.optimizer.ConstantFolding") {
+                for (n <- Seq("0.0", "-0.0", "0.5", "-0.5", "1.2", "-1.2")) {
+                  checkSparkAnswerAndOperator(
+                    s"select round(cast(${n} as tinyint), ${s}) FROM tbl")
+                  // checkSparkAnswerAndCometOperators(s"select round(cast(${n} as float), ${s}) FROM tbl")
+                  checkSparkAnswerAndOperator(
+                    s"select round(cast(${n} as decimal(38, 18)), ${s}) FROM tbl")
+                  checkSparkAnswerAndOperator(
+                    s"select round(cast(${n} as decimal(20, 0)), ${s}) FROM tbl")
+                }
+                // checkSparkAnswer(s"select round(double('infinity'), ${s}) FROM tbl")
+                // checkSparkAnswer(s"select round(double('-infinity'), ${s}) FROM tbl")
+                // checkSparkAnswer(s"select round(double('NaN'), ${s}) FROM tbl")
+                // checkSparkAnswer(
+                //   s"select round(double('0.000000000000000000000000000000000001'), ${s}) FROM tbl")
+              }
             }
           }
         }
@@ -1491,11 +1497,12 @@ class CometExpressionSuite extends CometTestBase with AdaptiveSparkPlanHelper {
     Seq(true, false).foreach { dictionaryEnabled =>
       withTempDir { dir =>
         val path = new Path(dir.toURI.toString, "hex.parquet")
-        makeParquetFileAllTypes(path, dictionaryEnabled = dictionaryEnabled, 10000)
-
-        withParquetTable(path.toString, "tbl") {
-          checkSparkAnswerAndOperator(
-            "SELECT hex(_1), hex(_2), hex(_3), hex(_4), hex(_5), hex(_6), hex(_7), hex(_8), hex(_9), hex(_10), hex(_11), hex(_12), hex(_13), hex(_14), hex(_15), hex(_16), hex(_17), hex(_18), hex(_19), hex(_20) FROM tbl")
+        withSQLConf(CometConf.COMET_SCAN_ALLOW_INCOMPATIBLE.key -> "true") {
+          makeParquetFileAllTypes(path, dictionaryEnabled = dictionaryEnabled, 10000)
+          withParquetTable(path.toString, "tbl") {
+            checkSparkAnswerAndOperator(
+              "SELECT hex(_1), hex(_2), hex(_3), hex(_4), hex(_5), hex(_6), hex(_7), hex(_8), hex(_9), hex(_10), hex(_11), hex(_12), hex(_13), hex(_14), hex(_15), hex(_16), hex(_17), hex(_18), hex(_19), hex(_20) FROM tbl")
+          }
         }
       }
     }
@@ -1811,7 +1818,7 @@ class CometExpressionSuite extends CometTestBase with AdaptiveSparkPlanHelper {
             "spark.sql.decimalOperations.allowPrecisionLoss" -> allowPrecisionLoss.toString) {
             val a = makeNum(p1, s1)
             val b = makeNum(p2, s2)
-            var ops = Seq("+", "-", "*", "/", "%")
+            val ops = Seq("+", "-", "*", "/", "%", "div")
             for (op <- ops) {
               checkSparkAnswerAndOperator(s"select a, b, a $op b from $table")
               checkSparkAnswerAndOperator(s"select $a, b, $a $op b from $table")
@@ -2636,6 +2643,59 @@ class CometExpressionSuite extends CometTestBase with AdaptiveSparkPlanHelper {
             .select(array(struct(struct(col("_4"), col("_8")).alias("nested"))).alias("arr"))
 
           checkSparkAnswerAndOperator(complex.select(col("arr.nested._4")))
+        }
+      }
+    }
+  }
+
+  test("test integral divide") {
+    Seq(true, false).foreach { dictionaryEnabled =>
+      withTempDir { dir =>
+        val path1 = new Path(dir.toURI.toString, "test1.parquet")
+        val path2 = new Path(dir.toURI.toString, "test2.parquet")
+        makeParquetFileAllTypes(
+          path1,
+          dictionaryEnabled = dictionaryEnabled,
+          0,
+          0,
+          randomSize = 10000)
+        makeParquetFileAllTypes(
+          path2,
+          dictionaryEnabled = dictionaryEnabled,
+          0,
+          0,
+          randomSize = 10000)
+        withParquetTable(path1.toString, "tbl1") {
+          withParquetTable(path2.toString, "tbl2") {
+            // disable broadcast, as comet on spark 3.3 does not support broadcast exchange
+            withSQLConf(
+              SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key -> "-1",
+              SQLConf.ADAPTIVE_AUTO_BROADCASTJOIN_THRESHOLD.key -> "-1") {
+              checkSparkAnswerAndOperator("""
+                  |select
+                  | t1._2 div t2._2, div(t1._2, t2._2),
+                  | t1._3 div t2._3, div(t1._3, t2._3),
+                  | t1._4 div t2._4, div(t1._4, t2._4),
+                  | t1._5 div t2._5, div(t1._5, t2._5),
+                  | t1._9 div t2._9, div(t1._9, t2._9),
+                  | t1._10 div t2._10, div(t1._10, t2._10),
+                  | t1._11 div t2._11, div(t1._11, t2._11)
+                  | from tbl1 t1 join tbl2 t2 on t1._id = t2._id
+                  | order by t1._id""".stripMargin)
+
+              if (isSpark34Plus) {
+                // decimal support requires Spark 3.4 or later
+                checkSparkAnswerAndOperator("""
+                    |select
+                    | t1._12 div t2._12, div(t1._12, t2._12),
+                    | t1._15 div t2._15, div(t1._15, t2._15),
+                    | t1._16 div t2._16, div(t1._16, t2._16),
+                    | t1._17 div t2._17, div(t1._17, t2._17)
+                    | from tbl1 t1 join tbl2 t2 on t1._id = t2._id
+                    | order by t1._id""".stripMargin)
+              }
+            }
+          }
         }
       }
     }
