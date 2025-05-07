@@ -208,7 +208,9 @@ public class CometUnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
       while (records.hasNext()) {
         insertRecordIntoSorter(records.next());
       }
+      logger.info("Allocated memory before close: {}", allocator.getUsed());
       closeAndWriteOutput();
+      logger.info("Allocated memory after close: {}", allocator.getUsed());
       success = true;
     } finally {
       if (sorter != null) {
