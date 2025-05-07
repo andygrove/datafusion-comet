@@ -62,6 +62,8 @@ import org.apache.spark.shuffle.api.ShuffleMapOutputWriter;
 import org.apache.spark.shuffle.api.ShufflePartitionWriter;
 import org.apache.spark.shuffle.api.SingleSpillShuffleMapOutputWriter;
 import org.apache.spark.shuffle.api.WritableByteChannelWrapper;
+import org.apache.spark.shuffle.comet.CometShuffleMemoryAllocator;
+import org.apache.spark.shuffle.comet.CometShuffleMemoryAllocatorTrait;
 import org.apache.spark.shuffle.sort.CometShuffleExternalSorter;
 import org.apache.spark.shuffle.sort.SortShuffleManager;
 import org.apache.spark.shuffle.sort.UnsafeShuffleWriter;
@@ -114,6 +116,7 @@ public class CometUnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
   private final StructType schema;
 
   @Nullable private MapStatus mapStatus;
+  @Nullable private CometShuffleMemoryAllocatorTrait allocator;
   @Nullable private CometShuffleExternalSorter sorter;
 
   @Nullable private long[] partitionLengths;
@@ -226,10 +229,17 @@ public class CometUnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
   }
 
   private void open() {
+    assert (allocator == null);
     assert (sorter == null);
+    allocator =
+        CometShuffleMemoryAllocator.getInstance(
+            sparkConf,
+            memoryManager,
+            Math.min(
+                CometShuffleExternalSorter.MAXIMUM_PAGE_SIZE_BYTES, memoryManager.pageSizeBytes()));
     sorter =
         new CometShuffleExternalSorter(
-            memoryManager,
+            allocator,
             blockManager,
             taskContext,
             initialSortBufferSize,

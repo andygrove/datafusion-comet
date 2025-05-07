@@ -34,10 +34,8 @@ import org.apache.spark.SparkConf;
 import org.apache.spark.TaskContext;
 import org.apache.spark.executor.ShuffleWriteMetrics;
 import org.apache.spark.memory.SparkOutOfMemoryError;
-import org.apache.spark.memory.TaskMemoryManager;
 import org.apache.spark.shuffle.ShuffleWriteMetricsReporter;
 import org.apache.spark.shuffle.comet.CometShuffleChecksumSupport;
-import org.apache.spark.shuffle.comet.CometShuffleMemoryAllocator;
 import org.apache.spark.shuffle.comet.CometShuffleMemoryAllocatorTrait;
 import org.apache.spark.shuffle.comet.TooLargePageException;
 import org.apache.spark.sql.comet.execution.shuffle.CometUnsafeShuffleWriter;
@@ -77,6 +75,8 @@ import org.apache.comet.Native;
 public final class CometShuffleExternalSorter implements CometShuffleChecksumSupport {
 
   private static final Logger logger = LoggerFactory.getLogger(CometShuffleExternalSorter.class);
+
+  public static int MAXIMUM_PAGE_SIZE_BYTES = PackedRecordPointer.MAXIMUM_PAGE_SIZE_BYTES;
 
   private final int numPartitions;
   private final BlockManager blockManager;
@@ -131,7 +131,7 @@ public final class CometShuffleExternalSorter implements CometShuffleChecksumSup
   private final double preferDictionaryRatio;
 
   public CometShuffleExternalSorter(
-      TaskMemoryManager memoryManager,
+      CometShuffleMemoryAllocatorTrait allocator,
       BlockManager blockManager,
       TaskContext taskContext,
       int initialSize,
@@ -139,11 +139,7 @@ public final class CometShuffleExternalSorter implements CometShuffleChecksumSup
       SparkConf conf,
       ShuffleWriteMetricsReporter writeMetrics,
       StructType schema) {
-    this.allocator =
-        CometShuffleMemoryAllocator.getInstance(
-            conf,
-            memoryManager,
-            Math.min(PackedRecordPointer.MAXIMUM_PAGE_SIZE_BYTES, memoryManager.pageSizeBytes()));
+    this.allocator = allocator;
     this.blockManager = blockManager;
     this.taskContext = taskContext;
     this.numPartitions = numPartitions;
