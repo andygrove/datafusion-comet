@@ -108,7 +108,12 @@ use datafusion_comet_spark_expr::{
     SparkCastOptions, StartsWith, Stddev, StringSpaceExpr, SubstringExpr, SumDecimal,
     TimestampTruncExpr, ToJson, UnboundColumn, Variance,
 };
-use datafusion_spark::function::math::expm1::SparkExpm1;
+use datafusion_spark::function::{
+    math::expm1::SparkExpm1,
+    math::hex::SparkHex,
+    string::ascii::SparkAscii,
+    string::char::SparkChar,
+};
 use itertools::Itertools;
 use jni::objects::GlobalRef;
 use num::{BigInt, ToPrimitive};
@@ -149,7 +154,10 @@ impl Default for PhysicalPlanner {
         let session_ctx = Arc::new(SessionContext::new());
 
         // register UDFs from datafusion-spark crate
+        session_ctx.register_udf(ScalarUDF::new_from_impl(SparkAscii::default()));
+        session_ctx.register_udf(ScalarUDF::new_from_impl(SparkChar::default()));
         session_ctx.register_udf(ScalarUDF::new_from_impl(SparkExpm1::default()));
+        session_ctx.register_udf(ScalarUDF::new_from_impl(SparkHex::default()));
 
         Self {
             exec_context_id: TEST_EXEC_CONTEXT_ID,
@@ -161,7 +169,10 @@ impl Default for PhysicalPlanner {
 impl PhysicalPlanner {
     pub fn new(session_ctx: Arc<SessionContext>) -> Self {
         // register UDFs from datafusion-spark crate
+        session_ctx.register_udf(ScalarUDF::new_from_impl(SparkAscii::default()));
+        session_ctx.register_udf(ScalarUDF::new_from_impl(SparkChar::default()));
         session_ctx.register_udf(ScalarUDF::new_from_impl(SparkExpm1::default()));
+        session_ctx.register_udf(ScalarUDF::new_from_impl(SparkHex::default()));
         Self {
             exec_context_id: TEST_EXEC_CONTEXT_ID,
             session_ctx,
