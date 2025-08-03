@@ -34,6 +34,7 @@ import org.apache.spark.sql.execution.adaptive.{AQEShuffleReadExec, BroadcastQue
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
+import org.apache.spark.sql.execution.python.{ArrowEvalPythonExec, CometArrowEvalPythonExec}
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{ArrayType, BinaryType, BooleanType, ByteType, DataType, DateType, DecimalType, DoubleType, FloatType, IntegerType, LongType, MapType, ShortType, StringType, StructType, TimestampNTZType, TimestampType}
@@ -560,6 +561,19 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
               s"$typeInfo")
           withInfo(s, Seq(msg1, msg2, msg3).flatten.mkString(","))
         }
+
+      case op: ArrowEvalPythonExec =>
+        newPlanWithProto(
+          op,
+          CometArrowEvalPythonExec(
+            _,
+            op,
+            op.udfs,
+            op.resultAttrs,
+            op.child,
+            op.evalType,
+            SerializedPlan(None)))
+//        newPlanWithProto(op, CometSinkPlaceHolder(_, op, op))
 
       case op =>
         op match {

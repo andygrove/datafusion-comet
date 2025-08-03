@@ -23,20 +23,28 @@ import scala.jdk.CollectionConverters.asScalaIteratorConverter
 
 import org.apache.spark.{JobArtifactSet, TaskContext}
 import org.apache.spark.api.python.ChainedPythonFunctions
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, PythonUDF}
+import org.apache.spark.sql.comet.{CometUnaryExec, SerializedPlan}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types.StructType
+
+import org.apache.comet.serde.OperatorOuterClass.Operator
 
 /**
  * A physical plan that evaluates a [[PythonUDF]].
  */
 case class CometArrowEvalPythonExec(
+    override val nativeOp: Operator,
+    override val originalPlan: SparkPlan,
     udfs: Seq[PythonUDF],
     resultAttrs: Seq[Attribute],
     child: SparkPlan,
-    evalType: Int)
-    extends EvalPythonExec
+    evalType: Int,
+    override val serializedPlanOpt: SerializedPlan)
+    extends CometUnaryExec
+    with EvalPythonExec
     with PythonSQLMetrics {
 
   private val batchSize = conf.arrowMaxRecordsPerBatch
@@ -44,6 +52,8 @@ case class CometArrowEvalPythonExec(
   private val largeVarTypes = conf.arrowUseLargeVarTypes
   private val pythonRunnerConf = ArrowPythonRunner.getPythonRunnerConfMap(conf)
   private[this] val jobArtifactUUID = JobArtifactSet.getCurrentJobArtifactState.map(_.uuid)
+
+  override def doExecute(): RDD[InternalRow] = super.doExecute()
 
   protected override def evaluate(
       funcs: Seq[ChainedPythonFunctions],
@@ -57,6 +67,7 @@ case class CometArrowEvalPythonExec(
     // DO NOT use iter.grouped(). See BatchIterator.
     val batchIter = if (batchSize > 0) new BatchIterator(iter, batchSize) else Iterator(iter)
 
+    // TODO switch this to CometArrowPythonRunner
     val columnarBatchIter = new ArrowPythonRunner(
       funcs,
       evalType,
