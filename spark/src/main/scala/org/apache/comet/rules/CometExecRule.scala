@@ -563,6 +563,8 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
         }
 
       case op: ArrowEvalPythonExec =>
+        // scalastyle:off
+        println("*** Replacing ArrowEvalPythonExec")
         newPlanWithProto(
           op,
           CometArrowEvalPythonExec(
@@ -573,7 +575,6 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
             op.child,
             op.evalType,
             SerializedPlan(None)))
-//        newPlanWithProto(op, CometSinkPlaceHolder(_, op, op))
 
       case op =>
         op match {

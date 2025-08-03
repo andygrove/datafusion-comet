@@ -47,6 +47,8 @@ case class CometArrowEvalPythonExec(
     with EvalPythonExec
     with PythonSQLMetrics {
 
+  override def nodeName: String = "Comet" + super.nodeName
+
   private val batchSize = conf.arrowMaxRecordsPerBatch
   private val sessionLocalTimeZone = conf.sessionLocalTimeZone
   private val largeVarTypes = conf.arrowUseLargeVarTypes
