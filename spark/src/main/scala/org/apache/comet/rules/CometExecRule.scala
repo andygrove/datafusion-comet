@@ -565,21 +565,13 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
       case op: ArrowEvalPythonExec =>
         // scalastyle:off
         println("*** Replacing ArrowEvalPythonExec")
-        newPlanWithProto(
-          op,
-          CometArrowEvalPythonExec(
-            _,
-            op,
-            op.udfs,
-            op.resultAttrs,
-            op.child,
-            op.evalType,
-            SerializedPlan(None)))
+        CometArrowEvalPythonExec(op, op.udfs, op.resultAttrs, op.child, op.evalType)
 
       case op =>
         op match {
           case _: CometExec | _: AQEShuffleReadExec | _: BroadcastExchangeExec |
-              _: CometBroadcastExchangeExec | _: CometShuffleExchangeExec =>
+              _: CometBroadcastExchangeExec | _: CometShuffleExchangeExec |
+              _: CometArrowEvalPythonExec =>
             // Some execs should never be replaced. We include
             // these cases specially here so we do not add a misleading 'info' message
             op

@@ -26,28 +26,23 @@ import org.apache.spark.api.python.ChainedPythonFunctions
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, PythonUDF}
-import org.apache.spark.sql.comet.{CometUnaryExec, SerializedPlan}
+import org.apache.spark.sql.comet.CometExec
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types.StructType
-
-import org.apache.comet.serde.OperatorOuterClass.Operator
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * A physical plan that evaluates a [[PythonUDF]].
  */
 case class CometArrowEvalPythonExec(
-    override val nativeOp: Operator,
     override val originalPlan: SparkPlan,
     udfs: Seq[PythonUDF],
     resultAttrs: Seq[Attribute],
     child: SparkPlan,
-    evalType: Int,
-    override val serializedPlanOpt: SerializedPlan)
-    extends CometUnaryExec
+    evalType: Int)
+    extends CometExec
     with EvalPythonExec
     with PythonSQLMetrics {
-
-  override def nodeName: String = "Comet" + super.nodeName
 
   private val batchSize = conf.arrowMaxRecordsPerBatch
   private val sessionLocalTimeZone = conf.sessionLocalTimeZone
@@ -55,7 +50,12 @@ case class CometArrowEvalPythonExec(
   private val pythonRunnerConf = ArrowPythonRunner.getPythonRunnerConfMap(conf)
   private[this] val jobArtifactUUID = JobArtifactSet.getCurrentJobArtifactState.map(_.uuid)
 
+  // TODO switch to true
+  override def supportsColumnar: Boolean = false
+
   override def doExecute(): RDD[InternalRow] = super.doExecute()
+
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = super.doExecuteColumnar()
 
   protected override def evaluate(
       funcs: Seq[ChainedPythonFunctions],
