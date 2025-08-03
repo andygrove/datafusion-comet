@@ -22,17 +22,16 @@ package org.apache.spark.sql.execution.python
 import java.io.File
 
 import scala.collection.mutable.ArrayBuffer
-import scala.jdk.CollectionConverters.asScalaIteratorConverter
 
 import org.apache.spark.{ContextAwareIterator, JobArtifactSet, SparkEnv, TaskContext}
 import org.apache.spark.api.python.ChainedPythonFunctions
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, JoinedRow, MutableProjection, PythonUDF, UnsafeProjection, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, MutableProjection, PythonUDF}
 import org.apache.spark.sql.catalyst.trees.UnaryLike
 import org.apache.spark.sql.comet.CometExec
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
 
 /**
@@ -48,14 +47,13 @@ case class CometArrowEvalPythonExec(
     with UnaryLike[SparkPlan]
     with PythonSQLMetrics {
 
-  private val batchSize = conf.arrowMaxRecordsPerBatch
-  private val sessionLocalTimeZone = conf.sessionLocalTimeZone
-  private val largeVarTypes = conf.arrowUseLargeVarTypes
-  private val pythonRunnerConf = ArrowPythonRunner.getPythonRunnerConfMap(conf)
+  conf.arrowMaxRecordsPerBatch
+  conf.sessionLocalTimeZone
+  conf.arrowUseLargeVarTypes
+  ArrowPythonRunner.getPythonRunnerConfMap(conf)
   private[this] val jobArtifactUUID = JobArtifactSet.getCurrentJobArtifactState.map(_.uuid)
 
-  // TODO switch to true
-  override def supportsColumnar: Boolean = false
+  override def supportsColumnar: Boolean = true
 
   override def output: Seq[Attribute] = child.output ++ resultAttrs
 
@@ -73,8 +71,8 @@ case class CometArrowEvalPythonExec(
     }
   }
 
-  override def doExecute(): RDD[InternalRow] = {
-    val inputRDD = child.execute().map(_.copy())
+  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val inputRDD = child.executeColumnar()
 
     inputRDD.mapPartitions { iter =>
       val context = TaskContext.get()
@@ -112,55 +110,55 @@ case class CometArrowEvalPythonExec(
         StructField(s"_$i", dt)
       }.toArray)
 
+      // TODO reinstate queue
       // Add rows to queue to join later with the result.
-      val projectedRowIter = contextAwareIterator.map { inputRow =>
-        queue.add(inputRow.asInstanceOf[UnsafeRow])
-        projection(inputRow)
+//      val projectedRowIter = contextAwareIterator.map { inputBatch =>
+//        queue.add(inputBatch /*.asInstanceOf[UnsafeRow]*/)
+//        //projection(inputBatch)
+//        inputBatch
+//      }
+
+      val outputBatchIterator =
+        evaluate(pyFuncs, argOffsets, contextAwareIterator, schema, context)
+
+//      val joined = new JoinedRow
+//      val resultProj = UnsafeProjection.create(output, output)
+
+      outputBatchIterator
+
+    // TODO reinstate queue
+    /*
+      .map { outputRow => resultProj(joined(queue.remove(), outputRow))
       }
+     */
 
-      val outputRowIterator = evaluate(pyFuncs, argOffsets, projectedRowIter, schema, context)
-
-      val joined = new JoinedRow
-      val resultProj = UnsafeProjection.create(output, output)
-
-      outputRowIterator.map { outputRow =>
-        resultProj(joined(queue.remove(), outputRow))
-      }
     }
   }
 
   def evaluate(
       funcs: Seq[ChainedPythonFunctions],
       argOffsets: Array[Array[Int]],
-      iter: Iterator[InternalRow],
+      iter: Iterator[ColumnarBatch],
       schema: StructType,
-      context: TaskContext): Iterator[InternalRow] = {
+      context: TaskContext): Iterator[ColumnarBatch] = {
 
-    val outputTypes = output.drop(child.output.length).map(_.dataType)
+//    val outputTypes = output.drop(child.output.length).map(_.dataType)
 
     // DO NOT use iter.grouped(). See BatchIterator.
-    val batchIter = if (batchSize > 0) new BatchIterator(iter, batchSize) else Iterator(iter)
+//    val batchIter = if (batchSize > 0) new BatchIterator(iter, batchSize) else Iterator(iter)
 
-    // TODO switch this to CometArrowPythonRunner
-    val columnarBatchIter = new ArrowPythonRunner(
+    val columnarBatchIter = new CometArrowPythonRunner(
       funcs,
       evalType,
       argOffsets,
-      schema,
-      sessionLocalTimeZone,
-      largeVarTypes,
-      pythonRunnerConf,
+//      schema,
+//      sessionLocalTimeZone,
+//      largeVarTypes,
+//      pythonRunnerConf,
       pythonMetrics,
-      jobArtifactUUID).compute(batchIter, context.partitionId(), context)
+      jobArtifactUUID).compute(iter, context.partitionId(), context)
 
-    columnarBatchIter.flatMap { batch =>
-      val actualDataTypes = (0 until batch.numCols()).map(i => batch.column(i).dataType())
-      assert(
-        outputTypes == actualDataTypes,
-        "Invalid schema from pandas_udf: " +
-          s"expected ${outputTypes.mkString(", ")}, got ${actualDataTypes.mkString(", ")}")
-      batch.rowIterator.asScala
-    }
+    columnarBatchIter
   }
 
   override protected def withNewChildInternal(newChild: SparkPlan): SparkPlan =

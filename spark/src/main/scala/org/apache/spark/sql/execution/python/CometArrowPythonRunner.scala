@@ -38,7 +38,7 @@ class CometArrowPythonRunner(
 //                             protected override val workerConf: Map[String, String],
     val pythonMetrics: Map[String, SQLMetric],
     jobArtifactUUID: Option[String])
-    extends BasePythonRunner[Iterator[ColumnarBatch], ColumnarBatch](
+    extends BasePythonRunner[ColumnarBatch, ColumnarBatch](
       funcs,
       evalType,
       argOffsets,
@@ -47,9 +47,11 @@ class CometArrowPythonRunner(
   override protected def newWriterThread(
       env: SparkEnv,
       worker: Socket,
-      inputIterator: Iterator[Iterator[ColumnarBatch]],
+      inputIterator: Iterator[ColumnarBatch],
       partitionIndex: Int,
       context: TaskContext): WriterThread = {
+
+    // TODO implement writing Arrow batches
     throw new UnsupportedOperationException()
   }
 
@@ -62,6 +64,8 @@ class CometArrowPythonRunner(
       pid: Option[Int],
       releasedOrClosed: AtomicBoolean,
       context: TaskContext): Iterator[ColumnarBatch] = {
+
+    // TODO implement reading Arrow batches
     throw new UnsupportedOperationException()
   }
 }
