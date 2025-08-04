@@ -284,4 +284,36 @@ object Utils {
         throw new SparkException(s"Unsupported Arrow Vector for $reason: ${valueVector.getClass}")
     }
   }
+
+  /**
+   * Writes a ColumnarBatch as Arrow stream to an OutputStream. This method is designed to be used
+   * by PythonRunner implementations.
+   *
+   * @param batch
+   *   the ColumnarBatch to write
+   * @param out
+   *   the OutputStream to write to
+   */
+  def writeArrowBatchToStream(batch: ColumnarBatch, out: DataOutputStream): Unit = {
+    try {
+      // Extract Arrow vectors from ColumnarBatch
+      val (fieldVectors, batchProviderOpt) = getBatchFieldVectors(batch)
+
+      // Create VectorSchemaRoot and write the batch
+      val root = new VectorSchemaRoot(fieldVectors.asJava)
+      val provider = batchProviderOpt.getOrElse(new CDataDictionaryProvider())
+
+      val writer = new ArrowStreamWriter(root, provider, Channels.newChannel(out))
+      writer.start()
+      root.setRowCount(batch.numRows())
+      writer.writeBatch()
+      writer.end()
+      writer.close()
+      root.close()
+
+    } catch {
+      case e: Exception =>
+        throw new SparkException("Error writing Arrow batch to stream", e)
+    }
+  }
 }
