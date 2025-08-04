@@ -21,6 +21,7 @@ package org.apache.spark.sql.execution.python
 
 import java.io.{DataInputStream, DataOutputStream}
 import java.net.Socket
+import java.nio.channels.Channels
 import java.util.concurrent.atomic.AtomicBoolean
 
 import scala.collection.JavaConverters._
@@ -28,6 +29,7 @@ import scala.collection.JavaConverters._
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python.{BasePythonRunner, ChainedPythonFunctions}
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.comet.execution.arrow.ArrowReaderIterator
 import org.apache.spark.sql.comet.util.Utils
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -141,7 +143,47 @@ class CometArrowPythonRunner(
       releasedOrClosed: AtomicBoolean,
       context: TaskContext): Iterator[ColumnarBatch] = {
 
-    // TODO implement reading Arrow batches
-    throw new UnsupportedOperationException()
+    // Create an ArrowReaderIterator to read Arrow IPC format from the Python worker
+    val arrowReader = new ArrowReaderIterator(
+      Channels.newChannel(stream),
+      s"Python worker ${pid.getOrElse("unknown")}")
+
+    // Wrap the ArrowReaderIterator to handle exceptions and thread coordination
+    new Iterator[ColumnarBatch] {
+      private var finished = false
+
+      override def hasNext: Boolean = {
+        if (finished) {
+          return false
+        }
+
+        // Check for exceptions from the writer thread
+        if (writerThread != null && writerThread.exception.isDefined) {
+          throw writerThread.exception.get
+        }
+
+        // Check if the reader has more data
+        if (!arrowReader.hasNext) {
+          finished = true
+          false
+        } else {
+          true
+        }
+      }
+
+      override def next(): ColumnarBatch = {
+        if (!hasNext) {
+          throw new NoSuchElementException("End of stream")
+        }
+
+        try {
+          arrowReader.next()
+        } catch {
+          case e: Exception =>
+            finished = true
+            throw e
+        }
+      }
+    }
   }
 }
