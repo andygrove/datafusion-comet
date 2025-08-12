@@ -68,8 +68,10 @@ object QueryPlanSerde extends Logging with CometExprShim {
    */
   private val opSerdeMap: Map[Class[_ <: SparkPlan], CometOperatorSerde[_]] = Map(
     classOf[ProjectExec] -> CometProject,
+    classOf[FilterExec] -> CometFilter,
     classOf[LocalLimitExec] -> CometLocalLimit,
     classOf[GlobalLimitExec] -> CometGlobalLimit,
+    classOf[ExpandExec] -> CometExpand,
     classOf[HashJoin] -> CometHashJoin,
     classOf[SortMergeJoinExec] -> CometSortMergeJoin,
     classOf[SortExec] -> CometSort)
@@ -1810,64 +1812,6 @@ object QueryPlanSerde extends Logging with CometExprShim {
             s"unsupported Comet operator: ${op.nodeName}, due to unsupported data types above"
           emitWarning(msg)
           withInfo(op, msg)
-          None
-        }
-
-      case FilterExec(condition, child) if CometConf.COMET_EXEC_FILTER_ENABLED.get(conf) =>
-        val cond = exprToProto(condition, child.output)
-
-        if (cond.isDefined && childOp.nonEmpty) {
-          // We need to determine whether to use DataFusion's FilterExec or Comet's
-          // FilterExec. The difference is that DataFusion's implementation will sometimes pass
-          // batches through whereas the Comet implementation guarantees that a copy is always
-          // made, which is critical when using `native_comet` scans due to buffer re-use
-
-          // TODO this could be optimized more to stop walking the tree on hitting
-          //  certain operators such as join or aggregate which will copy batches
-          def containsNativeCometScan(plan: SparkPlan): Boolean = {
-            plan match {
-              case w: CometScanWrapper => containsNativeCometScan(w.originalPlan)
-              case scan: CometScanExec => scan.scanImpl == CometConf.SCAN_NATIVE_COMET
-              case _: CometNativeScanExec => false
-              case _ => plan.children.exists(containsNativeCometScan)
-            }
-          }
-
-          // Some native expressions do not support operating on dictionary-encoded arrays, so
-          // wrap the child in a CopyExec to unpack dictionaries first.
-          def wrapChildInCopyExec(condition: Expression): Boolean = {
-            condition.exists(expr => {
-              expr.isInstanceOf[StartsWith] || expr.isInstanceOf[EndsWith] || expr
-                .isInstanceOf[Contains]
-            })
-          }
-
-          val filterBuilder = OperatorOuterClass.Filter
-            .newBuilder()
-            .setPredicate(cond.get)
-            .setUseDatafusionFilter(!containsNativeCometScan(op))
-            .setWrapChildInCopyExec(wrapChildInCopyExec(condition))
-          Some(builder.setFilter(filterBuilder).build())
-        } else {
-          withInfo(op, condition, child)
-          None
-        }
-
-      case ExpandExec(projections, _, child) if CometConf.COMET_EXEC_EXPAND_ENABLED.get(conf) =>
-        var allProjExprs: Seq[Expression] = Seq()
-        val projExprs = projections.flatMap(_.map(e => {
-          allProjExprs = allProjExprs :+ e
-          exprToProto(e, child.output)
-        }))
-
-        if (projExprs.forall(_.isDefined) && childOp.nonEmpty) {
-          val expandBuilder = OperatorOuterClass.Expand
-            .newBuilder()
-            .addAllProjectList(projExprs.map(_.get).asJava)
-            .setNumExprPerProject(projections.head.size)
-          Some(builder.setExpand(expandBuilder).build())
-        } else {
-          withInfo(op, allProjExprs: _*)
           None
         }
 
