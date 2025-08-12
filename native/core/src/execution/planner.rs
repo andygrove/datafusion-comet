@@ -1153,10 +1153,13 @@ impl PhysicalPlanner {
                 // SortExec fails in some cases if we do not unpack dictionary-encoded arrays, and
                 // it would be more efficient if we could avoid that.
                 // https://github.com/apache/datafusion-comet/issues/963
-                let child_copied = Self::wrap_in_copy_exec(Arc::clone(&child.native_plan));
+                let child_copied = Arc::new(CopyExec::new(
+                    Arc::clone(&child.native_plan),
+                    CopyMode::UnpackOrDeepCopy,
+                ));
 
                 let sort = Arc::new(
-                    SortExec::new(LexOrdering::new(exprs?).unwrap(), Arc::clone(&child_copied))
+                    SortExec::new(LexOrdering::new(exprs?).unwrap(), child_copied)
                         .with_fetch(fetch),
                 );
 
