@@ -68,6 +68,8 @@ object QueryPlanSerde extends Logging with CometExprShim {
    */
   private val opSerdeMap: Map[Class[_ <: SparkPlan], CometOperatorSerde[_]] = Map(
     classOf[ProjectExec] -> CometProject,
+    classOf[LocalLimitExec] -> CometLocalLimit,
+    classOf[GlobalLimitExec] -> CometGlobalLimit,
     classOf[HashJoin] -> CometHashJoin,
     classOf[SortMergeJoinExec] -> CometSortMergeJoin,
     classOf[SortExec] -> CometSort)
@@ -1848,36 +1850,6 @@ object QueryPlanSerde extends Logging with CometExprShim {
           Some(builder.setFilter(filterBuilder).build())
         } else {
           withInfo(op, condition, child)
-          None
-        }
-
-      case LocalLimitExec(limit, _) if CometConf.COMET_EXEC_LOCAL_LIMIT_ENABLED.get(conf) =>
-        if (childOp.nonEmpty) {
-          // LocalLimit doesn't use offset, but it shares same operator serde class.
-          // Just set it to zero.
-          val limitBuilder = OperatorOuterClass.Limit
-            .newBuilder()
-            .setLimit(limit)
-            .setOffset(0)
-          Some(builder.setLimit(limitBuilder).build())
-        } else {
-          withInfo(op, "No child operator")
-          None
-        }
-
-      case globalLimitExec: GlobalLimitExec
-          if CometConf.COMET_EXEC_GLOBAL_LIMIT_ENABLED.get(conf) =>
-        // TODO: We don't support negative limit for now.
-        if (childOp.nonEmpty && globalLimitExec.limit >= 0) {
-          val limitBuilder = OperatorOuterClass.Limit.newBuilder()
-
-          // TODO: Spark 3.3 might have negative limit (-1) for Offset usage.
-          // When we upgrade to Spark 3.3., we need to address it here.
-          limitBuilder.setLimit(globalLimitExec.limit)
-
-          Some(builder.setLimit(limitBuilder).build())
-        } else {
-          withInfo(op, "No child operator")
           None
         }
 
