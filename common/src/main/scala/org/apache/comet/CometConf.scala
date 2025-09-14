@@ -503,6 +503,23 @@ object CometConf extends ShimCometConf {
     .intConf
     .createWithDefault(8192)
 
+  val COMET_COLUMNAR_TO_SPARK_ENABLED: ConfigEntry[Boolean] =
+    conf("spark.comet.columnarToSpark.enabled")
+      .doc(
+        "Enable Arrow to Spark columnar conversion for caching. When enabled, Comet will " +
+          "convert Arrow columnar batches to Spark columnar format when feeding data to " +
+          "InMemoryTableScanExec, allowing columnar data to be cached without row conversions.")
+      .booleanConf
+      .createWithDefault(true)
+
+  val COMET_COLUMNAR_TO_SPARK_BATCH_SIZE: ConfigEntry[Int] =
+    conf("spark.comet.columnarToSpark.batchSize")
+      .doc(
+        "Batch size for Arrow to Spark columnar conversion. This controls the maximum " +
+          "number of rows per batch when converting from Arrow to Spark columnar format.")
+      .intConf
+      .createWithDefault(10000)
+
   val COMET_PARQUET_ENABLE_DIRECT_BUFFER: ConfigEntry[Boolean] =
     conf("spark.comet.parquet.enable.directBuffer")
       .doc("Whether to use Java direct byte buffer when reading Parquet.")

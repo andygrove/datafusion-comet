@@ -42,7 +42,7 @@ import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.internal.SQLConf
 
 import org.apache.comet.CometConf._
-import org.apache.comet.rules.{CometExecRule, CometScanRule, EliminateRedundantTransitions}
+import org.apache.comet.rules.{CometExecRule, CometScanRule, EliminateRedundantTransitions, InsertColumnarToSparkColumnar}
 import org.apache.comet.shims.ShimCometSparkSessionExtensions
 
 /**
@@ -68,8 +68,12 @@ class CometSparkSessionExtensions
   case class CometExecColumnar(session: SparkSession) extends ColumnarRule {
     override def preColumnarTransitions: Rule[SparkPlan] = CometExecRule(session)
 
-    override def postColumnarTransitions: Rule[SparkPlan] =
-      EliminateRedundantTransitions(session)
+    override def postColumnarTransitions: Rule[SparkPlan] = new Rule[SparkPlan] {
+      override def apply(plan: SparkPlan): SparkPlan = {
+        val afterElimination = EliminateRedundantTransitions(session).apply(plan)
+        InsertColumnarToSparkColumnar(session).apply(afterElimination)
+      }
+    }
   }
 }
 
