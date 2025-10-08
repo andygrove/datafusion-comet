@@ -270,49 +270,43 @@ class CometExecIterator(
 }
 
 object CometExecIterator extends Logging {
+
   def getMemoryConfig(conf: SparkConf): MemoryConfig = {
     val offHeapMode = CometSparkSessionExtensions.isOffHeapEnabled(conf)
-    val memoryLimit = if (offHeapMode) {
+    if (offHeapMode) {
       // in unified mode we share off-heap memory with Spark
-      ByteUnit.MiB.toBytes(conf.getSizeAsMb("spark.memory.offHeap.size"))
+      val memoryLimit = ByteUnit.MiB.toBytes(conf.getSizeAsMb("spark.memory.offHeap.size"))
+      val memoryLimitPerTask = 0
+      MemoryConfig(
+        offHeapMode,
+        memoryPoolType = COMET_EXEC_MEMORY_POOL_TYPE.get(),
+        memoryLimit,
+        memoryLimitPerTask)
     } else {
       // we'll use the built-in memory pool from DF, and initializes with `memory_limit`
       // and `memory_fraction` below.
-      CometSparkSessionExtensions.getCometMemoryOverhead(conf)
+      val memoryLimit = CometSparkSessionExtensions.getCometMemoryOverhead(conf)
+      val numCores = numDriverOrExecutorCores(conf).toFloat
+      val maxMemory = CometSparkSessionExtensions.getCometMemoryOverhead(conf)
+      val coresPerTask = conf.get("spark.task.cpus", "1").toFloat
+      // example 16GB maxMemory * 16 cores with 4 cores per task results
+      // in memory_limit_per_task = 16 GB * 4 / 16 = 16 GB / 4 = 4GB
+      val memoryLimitPerTask = (maxMemory.toFloat * coresPerTask / numCores).toLong
+      logInfo(
+        s"Calculated per-task memory limit of $memoryLimitPerTask ($maxMemory * $coresPerTask / $numCores)")
+      MemoryConfig(
+        offHeapMode,
+        memoryPoolType = COMET_EXEC_MEMORY_POOL_TYPE.get(),
+        memoryLimit,
+        memoryLimitPerTask)
     }
-
-    val memoryLimitPerTask = if (offHeapMode) {
-      // this per-task limit is not used in native code when using unified memory
-      // so we can skip calculating it and avoid logging irrelevant information
-      0
-    } else {
-      getMemoryLimitPerTask(conf)
-    }
-
-    MemoryConfig(
-      offHeapMode,
-      memoryPoolType = COMET_EXEC_MEMORY_POOL_TYPE.get(),
-      memoryLimit,
-      memoryLimitPerTask)
   }
 
-  private def getMemoryLimitPerTask(conf: SparkConf): Long = {
-    val numCores = numDriverOrExecutorCores(conf).toFloat
-    val maxMemory = CometSparkSessionExtensions.getCometMemoryOverhead(conf)
-    val coresPerTask = conf.get("spark.task.cpus", "1").toFloat
-    // example 16GB maxMemory * 16 cores with 4 cores per task results
-    // in memory_limit_per_task = 16 GB * 4 / 16 = 16 GB / 4 = 4GB
-    val limit = (maxMemory.toFloat * coresPerTask / numCores).toLong
-    logInfo(
-      s"Calculated per-task memory limit of $limit ($maxMemory * $coresPerTask / $numCores)")
-    limit
-  }
 
   private def numDriverOrExecutorCores(conf: SparkConf): Int = {
     def convertToInt(threads: String): Int = {
       if (threads == "*") Runtime.getRuntime.availableProcessors() else threads.toInt
     }
-
     val LOCAL_N_REGEX = """local\[([0-9]+|\*)\]""".r
     val LOCAL_N_FAILURES_REGEX = """local\[([0-9]+|\*)\s*,\s*([0-9]+)\]""".r
     val master = conf.get("spark.master")
@@ -323,7 +317,6 @@ object CometExecIterator extends Logging {
       case _ => conf.get("spark.executor.cores", "1").toInt
     }
   }
-
 }
 
 case class MemoryConfig(
