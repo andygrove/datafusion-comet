@@ -103,6 +103,7 @@ jobs:
             value: |
               org.apache.comet.CometFuzzTestSuite
               org.apache.comet.CometFuzzAggregateSuite
+              org.apache.comet.CometFuzzTemporalExpressions
               org.apache.comet.DataGeneratorSuite
           - name: "shuffle"
             value: |
