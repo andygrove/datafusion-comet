@@ -64,11 +64,13 @@ class CometTemporalExpressionSuite extends CometTestBase with AdaptiveSparkPlanH
     val supportedFormats = CometTruncTimestamp.supportedFormats
     val unsupportedFormats = Seq("invalid")
 
-    createTimestampTestData.createOrReplaceTempView("tbl")
-
-    // TODO test fails with non-UTC timezone
-    // https://github.com/apache/datafusion-comet/issues/2649
+    // create data in UTC timezone
     withSQLConf(SQLConf.SESSION_LOCAL_TIMEZONE.key -> "UTC") {
+      createTimestampTestData.createOrReplaceTempView("tbl")
+    }
+
+    // read data in a different timezone
+    withSQLConf(SQLConf.SESSION_LOCAL_TIMEZONE.key -> "America/Denver") {
       for (format <- supportedFormats) {
         checkSparkAnswerAndOperator(s"SELECT c0, date_trunc('$format', c0) from tbl order by c0")
       }
