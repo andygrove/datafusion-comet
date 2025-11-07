@@ -97,9 +97,15 @@ impl PhysicalExpr for TimestampTruncExpr {
         match self.child.data_type(input_schema)? {
             DataType::Dictionary(key_type, _) => Ok(DataType::Dictionary(
                 key_type,
-                Box::new(DataType::Timestamp(Microsecond, None)),
+                Box::new(DataType::Timestamp(
+                    Microsecond,
+                    Some(self.timezone.clone().into()),
+                )),
             )),
-            _ => Ok(DataType::Timestamp(Microsecond, None)),
+            _ => Ok(DataType::Timestamp(
+                Microsecond,
+                Some(self.timezone.clone().into()),
+            )),
         }
     }
 
@@ -116,19 +122,31 @@ impl PhysicalExpr for TimestampTruncExpr {
                 let ts = array_with_timezone(
                     ts,
                     tz.clone(),
-                    Some(&DataType::Timestamp(Microsecond, Some(tz.into()))),
+                    Some(&DataType::Timestamp(Microsecond, Some(tz.clone().into()))),
                 )?;
                 let result = timestamp_trunc_dyn(&ts, format)?;
-                Ok(ColumnarValue::Array(result))
+                // Add timezone to the result
+                let result_with_tz = array_with_timezone(
+                    result,
+                    tz.clone(),
+                    Some(&DataType::Timestamp(Microsecond, Some(tz.into()))),
+                )?;
+                Ok(ColumnarValue::Array(result_with_tz))
             }
             (ColumnarValue::Array(ts), ColumnarValue::Array(formats)) => {
                 let ts = array_with_timezone(
                     ts,
                     tz.clone(),
-                    Some(&DataType::Timestamp(Microsecond, Some(tz.into()))),
+                    Some(&DataType::Timestamp(Microsecond, Some(tz.clone().into()))),
                 )?;
                 let result = timestamp_trunc_array_fmt_dyn(&ts, &formats)?;
-                Ok(ColumnarValue::Array(result))
+                // Add timezone to the result
+                let result_with_tz = array_with_timezone(
+                    result,
+                    tz.clone(),
+                    Some(&DataType::Timestamp(Microsecond, Some(tz.into()))),
+                )?;
+                Ok(ColumnarValue::Array(result_with_tz))
             }
             _ => Err(DataFusionError::Execution(
                 "Invalid input to function TimestampTrunc. \
@@ -152,5 +170,125 @@ impl PhysicalExpr for TimestampTruncExpr {
             Arc::clone(&self.format),
             self.timezone.clone(),
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arrow::array::{Array, ArrayRef, TimestampMicrosecondArray};
+    use arrow::datatypes::{Field, Schema as ArrowSchema};
+    use std::sync::Arc;
+
+    #[test]
+    fn test_timestamp_trunc_with_timezone_utc_to_denver() {
+        // Create a timestamp array with UTC timezone
+        // Using a specific timestamp: 2024-01-15 10:30:45 UTC
+        let timestamp_micros = 1705318245000000i64; // 2024-01-15 10:30:45 UTC
+        let ts_array = TimestampMicrosecondArray::from(vec![Some(timestamp_micros)])
+            .with_timezone("UTC");
+        let ts_array_ref = Arc::new(ts_array) as ArrayRef;
+
+        // Create schema with UTC timestamp
+        let schema = Arc::new(ArrowSchema::new(vec![Field::new(
+            "ts",
+            DataType::Timestamp(Microsecond, Some("UTC".into())),
+            true,
+        )]));
+
+        // Create RecordBatch
+        let batch = RecordBatch::try_new(schema.clone(), vec![ts_array_ref]).unwrap();
+
+        // Create column expression (references column 0)
+        let child_expr = Arc::new(datafusion::physical_plan::expressions::Column::new("ts", 0));
+
+        // Create format expression ("HOUR")
+        let format_expr = Arc::new(datafusion::physical_plan::expressions::Literal::new(
+            Utf8(Some("HOUR".to_string())),
+        ));
+
+        // Create TimestampTruncExpr with America/Denver timezone
+        let trunc_expr = TimestampTruncExpr::new(
+            child_expr as Arc<dyn PhysicalExpr>,
+            format_expr as Arc<dyn PhysicalExpr>,
+            "America/Denver".to_string(),
+        );
+
+        // Evaluate
+        let result = trunc_expr.evaluate(&batch);
+
+        // Print result for debugging
+        match &result {
+            Ok(ColumnarValue::Array(arr)) => {
+                println!("Result array data type: {:?}", arr.data_type());
+                println!("Result array values: {:?}", arr);
+            }
+            Err(e) => {
+                println!("Error: {:?}", e);
+            }
+            _ => {}
+        }
+
+        // Check if it succeeded or got an error
+        assert!(
+            result.is_ok(),
+            "Expected successful evaluation but got error: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_timestamp_trunc_with_matching_timezone() {
+        // Create a timestamp array with America/Denver timezone
+        let timestamp_micros = 1705318245000000i64;
+        let ts_array = TimestampMicrosecondArray::from(vec![Some(timestamp_micros)])
+            .with_timezone("America/Denver");
+        let ts_array_ref = Arc::new(ts_array) as ArrayRef;
+
+        // Create schema with America/Denver timestamp
+        let schema = Arc::new(ArrowSchema::new(vec![Field::new(
+            "ts",
+            DataType::Timestamp(Microsecond, Some("America/Denver".into())),
+            true,
+        )]));
+
+        // Create RecordBatch
+        let batch = RecordBatch::try_new(schema.clone(), vec![ts_array_ref]).unwrap();
+
+        // Create column expression
+        let child_expr = Arc::new(datafusion::physical_plan::expressions::Column::new("ts", 0));
+
+        // Create format expression ("HOUR")
+        let format_expr = Arc::new(datafusion::physical_plan::expressions::Literal::new(
+            Utf8(Some("HOUR".to_string())),
+        ));
+
+        // Create TimestampTruncExpr with matching America/Denver timezone
+        let trunc_expr = TimestampTruncExpr::new(
+            child_expr as Arc<dyn PhysicalExpr>,
+            format_expr as Arc<dyn PhysicalExpr>,
+            "America/Denver".to_string(),
+        );
+
+        // Evaluate
+        let result = trunc_expr.evaluate(&batch);
+
+        // Print result for debugging
+        match &result {
+            Ok(ColumnarValue::Array(arr)) => {
+                println!("Result array data type: {:?}", arr.data_type());
+                println!("Result array values: {:?}", arr);
+            }
+            Err(e) => {
+                println!("Error: {:?}", e);
+            }
+            _ => {}
+        }
+
+        assert!(
+            result.is_ok(),
+            "Expected successful evaluation but got error: {:?}",
+            result.err()
+        );
     }
 }

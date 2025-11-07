@@ -315,6 +315,9 @@ object CometTruncTimestamp extends CometExpressionSerde[TruncTimestamp] {
       "microsecond")
 
   override def getSupportLevel(expr: TruncTimestamp): SupportLevel = {
+    if (expr.timeZoneId.isEmpty) {
+      return Unsupported(Some("Timezone is required"))
+    }
     expr.format match {
       case Literal(fmt: UTF8String, _) =>
         if (supportedFormats.contains(fmt.toString.toLowerCase(Locale.ROOT))) {
@@ -339,9 +342,7 @@ object CometTruncTimestamp extends CometExpressionSerde[TruncTimestamp] {
       val builder = ExprOuterClass.TruncTimestamp.newBuilder()
       builder.setChild(childExpr.get)
       builder.setFormat(formatExpr.get)
-
-      val timeZone = expr.timeZoneId.getOrElse("UTC")
-      builder.setTimezone(timeZone)
+      builder.setTimezone(expr.timeZoneId.get)
 
       Some(
         ExprOuterClass.Expr
