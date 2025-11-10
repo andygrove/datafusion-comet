@@ -25,7 +25,7 @@ import org.apache.comet.ConfigEntry
 import org.apache.comet.serde.OperatorOuterClass.Operator
 
 /**
- * Trait for providing serialization logic for operators.
+ * Trait for providing serialization logic for native operators.
  */
 trait CometOperatorSerde[T <: SparkPlan] {
 
@@ -64,5 +64,18 @@ trait CometOperatorSerde[T <: SparkPlan] {
       op: T,
       builder: Operator.Builder,
       childOp: Operator*): Option[OperatorOuterClass.Operator]
+
+  // TODO this is moved out of CometExecRule
+
+  def convertNode(op: T): SparkPlan = {
+    throw new UnsupportedOperationException("this method must be implemented")
+  }
+
+  /**
+   * Convert operator to proto and then apply a transformation to wrap the proto in a new plan.
+   */
+  def newPlanWithProto(op: SparkPlan, fun: Operator => SparkPlan): SparkPlan = {
+    QueryPlanSerde.operator2Proto(op).map(fun).getOrElse(op)
+  }
 
 }

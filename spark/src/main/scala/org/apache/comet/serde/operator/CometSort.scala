@@ -22,7 +22,8 @@ package org.apache.comet.serde.operator
 import scala.jdk.CollectionConverters._
 
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Descending, NullsFirst, NullsLast, SortOrder}
-import org.apache.spark.sql.execution.SortExec
+import org.apache.spark.sql.comet.{CometSortExec, SerializedPlan}
+import org.apache.spark.sql.execution.{SortExec, SparkPlan}
 import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, MapType, StructType}
 
 import org.apache.comet.{CometConf, ConfigEntry}
@@ -114,4 +115,18 @@ object CometSort extends CometOperatorSerde[SortExec] {
     }
   }
 
+  override def convertNode(op: SortExec): SparkPlan = {
+
+    newPlanWithProto(
+      op,
+      CometSortExec(
+        _,
+        op,
+        op.output,
+        op.outputOrdering,
+        op.sortOrder,
+        op.child,
+        SerializedPlan(None)))
+
+  }
 }
