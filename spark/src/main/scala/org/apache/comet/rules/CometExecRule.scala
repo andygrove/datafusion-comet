@@ -18,6 +18,7 @@
  */
 
 package org.apache.comet.rules
+
 import scala.collection.mutable.ListBuffer
 import scala.jdk.CollectionConverters._
 
