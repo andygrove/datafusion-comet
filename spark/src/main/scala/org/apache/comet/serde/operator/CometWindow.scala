@@ -23,6 +23,7 @@ import scala.jdk.CollectionConverters._
 
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, CurrentRow, Expression, RangeFrame, RowFrame, SortOrder, SpecifiedWindowFrame, UnboundedFollowing, UnboundedPreceding, WindowExpression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, Complete, Count, Max, Min, Sum}
+import org.apache.spark.sql.comet.{CometWindowExec, SerializedPlan}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.internal.SQLConf
@@ -85,6 +86,22 @@ object CometWindow extends CometOperatorHandler[WindowExec] {
       None
     }
 
+  }
+
+  override def createExec(
+      op: WindowExec,
+      nativeOp: Operator,
+      child: SparkPlan*): Option[SparkPlan] = {
+    Some(
+      CometWindowExec(
+        nativeOp,
+        op,
+        op.output,
+        op.windowExpression,
+        op.partitionSpec,
+        op.orderSpec,
+        op.child,
+        SerializedPlan(None)))
   }
 
   private def validatePartitionAndSortSpecsForWindowFunc(
