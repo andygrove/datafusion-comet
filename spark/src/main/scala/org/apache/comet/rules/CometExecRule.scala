@@ -432,6 +432,9 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
       case op: GlobalLimitExec =>
         createNativeExec(op)
 
+      case op: ExpandExec =>
+        createNativeExec(op)
+
       case op: CollectLimitExec =>
         val fallbackReasons = new ListBuffer[String]()
         if (!CometConf.COMET_EXEC_COLLECT_LIMIT_ENABLED.get(conf)) {
@@ -457,11 +460,6 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
               .getOrElse(op)
           }
         }
-
-      case op: ExpandExec =>
-        newPlanWithProto(
-          op,
-          CometExpandExec(_, op, op.output, op.projections, op.child, SerializedPlan(None)))
 
       // When Comet shuffle is disabled, we don't want to transform the HashAggregate
       // to CometHashAggregate. Otherwise, we probably get partial Comet aggregation
