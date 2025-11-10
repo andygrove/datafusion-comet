@@ -156,8 +156,8 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
     }
 
     /**
-     * Delegate operator conversion to the CometOperatorSerde trait.
-     * This combines protobuf conversion and CometExec creation in a single step.
+     * Delegate operator conversion to the CometOperatorSerde trait. This combines protobuf
+     * conversion and CometExec creation in a single step.
      */
     def delegateToSerde(op: SparkPlan): SparkPlan = {
       operator2Proto(op) match {

@@ -58,12 +58,6 @@ object CometProject extends CometOperatorSerde[ProjectExec] {
       child: SparkPlan*): Option[SparkPlan] = {
     require(child.length == 1, "ProjectExec must have exactly one child")
     Some(
-      CometProjectExec(
-        nativeOp,
-        op,
-        op.output,
-        op.projectList,
-        child.head,
-        SerializedPlan(None)))
+      CometProjectExec(nativeOp, op, op.output, op.projectList, child.head, SerializedPlan(None)))
   }
 }

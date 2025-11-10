@@ -1038,7 +1038,10 @@ object QueryPlanSerde extends Logging with CometExprShim {
    * @return
    *   The CometExec wrapping the native operator, or None if no serde is registered
    */
-  def createExecFromSerde(op: SparkPlan, nativeOp: Operator, child: SparkPlan*): Option[SparkPlan] = {
+  def createExecFromSerde(
+      op: SparkPlan,
+      nativeOp: Operator,
+      child: SparkPlan*): Option[SparkPlan] = {
     opSerdeMap.get(op.getClass) match {
       case Some(handler) =>
         val opSerde = handler.asInstanceOf[CometOperatorSerde[SparkPlan]]
