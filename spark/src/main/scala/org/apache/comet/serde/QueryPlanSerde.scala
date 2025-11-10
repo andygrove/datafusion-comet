@@ -1023,34 +1023,6 @@ object QueryPlanSerde extends Logging with CometExprShim {
     }
   }
 
-  /**
-   * Create a CometExec from a Spark operator using the registered CometOperatorSerde.
-   *
-   * This method delegates the creation of the CometExec wrapper to the operator's serde
-   * implementation, combining the protobuf representation with the appropriate wrapper class.
-   *
-   * @param op
-   *   The Spark operator to convert
-   * @param nativeOp
-   *   The protobuf representation of the operator (already converted)
-   * @param child
-   *   The child operators
-   * @return
-   *   The CometExec wrapping the native operator, or None if no serde is registered
-   */
-  def createExecFromSerde(
-      op: SparkPlan,
-      nativeOp: Operator,
-      child: SparkPlan*): Option[SparkPlan] = {
-    opSerdeMap.get(op.getClass) match {
-      case Some(handler) =>
-        val opSerde = handler.asInstanceOf[CometOperatorSerde[SparkPlan]]
-        opSerde.createExec(op, nativeOp, child: _*)
-      case None =>
-        None
-    }
-  }
-
   private def isOperatorEnabled(handler: CometOperatorSerde[_], op: SparkPlan): Boolean = {
     val enabled = handler.enabledConfig.forall(_.get(op.conf))
     val opName = op.getClass.getSimpleName
