@@ -44,6 +44,7 @@ import org.apache.spark.sql.types._
 import org.apache.comet.{CometConf, ExtendedExplainInfo}
 import org.apache.comet.CometConf.COMET_EXEC_SHUFFLE_ENABLED
 import org.apache.comet.CometSparkSessionExtensions._
+import org.apache.comet.serde.{CometOperatorSerde, OperatorOuterClass}
 import org.apache.comet.serde.OperatorOuterClass.Operator
 import org.apache.comet.serde.QueryPlanSerde
 
@@ -157,12 +158,34 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
 
     /**
      * Delegate operator conversion to the CometOperatorSerde trait. This combines protobuf
-     * conversion and CometExec creation in a single step.
+     * conversion and CometExec creation in a single step, doing only one lookup in the opSerdeMap
+     * for efficiency.
      */
     def delegateToSerde(op: SparkPlan): SparkPlan = {
-      operator2Proto(op) match {
-        case Some(nativeOp) =>
-          QueryPlanSerde.createExecFromSerde(op, nativeOp, op.children: _*).getOrElse(op)
+      // Look up the serde handler for this operator type
+      QueryPlanSerde.opSerdeMap.get(op.getClass) match {
+        case Some(handler) =>
+          // Get the native child operators
+          val nativeChildren = op.children.collect { case c: CometNativeExec => c.nativeOp }
+
+          // Only proceed if all children are native
+          if (nativeChildren.length == op.children.length) {
+            val opSerde = handler.asInstanceOf[CometOperatorSerde[SparkPlan]]
+
+            // Create the protobuf representation
+            val builder = OperatorOuterClass.Operator.newBuilder().setPlanId(op.id)
+            nativeChildren.foreach(builder.addChildren)
+
+            opSerde.convert(op, builder, nativeChildren: _*) match {
+              case Some(nativeOp) =>
+                // Use the serde to create the exec wrapper
+                opSerde.createExec(op, nativeOp, op.children: _*).getOrElse(op)
+              case None =>
+                op
+            }
+          } else {
+            op
+          }
         case None =>
           op
       }
