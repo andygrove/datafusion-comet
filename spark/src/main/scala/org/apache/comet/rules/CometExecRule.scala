@@ -47,6 +47,28 @@ import org.apache.comet.CometSparkSessionExtensions._
 import org.apache.comet.serde.{CometOperatorHandler, OperatorOuterClass}
 import org.apache.comet.serde.OperatorOuterClass.Operator
 import org.apache.comet.serde.QueryPlanSerde
+import org.apache.comet.serde.operator._
+
+object CometExecRule {
+
+  /**
+   * Mapping of Spark operator class to Comet operator handler.
+   */
+  val opSerdeMap: Map[Class[_ <: SparkPlan], CometOperatorHandler[_]] =
+    Map(
+      classOf[ProjectExec] -> CometProject,
+      classOf[FilterExec] -> CometFilter,
+      classOf[LocalLimitExec] -> CometLocalLimit,
+      classOf[GlobalLimitExec] -> CometGlobalLimit,
+      classOf[ExpandExec] -> CometExpand,
+      classOf[HashAggregateExec] -> CometHashAggregate,
+      classOf[ObjectHashAggregateExec] -> CometObjectHashAggregate,
+      classOf[BroadcastHashJoinExec] -> CometBroadcastHashJoin,
+      classOf[ShuffledHashJoinExec] -> CometShuffleHashJoin,
+      classOf[SortMergeJoinExec] -> CometSortMergeJoin,
+      classOf[SortExec] -> CometSort,
+      classOf[LocalTableScanExec] -> CometLocalTableScan)
+}
 
 /**
  * Spark physical optimizer rule for replacing Spark operators with Comet operators.
@@ -163,7 +185,7 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
      */
     def createNativeExec(op: SparkPlan): SparkPlan = {
       // Look up the handler for this operator type
-      QueryPlanSerde.opSerdeMap.get(op.getClass) match {
+      CometExecRule.opSerdeMap.get(op.getClass) match {
         case Some(handler) =>
           // Get the native child operators
           val nativeChildren = op.children.collect { case c: CometNativeExec => c.nativeOp }

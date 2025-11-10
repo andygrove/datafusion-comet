@@ -32,9 +32,7 @@ import org.apache.spark.sql.comet.execution.shuffle.CometShuffleExchangeExec
 import org.apache.spark.sql.execution
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
-import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec, ShuffleExchangeExec}
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
@@ -42,6 +40,7 @@ import org.apache.spark.sql.types._
 import org.apache.comet.CometConf
 import org.apache.comet.CometSparkSessionExtensions.{isCometScan, withInfo}
 import org.apache.comet.expressions._
+import org.apache.comet.rules.CometExecRule
 import org.apache.comet.serde.ExprOuterClass.{AggExpr, Expr, ScalarFunc}
 import org.apache.comet.serde.OperatorOuterClass.Operator
 import org.apache.comet.serde.Types.{DataType => ProtoDataType}
@@ -54,24 +53,6 @@ import org.apache.comet.shims.CometExprShim
  * An utility object for query plan and expression serialization.
  */
 object QueryPlanSerde extends Logging with CometExprShim {
-
-  /**
-   * Mapping of Spark operator class to Comet operator handler.
-   */
-  val opSerdeMap: Map[Class[_ <: SparkPlan], CometOperatorHandler[_]] =
-    Map(
-      classOf[ProjectExec] -> CometProject,
-      classOf[FilterExec] -> CometFilter,
-      classOf[LocalLimitExec] -> CometLocalLimit,
-      classOf[GlobalLimitExec] -> CometGlobalLimit,
-      classOf[ExpandExec] -> CometExpand,
-      classOf[HashAggregateExec] -> CometHashAggregate,
-      classOf[ObjectHashAggregateExec] -> CometObjectHashAggregate,
-      classOf[BroadcastHashJoinExec] -> CometBroadcastHashJoin,
-      classOf[ShuffledHashJoinExec] -> CometShuffleHashJoin,
-      classOf[SortMergeJoinExec] -> CometSortMergeJoin,
-      classOf[SortExec] -> CometSort,
-      classOf[LocalTableScanExec] -> CometLocalTableScan)
 
   private val arrayExpressions: Map[Class[_ <: Expression], CometExpressionSerde[_]] = Map(
     classOf[ArrayAppend] -> CometArrayAppend,
@@ -128,6 +109,7 @@ object QueryPlanSerde extends Logging with CometExprShim {
     classOf[IntegralDivide] -> CometIntegralDivide,
     classOf[IsNaN] -> CometIsNaN,
     classOf[Log] -> CometLog,
+    classOf[Log2] -> CometLog2,
     classOf[Log2] -> CometLog2,
     classOf[Log10] -> CometLog10,
     classOf[Multiply] -> CometMultiply,
@@ -934,7 +916,7 @@ object QueryPlanSerde extends Logging with CometExprShim {
     childOp.foreach(builder.addChildren)
 
     // look for registered handler first
-    val serde = opSerdeMap.get(op.getClass)
+    val serde = CometExecRule.opSerdeMap.get(op.getClass)
     serde match {
       case Some(handler) if isOperatorEnabled(handler, op) =>
         val opSerde = handler.asInstanceOf[CometOperatorHandler[SparkPlan]]
