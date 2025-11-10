@@ -28,7 +28,7 @@ import org.apache.spark.sql.types.MapType
 
 import org.apache.comet.{CometConf, ConfigEntry}
 import org.apache.comet.CometSparkSessionExtensions.withInfo
-import org.apache.comet.serde.{CometOperatorSerde, OperatorOuterClass}
+import org.apache.comet.serde.{CometOperatorHandler, OperatorOuterClass}
 import org.apache.comet.serde.OperatorOuterClass.{AggregateMode => CometAggregateMode, Operator}
 import org.apache.comet.serde.QueryPlanSerde.{aggExprToProto, exprToProto}
 
@@ -165,7 +165,9 @@ trait CometBaseAggregate {
 
 }
 
-object CometHashAggregate extends CometOperatorSerde[HashAggregateExec] with CometBaseAggregate {
+object CometHashAggregate
+    extends CometOperatorHandler[HashAggregateExec]
+    with CometBaseAggregate {
 
   override def enabledConfig: Option[ConfigEntry[Boolean]] = Some(
     CometConf.COMET_EXEC_AGGREGATE_ENABLED)
@@ -179,7 +181,7 @@ object CometHashAggregate extends CometOperatorSerde[HashAggregateExec] with Com
 }
 
 object CometObjectHashAggregate
-    extends CometOperatorSerde[ObjectHashAggregateExec]
+    extends CometOperatorHandler[ObjectHashAggregateExec]
     with CometBaseAggregate {
 
   override def enabledConfig: Option[ConfigEntry[Boolean]] = Some(

@@ -24,10 +24,10 @@ import org.apache.spark.sql.execution.{GlobalLimitExec, SparkPlan}
 
 import org.apache.comet.{CometConf, ConfigEntry}
 import org.apache.comet.CometSparkSessionExtensions.withInfo
-import org.apache.comet.serde.{CometOperatorSerde, OperatorOuterClass}
+import org.apache.comet.serde.{CometOperatorHandler, OperatorOuterClass}
 import org.apache.comet.serde.OperatorOuterClass.Operator
 
-object CometGlobalLimit extends CometOperatorSerde[GlobalLimitExec] {
+object CometGlobalLimit extends CometOperatorHandler[GlobalLimitExec] {
 
   override def enabledConfig: Option[ConfigEntry[Boolean]] =
     Some(CometConf.COMET_EXEC_GLOBAL_LIMIT_ENABLED)

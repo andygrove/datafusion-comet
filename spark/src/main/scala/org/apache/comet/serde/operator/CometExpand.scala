@@ -26,11 +26,11 @@ import org.apache.spark.sql.execution.ExpandExec
 
 import org.apache.comet.{CometConf, ConfigEntry}
 import org.apache.comet.CometSparkSessionExtensions.withInfo
-import org.apache.comet.serde.{CometOperatorSerde, OperatorOuterClass}
+import org.apache.comet.serde.{CometOperatorHandler, OperatorOuterClass}
 import org.apache.comet.serde.OperatorOuterClass.Operator
 import org.apache.comet.serde.QueryPlanSerde.exprToProto
 
-object CometExpand extends CometOperatorSerde[ExpandExec] {
+object CometExpand extends CometOperatorHandler[ExpandExec] {
 
   override def enabledConfig: Option[ConfigEntry[Boolean]] = Some(
     CometConf.COMET_EXEC_EXPAND_ENABLED)

@@ -27,7 +27,7 @@ import org.apache.comet.serde.OperatorOuterClass.Operator
 /**
  * Trait for providing serialization logic for operators.
  */
-trait CometOperatorSerde[T <: SparkPlan] {
+trait CometOperatorHandler[T <: SparkPlan] {
 
   /**
    * Get the optional Comet configuration entry that is used to enable or disable native support

@@ -24,11 +24,11 @@ import scala.jdk.CollectionConverters._
 import org.apache.spark.sql.execution.LocalTableScanExec
 
 import org.apache.comet.{CometConf, ConfigEntry}
-import org.apache.comet.serde.{CometOperatorSerde, OperatorOuterClass}
+import org.apache.comet.serde.{CometOperatorHandler, OperatorOuterClass}
 import org.apache.comet.serde.OperatorOuterClass.Operator
 import org.apache.comet.serde.QueryPlanSerde.serializeDataType
 
-object CometLocalTableScan extends CometOperatorSerde[LocalTableScanExec] {
+object CometLocalTableScan extends CometOperatorHandler[LocalTableScanExec] {
 
   override def enabledConfig: Option[ConfigEntry[Boolean]] = Some(
     CometConf.COMET_EXEC_LOCAL_TABLE_SCAN_ENABLED)

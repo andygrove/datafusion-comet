@@ -23,18 +23,39 @@ import scala.jdk.CollectionConverters._
 
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Expression, ExpressionSet, SortOrder}
 import org.apache.spark.sql.catalyst.plans._
+import org.apache.spark.sql.comet.{CometSortMergeJoinExec, SerializedPlan}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.types._
 
 import org.apache.comet.{CometConf, ConfigEntry}
 import org.apache.comet.CometSparkSessionExtensions.withInfo
-import org.apache.comet.serde.{CometOperatorSerde, OperatorOuterClass}
+import org.apache.comet.serde.{CometOperatorHandler, OperatorOuterClass}
 import org.apache.comet.serde.OperatorOuterClass.{JoinType, Operator}
 import org.apache.comet.serde.QueryPlanSerde.exprToProto
 
-object CometSortMergeJoin extends CometOperatorSerde[SortMergeJoinExec] {
+object CometSortMergeJoin extends CometOperatorHandler[SortMergeJoinExec] {
   override def enabledConfig: Option[ConfigEntry[Boolean]] = Some(
     CometConf.COMET_EXEC_SORT_MERGE_JOIN_ENABLED)
+
+  override def createExec(
+      op: SortMergeJoinExec,
+      nativeOp: Operator,
+      child: SparkPlan*): Option[SparkPlan] = {
+    Some(
+      CometSortMergeJoinExec(
+        nativeOp,
+        op,
+        op.output,
+        op.outputOrdering,
+        op.leftKeys,
+        op.rightKeys,
+        op.joinType,
+        op.condition,
+        op.left,
+        op.right,
+        SerializedPlan(None)))
+  }
 
   override def convert(
       join: SortMergeJoinExec,

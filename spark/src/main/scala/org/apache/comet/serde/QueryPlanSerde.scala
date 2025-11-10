@@ -58,7 +58,7 @@ object QueryPlanSerde extends Logging with CometExprShim {
   /**
    * Mapping of Spark operator class to Comet operator handler.
    */
-  val opSerdeMap: Map[Class[_ <: SparkPlan], CometOperatorSerde[_]] =
+  val opSerdeMap: Map[Class[_ <: SparkPlan], CometOperatorHandler[_]] =
     Map(
       classOf[ProjectExec] -> CometProject,
       classOf[FilterExec] -> CometFilter,
@@ -937,7 +937,7 @@ object QueryPlanSerde extends Logging with CometExprShim {
     val serde = opSerdeMap.get(op.getClass)
     serde match {
       case Some(handler) if isOperatorEnabled(handler, op) =>
-        val opSerde = handler.asInstanceOf[CometOperatorSerde[SparkPlan]]
+        val opSerde = handler.asInstanceOf[CometOperatorHandler[SparkPlan]]
         val maybeConverted = opSerde.convert(op, builder, childOp: _*)
         if (maybeConverted.isDefined) {
           return maybeConverted
@@ -1023,11 +1023,11 @@ object QueryPlanSerde extends Logging with CometExprShim {
     }
   }
 
-  private def isOperatorEnabled(handler: CometOperatorSerde[_], op: SparkPlan): Boolean = {
+  private def isOperatorEnabled(handler: CometOperatorHandler[_], op: SparkPlan): Boolean = {
     val enabled = handler.enabledConfig.forall(_.get(op.conf))
     val opName = op.getClass.getSimpleName
     if (enabled) {
-      val opSerde = handler.asInstanceOf[CometOperatorSerde[SparkPlan]]
+      val opSerde = handler.asInstanceOf[CometOperatorHandler[SparkPlan]]
       opSerde.getSupportLevel(op) match {
         case Unsupported(notes) =>
           withInfo(op, notes.getOrElse(""))

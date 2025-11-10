@@ -44,7 +44,7 @@ import org.apache.spark.sql.types._
 import org.apache.comet.{CometConf, ExtendedExplainInfo}
 import org.apache.comet.CometConf.COMET_EXEC_SHUFFLE_ENABLED
 import org.apache.comet.CometSparkSessionExtensions._
-import org.apache.comet.serde.{CometOperatorSerde, OperatorOuterClass}
+import org.apache.comet.serde.{CometOperatorHandler, OperatorOuterClass}
 import org.apache.comet.serde.OperatorOuterClass.Operator
 import org.apache.comet.serde.QueryPlanSerde
 
@@ -157,12 +157,12 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
     }
 
     /**
-     * Delegate operator conversion to the CometOperatorSerde trait. This combines protobuf
+     * Delegate operator conversion to the CometOperatorHandler trait. This combines protobuf
      * conversion and CometExec creation in a single step, doing only one lookup in the opSerdeMap
      * for efficiency.
      */
-    def delegateToSerde(op: SparkPlan): SparkPlan = {
-      // Look up the serde handler for this operator type
+    def createNativeExec(op: SparkPlan): SparkPlan = {
+      // Look up the handler for this operator type
       QueryPlanSerde.opSerdeMap.get(op.getClass) match {
         case Some(handler) =>
           // Get the native child operators
@@ -170,7 +170,7 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
 
           // Only proceed if all children are native
           if (nativeChildren.length == op.children.length) {
-            val opSerde = handler.asInstanceOf[CometOperatorSerde[SparkPlan]]
+            val opSerde = handler.asInstanceOf[CometOperatorHandler[SparkPlan]]
 
             // Create the protobuf representation
             val builder = OperatorOuterClass.Operator.newBuilder().setPlanId(op.id)
@@ -208,19 +208,19 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
         CometScanWrapper(nativeOp.get, cometOp)
 
       case op: ProjectExec =>
-        delegateToSerde(op)
+        createNativeExec(op)
 
       case op: FilterExec =>
-        delegateToSerde(op)
+        createNativeExec(op)
 
       case op: SortExec =>
-        delegateToSerde(op)
+        createNativeExec(op)
 
       case op: LocalLimitExec =>
-        delegateToSerde(op)
+        createNativeExec(op)
 
       case op: GlobalLimitExec =>
-        delegateToSerde(op)
+        createNativeExec(op)
 
       case op: CollectLimitExec =>
         val fallbackReasons = new ListBuffer[String]()
@@ -295,21 +295,7 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
       case op: ShuffledHashJoinExec
           if CometConf.COMET_EXEC_HASH_JOIN_ENABLED.get(conf) &&
             op.children.forall(isCometNative) =>
-        newPlanWithProto(
-          op,
-          CometHashJoinExec(
-            _,
-            op,
-            op.output,
-            op.outputOrdering,
-            op.leftKeys,
-            op.rightKeys,
-            op.joinType,
-            op.condition,
-            op.buildSide,
-            op.left,
-            op.right,
-            SerializedPlan(None)))
+        createNativeExec(op)
 
       case op: ShuffledHashJoinExec if !CometConf.COMET_EXEC_HASH_JOIN_ENABLED.get(conf) =>
         withInfo(op, "ShuffleHashJoin is not enabled")
@@ -320,39 +306,12 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
       case op: BroadcastHashJoinExec
           if CometConf.COMET_EXEC_BROADCAST_HASH_JOIN_ENABLED.get(conf) &&
             op.children.forall(isCometNative) =>
-        newPlanWithProto(
-          op,
-          CometBroadcastHashJoinExec(
-            _,
-            op,
-            op.output,
-            op.outputOrdering,
-            op.leftKeys,
-            op.rightKeys,
-            op.joinType,
-            op.condition,
-            op.buildSide,
-            op.left,
-            op.right,
-            SerializedPlan(None)))
+        createNativeExec(op)
 
       case op: SortMergeJoinExec
           if CometConf.COMET_EXEC_SORT_MERGE_JOIN_ENABLED.get(conf) &&
             op.children.forall(isCometNative) =>
-        newPlanWithProto(
-          op,
-          CometSortMergeJoinExec(
-            _,
-            op,
-            op.output,
-            op.outputOrdering,
-            op.leftKeys,
-            op.rightKeys,
-            op.joinType,
-            op.condition,
-            op.left,
-            op.right,
-            SerializedPlan(None)))
+        createNativeExec(op)
 
       case op: SortMergeJoinExec
           if CometConf.COMET_EXEC_SORT_MERGE_JOIN_ENABLED.get(conf) &&

@@ -24,11 +24,11 @@ import org.apache.spark.sql.execution.{FilterExec, SparkPlan}
 
 import org.apache.comet.{CometConf, ConfigEntry}
 import org.apache.comet.CometSparkSessionExtensions.withInfo
-import org.apache.comet.serde.{CometOperatorSerde, OperatorOuterClass}
+import org.apache.comet.serde.{CometOperatorHandler, OperatorOuterClass}
 import org.apache.comet.serde.OperatorOuterClass.Operator
 import org.apache.comet.serde.QueryPlanSerde.exprToProto
 
-object CometFilter extends CometOperatorSerde[FilterExec] {
+object CometFilter extends CometOperatorHandler[FilterExec] {
 
   override def enabledConfig: Option[ConfigEntry[Boolean]] =
     Some(CometConf.COMET_EXEC_FILTER_ENABLED)

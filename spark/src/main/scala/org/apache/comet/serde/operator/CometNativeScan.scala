@@ -35,12 +35,12 @@ import org.apache.comet.{CometConf, ConfigEntry}
 import org.apache.comet.CometSparkSessionExtensions.withInfo
 import org.apache.comet.objectstore.NativeConfig
 import org.apache.comet.parquet.CometParquetUtils
-import org.apache.comet.serde.{CometOperatorSerde, OperatorOuterClass}
+import org.apache.comet.serde.{CometOperatorHandler, OperatorOuterClass}
 import org.apache.comet.serde.ExprOuterClass.Expr
 import org.apache.comet.serde.OperatorOuterClass.Operator
 import org.apache.comet.serde.QueryPlanSerde.{exprToProto, serializeDataType}
 
-object CometNativeScan extends CometOperatorSerde[CometScanExec] with Logging {
+object CometNativeScan extends CometOperatorHandler[CometScanExec] with Logging {
 
   override def enabledConfig: Option[ConfigEntry[Boolean]] = None
 

@@ -27,7 +27,7 @@ import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, MapType, Stru
 
 import org.apache.comet.{CometConf, ConfigEntry}
 import org.apache.comet.CometSparkSessionExtensions.withInfo
-import org.apache.comet.serde.{CometExpressionSerde, CometOperatorSerde, Compatible, ExprOuterClass, Incompatible, OperatorOuterClass, SupportLevel}
+import org.apache.comet.serde.{CometExpressionSerde, CometOperatorHandler, Compatible, ExprOuterClass, Incompatible, OperatorOuterClass, SupportLevel}
 import org.apache.comet.serde.OperatorOuterClass.Operator
 import org.apache.comet.serde.QueryPlanSerde.{exprToProto, exprToProtoInternal, supportedSortType}
 
@@ -87,7 +87,7 @@ object CometSortOrder extends CometExpressionSerde[SortOrder] {
   }
 }
 
-object CometSort extends CometOperatorSerde[SortExec] {
+object CometSort extends CometOperatorHandler[SortExec] {
 
   override def enabledConfig: Option[ConfigEntry[Boolean]] =
     Some(CometConf.COMET_EXEC_SORT_ENABLED)

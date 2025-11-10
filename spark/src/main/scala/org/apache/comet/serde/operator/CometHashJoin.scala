@@ -24,11 +24,13 @@ import scala.jdk.CollectionConverters._
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
 import org.apache.spark.sql.catalyst.plans._
+import org.apache.spark.sql.comet.{CometBroadcastHashJoinExec, CometHashJoinExec, SerializedPlan}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, HashJoin, ShuffledHashJoinExec}
 
 import org.apache.comet.{CometConf, ConfigEntry}
 import org.apache.comet.CometSparkSessionExtensions.withInfo
-import org.apache.comet.serde.{CometOperatorSerde, OperatorOuterClass}
+import org.apache.comet.serde.{CometOperatorHandler, OperatorOuterClass}
 import org.apache.comet.serde.OperatorOuterClass.{BuildSide, JoinType, Operator}
 import org.apache.comet.serde.QueryPlanSerde.exprToProto
 
@@ -99,7 +101,7 @@ trait CometHashJoin {
   }
 }
 
-object CometBroadcastHashJoin extends CometOperatorSerde[HashJoin] with CometHashJoin {
+object CometBroadcastHashJoin extends CometOperatorHandler[HashJoin] with CometHashJoin {
 
   override def enabledConfig: Option[ConfigEntry[Boolean]] =
     Some(CometConf.COMET_EXEC_HASH_JOIN_ENABLED)
@@ -109,9 +111,29 @@ object CometBroadcastHashJoin extends CometOperatorSerde[HashJoin] with CometHas
       builder: Operator.Builder,
       childOp: Operator*): Option[Operator] =
     doConvert(join, builder, childOp: _*)
+
+  override def createExec(
+      op: HashJoin,
+      nativeOp: Operator,
+      child: SparkPlan*): Option[SparkPlan] = {
+    Some(
+      CometBroadcastHashJoinExec(
+        nativeOp,
+        op,
+        op.output,
+        op.outputOrdering,
+        op.leftKeys,
+        op.rightKeys,
+        op.joinType,
+        op.condition,
+        op.buildSide,
+        op.left,
+        op.right,
+        SerializedPlan(None)))
+  }
 }
 
-object CometShuffleHashJoin extends CometOperatorSerde[HashJoin] with CometHashJoin {
+object CometShuffleHashJoin extends CometOperatorHandler[HashJoin] with CometHashJoin {
 
   override def enabledConfig: Option[ConfigEntry[Boolean]] =
     Some(CometConf.COMET_EXEC_HASH_JOIN_ENABLED)
@@ -121,4 +143,24 @@ object CometShuffleHashJoin extends CometOperatorSerde[HashJoin] with CometHashJ
       builder: Operator.Builder,
       childOp: Operator*): Option[Operator] =
     doConvert(join, builder, childOp: _*)
+
+  override def createExec(
+      op: HashJoin,
+      nativeOp: Operator,
+      child: SparkPlan*): Option[SparkPlan] = {
+    Some(
+      CometHashJoinExec(
+        nativeOp,
+        op,
+        op.output,
+        op.outputOrdering,
+        op.leftKeys,
+        op.rightKeys,
+        op.joinType,
+        op.condition,
+        op.buildSide,
+        op.left,
+        op.right,
+        SerializedPlan(None)))
+  }
 }
