@@ -114,4 +114,23 @@ object CometSort extends CometOperatorSerde[SortExec] {
     }
   }
 
+  override def createExec(
+      op: SortExec,
+      nativeOp: Operator,
+      child: org.apache.spark.sql.execution.SparkPlan*)
+      : Option[org.apache.spark.sql.execution.SparkPlan] = {
+    import org.apache.spark.sql.comet.{CometSortExec, SerializedPlan}
+
+    require(child.length == 1, "SortExec must have exactly one child")
+    Some(
+      CometSortExec(
+        nativeOp,
+        op,
+        op.output,
+        op.outputOrdering,
+        op.sortOrder,
+        child.head,
+        SerializedPlan(None)))
+  }
+
 }

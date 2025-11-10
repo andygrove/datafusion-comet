@@ -19,7 +19,8 @@
 
 package org.apache.comet.serde.operator
 
-import org.apache.spark.sql.execution.LocalLimitExec
+import org.apache.spark.sql.comet.{CometLocalLimitExec, SerializedPlan}
+import org.apache.spark.sql.execution.{LocalLimitExec, SparkPlan}
 
 import org.apache.comet.{CometConf, ConfigEntry}
 import org.apache.comet.CometSparkSessionExtensions.withInfo
@@ -47,5 +48,13 @@ object CometLocalLimit extends CometOperatorSerde[LocalLimitExec] {
       withInfo(op, "No child operator")
       None
     }
+  }
+
+  override def createExec(
+      op: LocalLimitExec,
+      nativeOp: Operator,
+      child: SparkPlan*): Option[SparkPlan] = {
+    require(child.length == 1, "LocalLimitExec must have exactly one child")
+    Some(CometLocalLimitExec(nativeOp, op, op.limit, child.head, SerializedPlan(None)))
   }
 }

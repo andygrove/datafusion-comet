@@ -19,7 +19,8 @@
 
 package org.apache.comet.serde.operator
 
-import org.apache.spark.sql.execution.FilterExec
+import org.apache.spark.sql.comet.{CometFilterExec, SerializedPlan}
+import org.apache.spark.sql.execution.{FilterExec, SparkPlan}
 
 import org.apache.comet.{CometConf, ConfigEntry}
 import org.apache.comet.CometSparkSessionExtensions.withInfo
@@ -47,6 +48,14 @@ object CometFilter extends CometOperatorSerde[FilterExec] {
       withInfo(op, op.condition, op.child)
       None
     }
+  }
+
+  override def createExec(
+      op: FilterExec,
+      nativeOp: Operator,
+      child: SparkPlan*): Option[SparkPlan] = {
+    require(child.length == 1, "FilterExec must have exactly one child")
+    Some(CometFilterExec(nativeOp, op, op.output, op.condition, child.head, SerializedPlan(None)))
   }
 
 }

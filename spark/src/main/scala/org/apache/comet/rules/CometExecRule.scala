@@ -188,29 +188,16 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
         delegateToSerde(op)
 
       case op: FilterExec =>
-        newPlanWithProto(
-          op,
-          CometFilterExec(_, op, op.output, op.condition, op.child, SerializedPlan(None)))
+        delegateToSerde(op)
 
       case op: SortExec =>
-        newPlanWithProto(
-          op,
-          CometSortExec(
-            _,
-            op,
-            op.output,
-            op.outputOrdering,
-            op.sortOrder,
-            op.child,
-            SerializedPlan(None)))
+        delegateToSerde(op)
 
       case op: LocalLimitExec =>
-        newPlanWithProto(op, CometLocalLimitExec(_, op, op.limit, op.child, SerializedPlan(None)))
+        delegateToSerde(op)
 
       case op: GlobalLimitExec =>
-        newPlanWithProto(
-          op,
-          CometGlobalLimitExec(_, op, op.limit, op.offset, op.child, SerializedPlan(None)))
+        delegateToSerde(op)
 
       case op: CollectLimitExec =>
         val fallbackReasons = new ListBuffer[String]()
