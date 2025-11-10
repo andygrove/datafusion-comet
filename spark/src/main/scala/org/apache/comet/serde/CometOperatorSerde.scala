@@ -65,4 +65,26 @@ trait CometOperatorSerde[T <: SparkPlan] {
       builder: Operator.Builder,
       childOp: Operator*): Option[OperatorOuterClass.Operator]
 
+  /**
+   * Create a Comet execution plan node from a Spark operator.
+   *
+   * This method combines protobuf conversion with Comet operator creation, delegating the entire
+   * transformation process to the serde implementation.
+   *
+   * @param op
+   *   The Spark operator to convert.
+   * @param nativeOp
+   *   The protobuf representation of the operator.
+   * @param child
+   *   The converted Comet child operator(s).
+   * @return
+   *   A CometExec wrapping the native operator, or None if conversion is not applicable.
+   */
+  def createExec(op: T, nativeOp: Operator, child: SparkPlan*): Option[SparkPlan] = {
+    // Default implementation returns None, indicating this serde does not support
+    // the delegated execution plan creation. Operators that want to use the new
+    // pattern should override this method.
+    None
+  }
+
 }

@@ -21,7 +21,8 @@ package org.apache.comet.serde.operator
 
 import scala.jdk.CollectionConverters._
 
-import org.apache.spark.sql.execution.ProjectExec
+import org.apache.spark.sql.comet.{CometProjectExec, SerializedPlan}
+import org.apache.spark.sql.execution.{ProjectExec, SparkPlan}
 
 import org.apache.comet.{CometConf, ConfigEntry}
 import org.apache.comet.CometSparkSessionExtensions.withInfo
@@ -49,5 +50,20 @@ object CometProject extends CometOperatorSerde[ProjectExec] {
       withInfo(op, op.projectList: _*)
       None
     }
+  }
+
+  override def createExec(
+      op: ProjectExec,
+      nativeOp: Operator,
+      child: SparkPlan*): Option[SparkPlan] = {
+    require(child.length == 1, "ProjectExec must have exactly one child")
+    Some(
+      CometProjectExec(
+        nativeOp,
+        op,
+        op.output,
+        op.projectList,
+        child.head,
+        SerializedPlan(None)))
   }
 }

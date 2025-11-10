@@ -155,6 +155,19 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
       operator2Proto(op).map(fun).getOrElse(op)
     }
 
+    /**
+     * Delegate operator conversion to the CometOperatorSerde trait.
+     * This combines protobuf conversion and CometExec creation in a single step.
+     */
+    def delegateToSerde(op: SparkPlan): SparkPlan = {
+      operator2Proto(op) match {
+        case Some(nativeOp) =>
+          QueryPlanSerde.createExecFromSerde(op, nativeOp, op.children: _*).getOrElse(op)
+        case None =>
+          op
+      }
+    }
+
     def convertNode(op: SparkPlan): SparkPlan = op match {
       // Fully native scan for V1
       case scan: CometScanExec if scan.scanImpl == CometConf.SCAN_NATIVE_DATAFUSION =>
@@ -172,9 +185,7 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
         CometScanWrapper(nativeOp.get, cometOp)
 
       case op: ProjectExec =>
-        newPlanWithProto(
-          op,
-          CometProjectExec(_, op, op.output, op.projectList, op.child, SerializedPlan(None)))
+        delegateToSerde(op)
 
       case op: FilterExec =>
         newPlanWithProto(
