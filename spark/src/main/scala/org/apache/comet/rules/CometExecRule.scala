@@ -55,7 +55,7 @@ object CometExecRule {
   /**
    * Mapping of Spark operator class to Comet operator handler.
    */
-  private val opSerdeMap: Map[Class[_ <: SparkPlan], CometOperatorSerde[_]] =
+  private val operatorHandlers: Map[Class[_ <: SparkPlan], CometOperatorSerde[_]] =
     Map(
       classOf[ProjectExec] -> CometProject,
       classOf[FilterExec] -> CometFilter,
@@ -69,7 +69,6 @@ object CometExecRule {
       classOf[SortMergeJoinExec] -> CometSortMergeJoin,
       classOf[SortExec] -> CometSort,
       classOf[LocalTableScanExec] -> CometLocalTableScan)
-
 }
 
 /**
@@ -163,19 +162,12 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
    */
   // spotless:on
   private def transform(plan: SparkPlan): SparkPlan = {
-    def operator2Proto1(op: SparkPlan): Option[Operator] = {
-      if (op.children.forall(_.isInstanceOf[CometNativeExec])) {
-        operator2Proto(op, op.children.map(_.asInstanceOf[CometNativeExec].nativeOp): _*)
-      } else {
-        None
-      }
-    }
 
     /**
      * Convert operator to proto and then apply a transformation to wrap the proto in a new plan.
      */
     def newPlanWithProto(op: SparkPlan, fun: Operator => SparkPlan): SparkPlan = {
-      operator2Proto1(op).map(fun).getOrElse(op)
+      operator2Proto(op).map(fun).getOrElse(op)
     }
 
     def convertNode(op: SparkPlan): SparkPlan = op match {
@@ -506,7 +498,7 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
       case s: ShuffleExchangeExec =>
         val nativeShuffle: Option[SparkPlan] =
           if (nativeShuffleSupported(s)) {
-            val newOp = operator2Proto1(s)
+            val newOp = operator2Proto(s)
             newOp match {
               case Some(nativeOp) =>
                 // Switch to use Decimal128 regardless of precision, since Arrow native execution
@@ -1048,13 +1040,18 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
    *   The converted Comet native operator for the input `op`, or `None` if the `op` cannot be
    *   converted to a native operator.
    */
-  def operator2Proto(op: SparkPlan, childOp: Operator*): Option[Operator] = {
+  private def operator2Proto(op: SparkPlan, childOp: Operator*): Option[Operator] = {
+
+    if (!op.children.forall(_.isInstanceOf[CometNativeExec])) {
+      return None
+    }
+
     val conf = op.conf
     val builder = OperatorOuterClass.Operator.newBuilder().setPlanId(op.id)
     childOp.foreach(builder.addChildren)
 
     // look for registered handler first
-    val serde = CometExecRule.opSerdeMap.get(op.getClass)
+    val serde = CometExecRule.operatorHandlers.get(op.getClass)
     serde match {
       case Some(handler) if isOperatorEnabled(handler, op) =>
         val opSerde = handler.asInstanceOf[CometOperatorSerde[SparkPlan]]
