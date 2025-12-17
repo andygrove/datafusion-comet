@@ -1309,11 +1309,11 @@ mod test {
     #[cfg_attr(miri, ignore)] // miri can't call foreign function `ZSTD_createCCtx`
     fn roundtrip_ipc() {
         let batch = create_batch(8192);
-        for codec in &[
-            CompressionCodec::None,
-            CompressionCodec::Zstd(1),
-            CompressionCodec::Snappy,
-            CompressionCodec::Lz4Frame,
+        for (codec, codec_bytes) in &[
+            (CompressionCodec::None, *b"NONE"),
+            (CompressionCodec::Zstd(1), *b"ZSTD"),
+            (CompressionCodec::Snappy, *b"SNAP"),
+            (CompressionCodec::Lz4Frame, *b"LZ4_"),
         ] {
             let mut output = vec![];
             let mut cursor = Cursor::new(&mut output);
@@ -1324,8 +1324,9 @@ mod test {
                 .unwrap();
             assert_eq!(length, output.len());
 
-            let ipc_without_length_prefix = &output[16..];
-            let batch2 = read_ipc_compressed(ipc_without_length_prefix).unwrap();
+            // Skip batch header: 8 bytes length + 8 bytes field_count = 16 bytes
+            let compressed_data = &output[16..];
+            let batch2 = read_ipc_compressed(codec_bytes, compressed_data).unwrap();
             assert_eq!(batch, batch2);
         }
     }

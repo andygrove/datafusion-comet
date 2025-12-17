@@ -739,6 +739,7 @@ pub extern "system" fn Java_org_apache_comet_Native_sortRowPartitionsNative(
 pub unsafe extern "system" fn Java_org_apache_comet_Native_decodeShuffleBlock(
     e: JNIEnv,
     _class: JClass,
+    codec: JByteBuffer,
     byte_buffer: JByteBuffer,
     length: jint,
     array_addrs: JLongArray,
@@ -747,10 +748,12 @@ pub unsafe extern "system" fn Java_org_apache_comet_Native_decodeShuffleBlock(
 ) -> jlong {
     try_unwrap_or_throw(&e, |mut env| {
         with_trace("decodeShuffleBlock", tracing_enabled != JNI_FALSE, || {
+            let codec_ptr = env.get_direct_buffer_address(&codec)?;
+            let codec: &[u8; 4] = unsafe { &*(codec_ptr as *const [u8; 4]) };
             let raw_pointer = env.get_direct_buffer_address(&byte_buffer)?;
             let length = length as usize;
             let slice: &[u8] = unsafe { std::slice::from_raw_parts(raw_pointer, length) };
-            let batch = read_ipc_compressed(slice)?;
+            let batch = read_ipc_compressed(codec, slice)?;
             prepare_output(&mut env, array_addrs, schema_addrs, batch, false)
         })
     })

@@ -45,6 +45,7 @@ case class NativeBatchDecoderIterator(
 
   private var isClosed = false
   private val longBuf = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
+  private val codecBuf = ByteBuffer.allocateDirect(CODEC_SIZE).order(ByteOrder.LITTLE_ENDIAN)
   private val native = new Native()
   private val nativeUtil = new NativeUtil()
   private val tracingEnabled = CometConf.COMET_TRACING_ENABLED.get()
@@ -56,7 +57,7 @@ case class NativeBatchDecoderIterator(
     null
   }
 
-  // Read and verify the initial header magic
+  // Read and verify the initial header magic and codec
   if (channel != null) {
     readAndVerifyHeader()
   }
@@ -69,7 +70,7 @@ case class NativeBatchDecoderIterator(
     })
   }
 
-  /** Reads and verifies the section header magic bytes. */
+  /** Reads and verifies the section header magic bytes and codec. */
   private def readAndVerifyHeader(): Unit = {
     longBuf.clear()
     while (longBuf.hasRemaining && channel.read(longBuf) >= 0) {}
@@ -84,6 +85,13 @@ case class NativeBatchDecoderIterator(
         s"Invalid shuffle file header: expected ${new String(HEADER_MAGIC)}, " +
           s"got ${new String(magic)}")
     }
+    // Read codec (4 bytes after magic)
+    codecBuf.clear()
+    while (codecBuf.hasRemaining && channel.read(codecBuf) >= 0) {}
+    if (codecBuf.hasRemaining) {
+      throw new EOFException("Data corrupt: unexpected EOF while reading codec")
+    }
+    codecBuf.flip()
   }
 
   /**
@@ -108,6 +116,13 @@ case class NativeBatchDecoderIterator(
         s"Invalid shuffle section header: expected ${new String(HEADER_MAGIC)}, " +
           s"got ${new String(magic)}")
     }
+    // Read codec for this section (4 bytes after magic)
+    codecBuf.clear()
+    while (codecBuf.hasRemaining && channel.read(codecBuf) >= 0) {}
+    if (codecBuf.hasRemaining) {
+      throw new EOFException("Data corrupt: unexpected EOF while reading codec")
+    }
+    codecBuf.flip()
     true
   }
 
@@ -222,10 +237,12 @@ case class NativeBatchDecoderIterator(
 
     // make native call to decode batch
     val startTime = System.nanoTime()
+    dataBuf.flip()
     val batch = nativeUtil.getNextBatch(
       fieldCount,
       (arrayAddrs, schemaAddrs) => {
         native.decodeShuffleBlock(
+          codecBuf,
           dataBuf,
           bytesToRead.toInt,
           arrayAddrs,
@@ -260,6 +277,9 @@ object NativeBatchDecoderIterator {
 
   /** Magic bytes for shuffle file footer (8 bytes): "CMT_FINI" */
   private val FOOTER_MAGIC: Array[Byte] = "CMT_FINI".getBytes("UTF-8")
+
+  /** Size of codec identifier in file header (4 bytes) */
+  private val CODEC_SIZE = 4
 
   private val INITIAL_BUFFER_SIZE = 128 * 1024
 

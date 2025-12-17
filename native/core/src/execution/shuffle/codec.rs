@@ -44,13 +44,16 @@ pub enum CompressionCodec {
 #[derive(Clone)]
 pub struct ShuffleBlockWriter {
     codec: CompressionCodec,
-    header_bytes: Vec<u8>,
+    /// Pre-computed batch header: [8 bytes reserved for length] + [8 bytes field_count]
+    batch_header_bytes: Vec<u8>,
+    /// Codec identifier (4 bytes) written once in file header
+    codec_bytes: [u8; 4],
 }
 
 impl ShuffleBlockWriter {
     pub fn try_new(schema: &Schema, codec: CompressionCodec) -> Result<Self> {
-        let header_bytes = Vec::with_capacity(20);
-        let mut cursor = Cursor::new(header_bytes);
+        let batch_header_bytes = Vec::with_capacity(16);
+        let mut cursor = Cursor::new(batch_header_bytes);
 
         // leave space for compressed message length
         cursor.seek_relative(8)?;
@@ -59,29 +62,30 @@ impl ShuffleBlockWriter {
         let field_count = schema.fields().len();
         cursor.write_all(&field_count.to_le_bytes())?;
 
-        // write compression codec to header
-        let codec_header = match &codec {
-            CompressionCodec::Snappy => b"SNAP",
-            CompressionCodec::Lz4Frame => b"LZ4_",
-            CompressionCodec::Zstd(_) => b"ZSTD",
-            CompressionCodec::None => b"NONE",
-        };
-        cursor.write_all(codec_header)?;
+        let batch_header_bytes = cursor.into_inner();
 
-        let header_bytes = cursor.into_inner();
+        // codec identifier to be written once in file header
+        let codec_bytes: [u8; 4] = match &codec {
+            CompressionCodec::Snappy => *b"SNAP",
+            CompressionCodec::Lz4Frame => *b"LZ4_",
+            CompressionCodec::Zstd(_) => *b"ZSTD",
+            CompressionCodec::None => *b"NONE",
+        };
 
         Ok(Self {
             codec,
-            header_bytes,
+            batch_header_bytes,
+            codec_bytes,
         })
     }
 
-    /// Writes the shuffle file header magic bytes.
+    /// Writes the shuffle file header: magic bytes (8) + codec (4).
     /// This should be called once before writing any batches.
-    /// Returns the number of bytes written (always 8).
+    /// Returns the number of bytes written (always 12).
     pub fn write_header<W: Write>(&self, output: &mut W) -> Result<usize> {
         output.write_all(SHUFFLE_HEADER_MAGIC)?;
-        Ok(SHUFFLE_HEADER_MAGIC.len())
+        output.write_all(&self.codec_bytes)?;
+        Ok(SHUFFLE_HEADER_MAGIC.len() + self.codec_bytes.len())
     }
 
     /// Writes the shuffle file footer magic bytes.
@@ -107,8 +111,8 @@ impl ShuffleBlockWriter {
         let mut timer = ipc_time.timer();
         let start_pos = output.stream_position()?;
 
-        // write header
-        output.write_all(&self.header_bytes)?;
+        // write batch header (length placeholder + field_count)
+        output.write_all(&self.batch_header_bytes)?;
 
         let output = match &self.codec {
             CompressionCodec::None => {
@@ -171,17 +175,19 @@ impl ShuffleBlockWriter {
 
 /// Size of the length field at the start of the batch header
 const LENGTH_SIZE: usize = 8;
-/// Size of the field count in the header
+/// Size of the field count in the batch header
 const FIELD_COUNT_SIZE: usize = 8;
-/// Size of the codec identifier in the header
+/// Size of the codec identifier in the file header (after magic)
 const CODEC_SIZE: usize = 4;
 
 pub struct ShuffleBlockReader<R: std::io::Read> {
     reader: R,
+    /// Codec read from file header, used for all batches
+    codec: [u8; CODEC_SIZE],
 }
 
 impl<R: std::io::Read> ShuffleBlockReader<R> {
-    /// Creates a new ShuffleBlockReader and verifies the header magic bytes.
+    /// Creates a new ShuffleBlockReader, verifies the header magic bytes, and reads the codec.
     pub fn try_new(mut reader: R) -> Result<Self> {
         // Read and verify header magic
         let mut magic = [0u8; 8];
@@ -192,10 +198,15 @@ impl<R: std::io::Read> ShuffleBlockReader<R> {
                 SHUFFLE_HEADER_MAGIC, magic
             )));
         }
-        Ok(Self { reader })
+
+        // Read codec (4 bytes immediately after magic)
+        let mut codec = [0u8; CODEC_SIZE];
+        reader.read_exact(&mut codec)?;
+
+        Ok(Self { reader, codec })
     }
 
-    /// Reads and verifies a section header magic.
+    /// Reads and verifies a section header magic and codec.
     /// Returns true if header was found, false if EOF.
     fn read_section_header(&mut self) -> Result<bool> {
         let mut magic = [0u8; 8];
@@ -207,6 +218,8 @@ impl<R: std::io::Read> ShuffleBlockReader<R> {
                         SHUFFLE_HEADER_MAGIC, magic
                     )));
                 }
+                // Read codec for this section (4 bytes after magic)
+                self.reader.read_exact(&mut self.codec)?;
                 Ok(true)
             }
             Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
@@ -239,26 +252,22 @@ impl<R: std::io::Read> ShuffleBlockReader<R> {
         // Parse ipc_length (8 bytes, little-endian)
         let ipc_length = u64::from_le_bytes(first_bytes) as usize;
 
-        // Read the rest of the batch header (field_count + codec)
-        let mut rest_of_header = [0u8; FIELD_COUNT_SIZE + CODEC_SIZE];
-        self.reader.read_exact(&mut rest_of_header)?;
+        // Read the rest of the batch header (field_count only, codec is in file header)
+        let mut field_count_bytes = [0u8; FIELD_COUNT_SIZE];
+        self.reader.read_exact(&mut field_count_bytes)?;
 
         // Parse field_count (8 bytes, little-endian) - read but not currently used
-        let _field_count =
-            usize::from_le_bytes(rest_of_header[..FIELD_COUNT_SIZE].try_into().unwrap());
+        let _field_count = usize::from_le_bytes(field_count_bytes);
 
-        // Parse codec (4 bytes)
-        let codec: [u8; CODEC_SIZE] = rest_of_header[FIELD_COUNT_SIZE..].try_into().unwrap();
-
-        // Calculate compressed data length (ipc_length includes field_count + codec + data)
-        let compressed_data_len = ipc_length - FIELD_COUNT_SIZE - CODEC_SIZE;
+        // Calculate compressed data length (ipc_length includes field_count + data)
+        let compressed_data_len = ipc_length - FIELD_COUNT_SIZE;
 
         // Read the compressed data
         let mut compressed_data = vec![0u8; compressed_data_len];
         self.reader.read_exact(&mut compressed_data)?;
 
-        // Decompress and read the IPC batch based on codec
-        let batch = match &codec {
+        // Decompress and read the IPC batch based on codec from file header
+        let batch = match &self.codec {
             b"SNAP" => {
                 let decoder = snap::read::FrameDecoder::new(compressed_data.as_slice());
                 let mut reader =
@@ -309,29 +318,34 @@ impl<R: std::io::Read> ShuffleBlockReader<R> {
     }
 }
 
-pub fn read_ipc_compressed(bytes: &[u8]) -> Result<RecordBatch> {
-    match &bytes[0..4] {
+/// Decompresses and reads an IPC batch using the specified codec.
+///
+/// # Arguments
+/// * `codec` - 4-byte codec identifier (e.g., b"SNAP", b"LZ4_", b"ZSTD", b"NONE")
+/// * `bytes` - The compressed IPC data (without codec prefix)
+pub fn read_ipc_compressed(codec: &[u8; 4], bytes: &[u8]) -> Result<RecordBatch> {
+    match codec {
         b"SNAP" => {
-            let decoder = snap::read::FrameDecoder::new(&bytes[4..]);
+            let decoder = snap::read::FrameDecoder::new(bytes);
             let mut reader =
                 unsafe { StreamReader::try_new(decoder, None)?.with_skip_validation(true) };
             reader.next().unwrap().map_err(|e| e.into())
         }
         b"LZ4_" => {
-            let decoder = lz4_flex::frame::FrameDecoder::new(&bytes[4..]);
+            let decoder = lz4_flex::frame::FrameDecoder::new(bytes);
             let mut reader =
                 unsafe { StreamReader::try_new(decoder, None)?.with_skip_validation(true) };
             reader.next().unwrap().map_err(|e| e.into())
         }
         b"ZSTD" => {
-            let decoder = zstd::Decoder::new(&bytes[4..])?;
+            let decoder = zstd::Decoder::new(bytes)?;
             let mut reader =
                 unsafe { StreamReader::try_new(decoder, None)?.with_skip_validation(true) };
             reader.next().unwrap().map_err(|e| e.into())
         }
         b"NONE" => {
             let mut reader =
-                unsafe { StreamReader::try_new(&bytes[4..], None)?.with_skip_validation(true) };
+                unsafe { StreamReader::try_new(bytes, None)?.with_skip_validation(true) };
             reader.next().unwrap().map_err(|e| e.into())
         }
         other => Err(DataFusionError::Execution(format!(

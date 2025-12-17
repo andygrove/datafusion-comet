@@ -162,16 +162,21 @@ class Native extends NativeBase {
 
   /**
    * Decompress and decode a native shuffle block.
+   * @param codec
+   *   the 4-byte codec identifier (e.g., "SNAP", "LZ4_", "ZSTD", "NONE").
    * @param shuffleBlock
-   *   the encoded anc compressed shuffle block.
+   *   the compressed shuffle block data (without codec prefix).
    * @param length
-   *   the limit of the byte buffer.
-   * @param addr
-   *   the address of the array of compressed and encoded bytes.
-   * @param size
-   *   the size of the array.
+   *   the length of the shuffle block data.
+   * @param arrayAddrs
+   *   the addresses for output Arrow arrays.
+   * @param schemaAddrs
+   *   the addresses for output Arrow schemas.
+   * @param tracingEnabled
+   *   whether tracing is enabled.
    */
   @native def decodeShuffleBlock(
+      codec: ByteBuffer,
       shuffleBlock: ByteBuffer,
       length: Int,
       arrayAddrs: Array[Long],
