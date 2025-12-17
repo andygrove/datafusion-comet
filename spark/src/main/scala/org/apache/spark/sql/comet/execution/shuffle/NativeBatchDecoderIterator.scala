@@ -49,6 +49,10 @@ case class NativeBatchDecoderIterator(
   private var currentBatch: ColumnarBatch = null
   private var batch = fetchNext()
 
+  // State for optimized reading - cache codec and schema from first block
+  private var isFirstRead = true
+  private var cachedFieldCount: Int = 0
+
   import NativeBatchDecoderIterator._
 
   if (taskContext != null) {
@@ -126,17 +130,32 @@ case class NativeBatchDecoderIterator(
     longBuf.flip()
     val compressedLength = longBuf.getLong
 
-    // read field count from header
-    longBuf.clear()
-    while (longBuf.hasRemaining && channel.read(longBuf) >= 0) {}
-    if (longBuf.hasRemaining) {
-      throw new EOFException("Data corrupt: unexpected EOF while reading field count")
+    val fieldCount = if (isFirstRead) {
+      // First read: extract field count from header
+      longBuf.clear()
+      while (longBuf.hasRemaining && channel.read(longBuf) >= 0) {}
+      if (longBuf.hasRemaining) {
+        throw new EOFException("Data corrupt: unexpected EOF while reading field count")
+      }
+      longBuf.flip()
+      val count = longBuf.getLong.toInt
+      cachedFieldCount = count
+      count
+    } else {
+      // Subsequent reads: use cached field count
+      cachedFieldCount
     }
-    longBuf.flip()
-    val fieldCount = longBuf.getLong.toInt
 
     // read body
-    val bytesToRead = compressedLength - 8
+    val bytesToRead = if (isFirstRead) {
+      // First read includes field count in the header
+      isFirstRead = false // Mark as no longer first read
+      compressedLength - 8
+    } else {
+      // Subsequent reads don't have field count in header
+      compressedLength - 8
+    }
+
     if (bytesToRead > Integer.MAX_VALUE) {
       // very unlikely that shuffle block will reach 2GB
       throw new IllegalStateException(

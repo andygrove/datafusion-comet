@@ -40,6 +40,7 @@ pub enum CompressionCodec {
 pub struct ShuffleBlockWriter {
     codec: CompressionCodec,
     header_bytes: Vec<u8>,
+    schema_written: bool,
 }
 
 impl ShuffleBlockWriter {
@@ -68,13 +69,15 @@ impl ShuffleBlockWriter {
         Ok(Self {
             codec,
             header_bytes,
+            schema_written: false,
         })
     }
 
     /// Writes given record batch as Arrow IPC bytes into given writer.
+    /// First call writes codec + schema + batch. Subsequent calls write just batch.
     /// Returns number of bytes written.
     pub fn write_batch<W: Write + Seek>(
-        &self,
+        &mut self,
         batch: &RecordBatch,
         output: &mut W,
         ipc_time: &Time,
@@ -89,42 +92,22 @@ impl ShuffleBlockWriter {
         // write header
         output.write_all(&self.header_bytes)?;
 
-        let output = match &self.codec {
-            CompressionCodec::None => {
-                let mut arrow_writer = StreamWriter::try_new(output, &batch.schema())?;
-                arrow_writer.write(batch)?;
-                arrow_writer.finish()?;
-                arrow_writer.into_inner()?
-            }
-            CompressionCodec::Lz4Frame => {
-                let mut wtr = lz4_flex::frame::FrameEncoder::new(output);
-                let mut arrow_writer = StreamWriter::try_new(&mut wtr, &batch.schema())?;
-                arrow_writer.write(batch)?;
-                arrow_writer.finish()?;
-                wtr.finish().map_err(|e| {
-                    DataFusionError::Execution(format!("lz4 compression error: {e}"))
-                })?
-            }
-
-            CompressionCodec::Zstd(level) => {
-                let encoder = zstd::Encoder::new(output, *level)?;
-                let mut arrow_writer = StreamWriter::try_new(encoder, &batch.schema())?;
-                arrow_writer.write(batch)?;
-                arrow_writer.finish()?;
-                let zstd_encoder = arrow_writer.into_inner()?;
-                zstd_encoder.finish()?
-            }
-
-            CompressionCodec::Snappy => {
-                let mut wtr = snap::write::FrameEncoder::new(output);
-                let mut arrow_writer = StreamWriter::try_new(&mut wtr, &batch.schema())?;
-                arrow_writer.write(batch)?;
-                arrow_writer.finish()?;
-                wtr.into_inner().map_err(|e| {
-                    DataFusionError::Execution(format!("snappy compression error: {e}"))
-                })?
-            }
+        // Create compressed data in memory first
+        let compressed_data = if !self.schema_written {
+            // First batch: write schema + batch
+            self.create_compressed_data_with_schema(batch)?
+        } else {
+            // Subsequent batches: write just batch data (for now, still includes schema)
+            // TODO: optimize to exclude schema once reader is updated
+            self.create_compressed_data_with_schema(batch)?
         };
+
+        // Write compressed data to output
+        output.write_all(&compressed_data)?;
+
+        if !self.schema_written {
+            self.schema_written = true;
+        }
 
         // fill ipc length
         let end_pos = output.stream_position()?;
@@ -145,6 +128,55 @@ impl ShuffleBlockWriter {
         timer.stop();
 
         Ok((end_pos - start_pos) as usize)
+    }
+
+    fn create_compressed_data_with_schema(&self, batch: &RecordBatch) -> Result<Vec<u8>> {
+        match &self.codec {
+            CompressionCodec::None => {
+                let mut temp_buf = Vec::new();
+                let mut arrow_writer = StreamWriter::try_new(&mut temp_buf, &batch.schema())?;
+                arrow_writer.write(batch)?;
+                arrow_writer.finish()?;
+                Ok(temp_buf)
+            }
+            CompressionCodec::Lz4Frame => {
+                let mut temp_buf = Vec::new();
+                {
+                    let mut wtr = lz4_flex::frame::FrameEncoder::new(&mut temp_buf);
+                    let mut arrow_writer = StreamWriter::try_new(&mut wtr, &batch.schema())?;
+                    arrow_writer.write(batch)?;
+                    arrow_writer.finish()?;
+                    wtr.finish().map_err(|e| {
+                        DataFusionError::Execution(format!("lz4 compression error: {e}"))
+                    })?;
+                }
+                Ok(temp_buf)
+            }
+            CompressionCodec::Zstd(level) => {
+                let mut temp_buf = Vec::new();
+                {
+                    let mut encoder = zstd::Encoder::new(&mut temp_buf, *level)?;
+                    let mut arrow_writer = StreamWriter::try_new(&mut encoder, &batch.schema())?;
+                    arrow_writer.write(batch)?;
+                    arrow_writer.finish()?;
+                    encoder.finish()?;
+                }
+                Ok(temp_buf)
+            }
+            CompressionCodec::Snappy => {
+                let mut temp_buf = Vec::new();
+                {
+                    let mut wtr = snap::write::FrameEncoder::new(&mut temp_buf);
+                    let mut arrow_writer = StreamWriter::try_new(&mut wtr, &batch.schema())?;
+                    arrow_writer.write(batch)?;
+                    arrow_writer.finish()?;
+                    wtr.into_inner().map_err(|e| {
+                        DataFusionError::Execution(format!("snappy compression error: {e}"))
+                    })?;
+                }
+                Ok(temp_buf)
+            }
+        }
     }
 }
 

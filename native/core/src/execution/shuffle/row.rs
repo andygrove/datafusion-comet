@@ -816,7 +816,7 @@ pub fn process_sorted_row_partition(
 
         // we do not collect metrics in Native_writeSortedFileNative
         let ipc_time = Time::default();
-        let block_writer = ShuffleBlockWriter::try_new(batch.schema().as_ref(), codec.clone())?;
+        let mut block_writer = ShuffleBlockWriter::try_new(batch.schema().as_ref(), codec.clone())?;
         written += block_writer.write_batch(&batch, &mut cursor, &ipc_time)?;
 
         if let Some(checksum) = &mut current_checksum {

@@ -47,7 +47,7 @@ use datafusion_comet_spark_expr::hash_funcs::murmur3::create_murmur3_hashes;
 use futures::executor::block_on;
 use futures::{StreamExt, TryFutureExt, TryStreamExt};
 use itertools::Itertools;
-use std::borrow::Borrow;
+use std::borrow::{Borrow, BorrowMut};
 use std::io::{Cursor, Error, SeekFrom};
 use std::{
     any::Any,
@@ -1219,7 +1219,7 @@ struct BufBatchWriter<S: Borrow<ShuffleBlockWriter>, W: Write> {
     buffer_max_size: usize,
 }
 
-impl<S: Borrow<ShuffleBlockWriter>, W: Write> BufBatchWriter<S, W> {
+impl<S: Borrow<ShuffleBlockWriter> + BorrowMut<ShuffleBlockWriter>, W: Write> BufBatchWriter<S, W> {
     fn new(shuffle_block_writer: S, writer: W, buffer_max_size: usize) -> Self {
         Self {
             shuffle_block_writer,
@@ -1239,7 +1239,7 @@ impl<S: Borrow<ShuffleBlockWriter>, W: Write> BufBatchWriter<S, W> {
         cursor.seek(SeekFrom::End(0))?;
         let bytes_written =
             self.shuffle_block_writer
-                .borrow()
+                .borrow_mut()
                 .write_batch(batch, &mut cursor, encode_time)?;
         let pos = cursor.position();
         if pos >= self.buffer_max_size as u64 {
@@ -1300,7 +1300,7 @@ mod test {
         ] {
             let mut output = vec![];
             let mut cursor = Cursor::new(&mut output);
-            let writer =
+            let mut writer =
                 ShuffleBlockWriter::try_new(batch.schema().as_ref(), codec.clone()).unwrap();
             let length = writer
                 .write_batch(&batch, &mut cursor, &Time::default())
