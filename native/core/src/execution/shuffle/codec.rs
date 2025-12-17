@@ -148,6 +148,18 @@ impl ShuffleBlockWriter {
     }
 }
 
+pub struct ShuffleBlockReader {}
+
+impl ShuffleBlockReader {
+    pub(crate) fn try_new() -> Result<Self> {
+        todo!()
+    }
+
+    pub(crate) fn next_batch(&mut self) -> Result<Option<RecordBatch>> {
+        todo!()
+    }
+}
+
 pub fn read_ipc_compressed(bytes: &[u8]) -> Result<RecordBatch> {
     match &bytes[0..4] {
         b"SNAP" => {
@@ -235,5 +247,45 @@ impl Checksum {
             Checksum::CRC32(hasher) => hasher.finalize(),
             Checksum::Adler32(hasher) => hasher.finish(),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::execution::shuffle::CompressionCodec;
+    use crate::execution::shuffle::ShuffleBlockWriter;
+    use arrow::array::{RecordBatch, StringBuilder};
+    use arrow::datatypes::{DataType, Field, Schema};
+    use datafusion::common::DataFusionError;
+    use datafusion::physical_plan::metrics::Time;
+    use std::io::Cursor;
+    use std::sync::Arc;
+
+    #[test]
+    fn shuffle_file_roundtrip() -> Result<(), DataFusionError> {
+        let batch = create_batch(8192);
+        // create multiple block writers to simulate combining multiple spill files
+        let t = Time::new();
+        let mut output = vec![];
+        let mut cursor = Cursor::new(&mut output);
+        for _ in 0..5 {
+            let schema = batch.schema();
+            let mut writer =
+                ShuffleBlockWriter::try_new(schema.as_ref(), CompressionCodec::Zstd(3))?;
+            for _ in 0..10 {
+                writer.write_batch(&batch, &mut cursor, &t)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn create_batch(batch_size: usize) -> RecordBatch {
+        let schema = Arc::new(Schema::new(vec![Field::new("a", DataType::Utf8, true)]));
+        let mut b = StringBuilder::new();
+        for i in 0..batch_size {
+            b.append_value(format!("{i}"));
+        }
+        let array = b.finish();
+        RecordBatch::try_new(Arc::clone(&schema), vec![Arc::new(array)]).unwrap()
     }
 }
