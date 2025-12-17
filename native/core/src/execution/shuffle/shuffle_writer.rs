@@ -676,7 +676,7 @@ impl MultiPartitionShuffleRepartitioner {
             let batch = batch?;
             buf_batch_writer.write(&batch, encode_time, write_time)?;
         }
-        buf_batch_writer.flush(write_time)?;
+        buf_batch_writer.finish(write_time)?;
         Ok(())
     }
 
@@ -1004,7 +1004,7 @@ impl ShufflePartitioner for SinglePartitionShufflePartitioner {
                 &self.metrics.write_time,
             )?;
         }
-        self.output_data_writer.flush(&self.metrics.write_time)?;
+        self.output_data_writer.finish(&self.metrics.write_time)?;
 
         // Write index file. It should only contain 2 entries: 0 and the total number of bytes written
         let index_file = OpenOptions::new()
@@ -1176,7 +1176,7 @@ impl PartitionWriter {
                         &metrics.write_time,
                     )?;
                 }
-                buf_batch_writer.flush(&metrics.write_time)?;
+                buf_batch_writer.finish(&metrics.write_time)?;
                 bytes_written
             };
 
@@ -1220,7 +1220,12 @@ struct BufBatchWriter<S: Borrow<ShuffleBlockWriter>, W: Write> {
 }
 
 impl<S: Borrow<ShuffleBlockWriter>, W: Write> BufBatchWriter<S, W> {
-    fn new(shuffle_block_writer: S, writer: W, buffer_max_size: usize) -> Self {
+    fn new(shuffle_block_writer: S, mut writer: W, buffer_max_size: usize) -> Self {
+        // Write the header magic when creating the writer
+        shuffle_block_writer
+            .borrow()
+            .write_header(&mut writer)
+            .expect("Failed to write shuffle header");
         Self {
             shuffle_block_writer,
             writer,
@@ -1259,6 +1264,18 @@ impl<S: Borrow<ShuffleBlockWriter>, W: Write> BufBatchWriter<S, W> {
         self.writer.flush()?;
         write_timer.stop();
         self.buffer.clear();
+        Ok(())
+    }
+
+    /// Finishes writing by flushing remaining data and writing the footer magic.
+    fn finish(&mut self, write_time: &Time) -> Result<()> {
+        // Flush any remaining buffered data
+        self.flush(write_time)?;
+        // Write the footer magic
+        self.shuffle_block_writer
+            .borrow()
+            .write_footer(&mut self.writer)?;
+        self.writer.flush()?;
         Ok(())
     }
 }

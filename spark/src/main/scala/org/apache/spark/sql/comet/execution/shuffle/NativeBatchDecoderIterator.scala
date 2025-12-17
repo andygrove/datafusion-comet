@@ -41,15 +41,27 @@ case class NativeBatchDecoderIterator(
     decodeTime: SQLMetric)
     extends Iterator[ColumnarBatch] {
 
+  import NativeBatchDecoderIterator._
+
   private var isClosed = false
   private val longBuf = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
   private val native = new Native()
   private val nativeUtil = new NativeUtil()
   private val tracingEnabled = CometConf.COMET_TRACING_ENABLED.get()
   private var currentBatch: ColumnarBatch = null
-  private var batch = fetchNext()
 
-  import NativeBatchDecoderIterator._
+  private val channel: ReadableByteChannel = if (in != null) {
+    Channels.newChannel(in)
+  } else {
+    null
+  }
+
+  // Read and verify the initial header magic
+  if (channel != null) {
+    readAndVerifyHeader()
+  }
+
+  private var batch = fetchNext()
 
   if (taskContext != null) {
     taskContext.addTaskCompletionListener[Unit](_ => {
@@ -57,10 +69,46 @@ case class NativeBatchDecoderIterator(
     })
   }
 
-  private val channel: ReadableByteChannel = if (in != null) {
-    Channels.newChannel(in)
-  } else {
-    null
+  /** Reads and verifies the section header magic bytes. */
+  private def readAndVerifyHeader(): Unit = {
+    longBuf.clear()
+    while (longBuf.hasRemaining && channel.read(longBuf) >= 0) {}
+    if (longBuf.hasRemaining) {
+      throw new EOFException("Data corrupt: unexpected EOF while reading shuffle header")
+    }
+    longBuf.flip()
+    val magic = new Array[Byte](8)
+    longBuf.get(magic)
+    if (!java.util.Arrays.equals(magic, HEADER_MAGIC)) {
+      throw new IllegalStateException(
+        s"Invalid shuffle file header: expected ${new String(HEADER_MAGIC)}, " +
+          s"got ${new String(magic)}")
+    }
+  }
+
+  /**
+   * Tries to read the next section header after a footer. Returns true if another section was
+   * found, false if EOF.
+   */
+  private def tryReadNextSectionHeader(): Boolean = {
+    longBuf.clear()
+    while (longBuf.hasRemaining && channel.read(longBuf) >= 0) {}
+    if (longBuf.position() == 0) {
+      // EOF - no more sections
+      return false
+    }
+    if (longBuf.hasRemaining) {
+      throw new EOFException("Data corrupt: unexpected EOF while reading section header")
+    }
+    longBuf.flip()
+    val magic = new Array[Byte](8)
+    longBuf.get(magic)
+    if (!java.util.Arrays.equals(magic, HEADER_MAGIC)) {
+      throw new IllegalStateException(
+        s"Invalid shuffle section header: expected ${new String(HEADER_MAGIC)}, " +
+          s"got ${new String(magic)}")
+    }
+    true
   }
 
   def hasNext(): Boolean = {
@@ -102,7 +150,7 @@ case class NativeBatchDecoderIterator(
       return None
     }
 
-    // read compressed batch size from header
+    // read first 8 bytes - could be batch header (ipc length) or footer magic
     try {
       longBuf.clear()
       while (longBuf.hasRemaining && channel.read(longBuf) >= 0) {}
@@ -122,8 +170,22 @@ case class NativeBatchDecoderIterator(
       throw new EOFException("Data corrupt: unexpected EOF while reading compressed ipc lengths")
     }
 
-    // get compressed length (including headers)
+    // Check if this is the footer magic (end of current section)
     longBuf.flip()
+    val firstBytes = new Array[Byte](8)
+    longBuf.get(firstBytes)
+    if (java.util.Arrays.equals(firstBytes, FOOTER_MAGIC)) {
+      // Try to read the next section header
+      if (tryReadNextSectionHeader()) {
+        // There's another section, recursively fetch next batch
+        return fetchNext()
+      }
+      // No more sections, we're done
+      return None
+    }
+
+    // It's a batch header - parse as ipc length
+    longBuf.rewind()
     val compressedLength = longBuf.getLong
 
     // read field count from header
@@ -192,6 +254,12 @@ case class NativeBatchDecoderIterator(
 }
 
 object NativeBatchDecoderIterator {
+
+  /** Magic bytes for shuffle file header (8 bytes): "CMT_STRT" */
+  private val HEADER_MAGIC: Array[Byte] = "CMT_STRT".getBytes("UTF-8")
+
+  /** Magic bytes for shuffle file footer (8 bytes): "CMT_FINI" */
+  private val FOOTER_MAGIC: Array[Byte] = "CMT_FINI".getBytes("UTF-8")
 
   private val INITIAL_BUFFER_SIZE = 128 * 1024
 

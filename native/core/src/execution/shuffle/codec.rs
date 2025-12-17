@@ -28,6 +28,11 @@ use datafusion::physical_plan::metrics::Time;
 use simd_adler32::Adler32;
 use std::io::{Cursor, Seek, SeekFrom, Write};
 
+/// Magic bytes for shuffle file header (8 bytes)
+const SHUFFLE_HEADER_MAGIC: &[u8; 8] = b"CMT_STRT";
+/// Magic bytes for shuffle file footer (8 bytes)
+const SHUFFLE_FOOTER_MAGIC: &[u8; 8] = b"CMT_FINI";
+
 #[derive(Debug, Clone)]
 pub enum CompressionCodec {
     None,
@@ -69,6 +74,22 @@ impl ShuffleBlockWriter {
             codec,
             header_bytes,
         })
+    }
+
+    /// Writes the shuffle file header magic bytes.
+    /// This should be called once before writing any batches.
+    /// Returns the number of bytes written (always 8).
+    pub fn write_header<W: Write>(&self, output: &mut W) -> Result<usize> {
+        output.write_all(SHUFFLE_HEADER_MAGIC)?;
+        Ok(SHUFFLE_HEADER_MAGIC.len())
+    }
+
+    /// Writes the shuffle file footer magic bytes.
+    /// This should be called once after writing all batches.
+    /// Returns the number of bytes written (always 8).
+    pub fn write_footer<W: Write>(&self, output: &mut W) -> Result<usize> {
+        output.write_all(SHUFFLE_FOOTER_MAGIC)?;
+        Ok(SHUFFLE_FOOTER_MAGIC.len())
     }
 
     /// Writes given record batch as Arrow IPC bytes into given writer.
@@ -148,9 +169,7 @@ impl ShuffleBlockWriter {
     }
 }
 
-/// Header size: 8 bytes (ipc_length) + 8 bytes (field_count) + 4 bytes (codec)
-const HEADER_SIZE: usize = 20;
-/// Size of the length field at the start of the header
+/// Size of the length field at the start of the batch header
 const LENGTH_SIZE: usize = 8;
 /// Size of the field count in the header
 const FIELD_COUNT_SIZE: usize = 8;
@@ -162,14 +181,43 @@ pub struct ShuffleBlockReader<R: std::io::Read> {
 }
 
 impl<R: std::io::Read> ShuffleBlockReader<R> {
-    pub fn try_new(reader: R) -> Result<Self> {
+    /// Creates a new ShuffleBlockReader and verifies the header magic bytes.
+    pub fn try_new(mut reader: R) -> Result<Self> {
+        // Read and verify header magic
+        let mut magic = [0u8; 8];
+        reader.read_exact(&mut magic)?;
+        if &magic != SHUFFLE_HEADER_MAGIC {
+            return Err(DataFusionError::Execution(format!(
+                "Invalid shuffle file header: expected {:?}, got {:?}",
+                SHUFFLE_HEADER_MAGIC, magic
+            )));
+        }
         Ok(Self { reader })
     }
 
+    /// Reads and verifies a section header magic.
+    /// Returns true if header was found, false if EOF.
+    fn read_section_header(&mut self) -> Result<bool> {
+        let mut magic = [0u8; 8];
+        match self.reader.read_exact(&mut magic) {
+            Ok(()) => {
+                if &magic != SHUFFLE_HEADER_MAGIC {
+                    return Err(DataFusionError::Execution(format!(
+                        "Invalid shuffle section header: expected {:?}, got {:?}",
+                        SHUFFLE_HEADER_MAGIC, magic
+                    )));
+                }
+                Ok(true)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
+            Err(e) => Err(e.into()),
+        }
+    }
+
     pub fn next_batch(&mut self) -> Result<Option<RecordBatch>> {
-        // Read the header
-        let mut header = [0u8; HEADER_SIZE];
-        match self.reader.read_exact(&mut header) {
+        // Read the first 8 bytes - could be batch header or footer magic
+        let mut first_bytes = [0u8; LENGTH_SIZE];
+        match self.reader.read_exact(&mut first_bytes) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
                 return Ok(None);
@@ -177,21 +225,30 @@ impl<R: std::io::Read> ShuffleBlockReader<R> {
             Err(e) => return Err(e.into()),
         }
 
+        // Check if this is the footer magic (end of current section)
+        if &first_bytes == SHUFFLE_FOOTER_MAGIC {
+            // Try to read the next section header
+            if self.read_section_header()? {
+                // There's another section, try to read the next batch
+                return self.next_batch();
+            }
+            // No more sections, we're done
+            return Ok(None);
+        }
+
         // Parse ipc_length (8 bytes, little-endian)
-        let ipc_length =
-            u64::from_le_bytes(header[..LENGTH_SIZE].try_into().unwrap()) as usize;
+        let ipc_length = u64::from_le_bytes(first_bytes) as usize;
+
+        // Read the rest of the batch header (field_count + codec)
+        let mut rest_of_header = [0u8; FIELD_COUNT_SIZE + CODEC_SIZE];
+        self.reader.read_exact(&mut rest_of_header)?;
 
         // Parse field_count (8 bytes, little-endian) - read but not currently used
-        let _field_count = usize::from_le_bytes(
-            header[LENGTH_SIZE..LENGTH_SIZE + FIELD_COUNT_SIZE]
-                .try_into()
-                .unwrap(),
-        );
+        let _field_count =
+            usize::from_le_bytes(rest_of_header[..FIELD_COUNT_SIZE].try_into().unwrap());
 
         // Parse codec (4 bytes)
-        let codec: [u8; CODEC_SIZE] = header[LENGTH_SIZE + FIELD_COUNT_SIZE..HEADER_SIZE]
-            .try_into()
-            .unwrap();
+        let codec: [u8; CODEC_SIZE] = rest_of_header[FIELD_COUNT_SIZE..].try_into().unwrap();
 
         // Calculate compressed data length (ipc_length includes field_count + codec + data)
         let compressed_data_len = ipc_length - FIELD_COUNT_SIZE - CODEC_SIZE;
@@ -363,13 +420,17 @@ mod test {
         let mut cursor = Cursor::new(&mut output);
         for _ in 0..5 {
             let schema = batch.schema();
-            let writer =
-                ShuffleBlockWriter::try_new(schema.as_ref(), CompressionCodec::Zstd(3))?;
+            let writer = ShuffleBlockWriter::try_new(schema.as_ref(), CompressionCodec::Zstd(3))?;
+            // Write header before batches
+            writer.write_header(&mut cursor)?;
             for _ in 0..10 {
                 writer.write_batch(&batch, &mut cursor, &t)?;
             }
+            // Write footer after batches
+            writer.write_footer(&mut cursor)?;
         }
-        // Read all batches using ShuffleBlockReader
+        // Read all batches using a single ShuffleBlockReader
+        // The reader handles multiple sections (header/footer pairs) seamlessly
         let mut reader = ShuffleBlockReader::try_new(Cursor::new(&output))?;
         let mut batch_count = 0;
         while let Some(read_batch) = reader.next_batch()? {

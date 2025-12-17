@@ -776,6 +776,24 @@ pub fn process_sorted_row_partition(
         None
     };
 
+    // Create a temporary schema to create a block writer for header/footer
+    let temp_schema = Schema::new(
+        schema
+            .iter()
+            .enumerate()
+            .map(|(i, dt)| Field::new(format!("c{i}"), dt.clone(), true))
+            .collect::<Vec<_>>(),
+    );
+    let block_writer = ShuffleBlockWriter::try_new(&temp_schema, codec.clone())?;
+
+    // Write header at the start
+    let mut output_data = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&output_path)?;
+    block_writer.write_header(&mut output_data)?;
+    written += 8; // Header is 8 bytes
+
     while current_row < row_num {
         let n = std::cmp::min(batch_size, row_num - current_row);
 
@@ -831,6 +849,14 @@ pub fn process_sorted_row_partition(
         output_data.write_all(&frozen)?;
         current_row += n;
     }
+
+    // Write footer at the end
+    let mut output_data = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&output_path)?;
+    block_writer.write_footer(&mut output_data)?;
+    written += 8; // Footer is 8 bytes
 
     Ok((written as i64, current_checksum.map(|c| c.finalize())))
 }
