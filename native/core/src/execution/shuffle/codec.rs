@@ -148,15 +148,107 @@ impl ShuffleBlockWriter {
     }
 }
 
-pub struct ShuffleBlockReader {}
+/// Header size: 8 bytes (ipc_length) + 8 bytes (field_count) + 4 bytes (codec)
+const HEADER_SIZE: usize = 20;
+/// Size of the length field at the start of the header
+const LENGTH_SIZE: usize = 8;
+/// Size of the field count in the header
+const FIELD_COUNT_SIZE: usize = 8;
+/// Size of the codec identifier in the header
+const CODEC_SIZE: usize = 4;
 
-impl ShuffleBlockReader {
-    pub(crate) fn try_new() -> Result<Self> {
-        todo!()
+pub struct ShuffleBlockReader<R: std::io::Read> {
+    reader: R,
+}
+
+impl<R: std::io::Read> ShuffleBlockReader<R> {
+    pub fn try_new(reader: R) -> Result<Self> {
+        Ok(Self { reader })
     }
 
-    pub(crate) fn next_batch(&mut self) -> Result<Option<RecordBatch>> {
-        todo!()
+    pub fn next_batch(&mut self) -> Result<Option<RecordBatch>> {
+        // Read the header
+        let mut header = [0u8; HEADER_SIZE];
+        match self.reader.read_exact(&mut header) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                return Ok(None);
+            }
+            Err(e) => return Err(e.into()),
+        }
+
+        // Parse ipc_length (8 bytes, little-endian)
+        let ipc_length =
+            u64::from_le_bytes(header[..LENGTH_SIZE].try_into().unwrap()) as usize;
+
+        // Parse field_count (8 bytes, little-endian) - read but not currently used
+        let _field_count = usize::from_le_bytes(
+            header[LENGTH_SIZE..LENGTH_SIZE + FIELD_COUNT_SIZE]
+                .try_into()
+                .unwrap(),
+        );
+
+        // Parse codec (4 bytes)
+        let codec: [u8; CODEC_SIZE] = header[LENGTH_SIZE + FIELD_COUNT_SIZE..HEADER_SIZE]
+            .try_into()
+            .unwrap();
+
+        // Calculate compressed data length (ipc_length includes field_count + codec + data)
+        let compressed_data_len = ipc_length - FIELD_COUNT_SIZE - CODEC_SIZE;
+
+        // Read the compressed data
+        let mut compressed_data = vec![0u8; compressed_data_len];
+        self.reader.read_exact(&mut compressed_data)?;
+
+        // Decompress and read the IPC batch based on codec
+        let batch = match &codec {
+            b"SNAP" => {
+                let decoder = snap::read::FrameDecoder::new(compressed_data.as_slice());
+                let mut reader =
+                    unsafe { StreamReader::try_new(decoder, None)?.with_skip_validation(true) };
+                reader.next().ok_or_else(|| {
+                    DataFusionError::Execution("No batch in shuffle block".to_string())
+                })??
+            }
+            b"LZ4_" => {
+                let decoder = lz4_flex::frame::FrameDecoder::new(compressed_data.as_slice());
+                let mut reader =
+                    unsafe { StreamReader::try_new(decoder, None)?.with_skip_validation(true) };
+                reader.next().ok_or_else(|| {
+                    DataFusionError::Execution("No batch in shuffle block".to_string())
+                })??
+            }
+            b"ZSTD" => {
+                let decoder = zstd::Decoder::new(compressed_data.as_slice())?;
+                let mut reader =
+                    unsafe { StreamReader::try_new(decoder, None)?.with_skip_validation(true) };
+                reader.next().ok_or_else(|| {
+                    DataFusionError::Execution("No batch in shuffle block".to_string())
+                })??
+            }
+            b"NONE" => {
+                let mut reader = unsafe {
+                    StreamReader::try_new(compressed_data.as_slice(), None)?
+                        .with_skip_validation(true)
+                };
+                reader.next().ok_or_else(|| {
+                    DataFusionError::Execution("No batch in shuffle block".to_string())
+                })??
+            }
+            other => {
+                return Err(DataFusionError::Execution(format!(
+                    "Invalid compression codec in shuffle block: {:?}",
+                    other
+                )));
+            }
+        };
+
+        Ok(Some(batch))
+    }
+
+    /// Consumes the reader and returns the inner reader
+    pub fn into_inner(self) -> R {
+        self.reader
     }
 }
 
@@ -253,6 +345,7 @@ impl Checksum {
 #[cfg(test)]
 mod test {
     use crate::execution::shuffle::CompressionCodec;
+    use crate::execution::shuffle::ShuffleBlockReader;
     use crate::execution::shuffle::ShuffleBlockWriter;
     use arrow::array::{RecordBatch, StringBuilder};
     use arrow::datatypes::{DataType, Field, Schema};
@@ -270,12 +363,22 @@ mod test {
         let mut cursor = Cursor::new(&mut output);
         for _ in 0..5 {
             let schema = batch.schema();
-            let mut writer =
+            let writer =
                 ShuffleBlockWriter::try_new(schema.as_ref(), CompressionCodec::Zstd(3))?;
             for _ in 0..10 {
                 writer.write_batch(&batch, &mut cursor, &t)?;
             }
         }
+        // Read all batches using ShuffleBlockReader
+        let mut reader = ShuffleBlockReader::try_new(Cursor::new(&output))?;
+        let mut batch_count = 0;
+        while let Some(read_batch) = reader.next_batch()? {
+            assert_eq!(read_batch.num_rows(), batch.num_rows());
+            assert_eq!(read_batch.num_columns(), batch.num_columns());
+            assert_eq!(read_batch.schema(), batch.schema());
+            batch_count += 1;
+        }
+        assert_eq!(batch_count, 50); // 5 writers * 10 batches each
         Ok(())
     }
 

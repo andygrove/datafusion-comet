@@ -22,6 +22,6 @@ mod map;
 pub mod row;
 mod shuffle_writer;
 
-pub use codec::{read_ipc_compressed, CompressionCodec, ShuffleBlockWriter};
+pub use codec::{read_ipc_compressed, CompressionCodec, ShuffleBlockReader, ShuffleBlockWriter};
 pub use comet_partitioning::CometPartitioning;
 pub use shuffle_writer::ShuffleWriterExec;
