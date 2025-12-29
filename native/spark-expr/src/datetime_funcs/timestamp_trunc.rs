@@ -110,13 +110,15 @@ impl PhysicalExpr for TimestampTruncExpr {
     fn evaluate(&self, batch: &RecordBatch) -> datafusion::common::Result<ColumnarValue> {
         let timestamp = self.child.evaluate(batch)?;
         let format = self.format.evaluate(batch)?;
-        let tz = self.timezone.clone();
         match (timestamp, format) {
             (ColumnarValue::Array(ts), ColumnarValue::Scalar(Utf8(Some(format)))) => {
                 let ts = array_with_timezone(
                     ts,
-                    tz.clone(),
-                    Some(&DataType::Timestamp(Microsecond, Some(tz.into()))),
+                    &self.timezone,
+                    Some(&DataType::Timestamp(
+                        Microsecond,
+                        Some(self.timezone.clone().into()),
+                    )),
                 )?;
                 let result = timestamp_trunc_dyn(&ts, format)?;
                 Ok(ColumnarValue::Array(result))
@@ -124,8 +126,11 @@ impl PhysicalExpr for TimestampTruncExpr {
             (ColumnarValue::Array(ts), ColumnarValue::Array(formats)) => {
                 let ts = array_with_timezone(
                     ts,
-                    tz.clone(),
-                    Some(&DataType::Timestamp(Microsecond, Some(tz.into()))),
+                    &self.timezone,
+                    Some(&DataType::Timestamp(
+                        Microsecond,
+                        Some(self.timezone.clone().into()),
+                    )),
                 )?;
                 let result = timestamp_trunc_array_fmt_dyn(&ts, &formats)?;
                 Ok(ColumnarValue::Array(result))

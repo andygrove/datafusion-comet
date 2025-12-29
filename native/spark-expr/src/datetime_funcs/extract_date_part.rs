@@ -22,7 +22,7 @@ use datafusion::common::{internal_datafusion_err, DataFusionError};
 use datafusion::logical_expr::{
     ColumnarValue, ScalarFunctionArgs, ScalarUDFImpl, Signature, Volatility,
 };
-use std::{any::Any, fmt::Debug};
+use std::{any::Any, fmt::Debug, sync::Arc};
 
 macro_rules! extract_date_part {
     ($struct_name:ident, $fn_name:expr, $date_part_variant:ident) => {
@@ -30,15 +30,19 @@ macro_rules! extract_date_part {
         pub struct $struct_name {
             signature: Signature,
             aliases: Vec<String>,
-            timezone: String,
+            timezone: Arc<str>,
+            target_type: DataType,
         }
 
         impl $struct_name {
             pub fn new(timezone: String) -> Self {
+                let timezone: Arc<str> = timezone.into();
+                let target_type = DataType::Timestamp(Microsecond, Some(timezone.clone().into()));
                 Self {
                     signature: Signature::user_defined(Volatility::Immutable),
                     aliases: vec![],
                     timezone,
+                    target_type,
                 }
             }
         }
@@ -75,14 +79,8 @@ macro_rules! extract_date_part {
 
                 match args {
                     [ColumnarValue::Array(array)] => {
-                        let array = array_with_timezone(
-                            array,
-                            self.timezone.clone(),
-                            Some(&DataType::Timestamp(
-                                Microsecond,
-                                Some(self.timezone.clone().into()),
-                            )),
-                        )?;
+                        let array =
+                            array_with_timezone(array, &self.timezone, Some(&self.target_type))?;
                         let result = date_part(&array, DatePart::$date_part_variant)?;
                         Ok(ColumnarValue::Array(result))
                     }

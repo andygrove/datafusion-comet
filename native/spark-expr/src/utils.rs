@@ -67,7 +67,7 @@ use chrono::{DateTime, Offset, TimeZone};
 //
 pub fn array_with_timezone(
     array: ArrayRef,
-    timezone: String,
+    timezone: &str,
     to_type: Option<&DataType>,
 ) -> Result<ArrayRef, ArrowError> {
     match array.data_type() {
@@ -76,7 +76,7 @@ pub fn array_with_timezone(
             match to_type {
                 Some(DataType::Utf8) | Some(DataType::Date32) => Ok(array),
                 Some(DataType::Timestamp(_, Some(_))) => {
-                    timestamp_ntz_to_timestamp(array, timezone.as_str(), Some(timezone.as_str()))
+                    timestamp_ntz_to_timestamp(array, timezone, Some(timezone))
                 }
                 _ => {
                     // Not supported
@@ -91,7 +91,7 @@ pub fn array_with_timezone(
         DataType::Timestamp(TimeUnit::Microsecond, Some(_)) => {
             assert!(!timezone.is_empty());
             let array = as_primitive_array::<TimestampMicrosecondType>(&array);
-            let array_with_timezone = array.clone().with_timezone(timezone.clone());
+            let array_with_timezone = array.clone().with_timezone(timezone);
             let array = Arc::new(array_with_timezone) as ArrayRef;
             match to_type {
                 Some(DataType::Utf8) | Some(DataType::Date32) => {
@@ -103,7 +103,7 @@ pub fn array_with_timezone(
         DataType::Timestamp(TimeUnit::Millisecond, Some(_)) => {
             assert!(!timezone.is_empty());
             let array = as_primitive_array::<TimestampMillisecondType>(&array);
-            let array_with_timezone = array.clone().with_timezone(timezone.clone());
+            let array_with_timezone = array.clone().with_timezone(timezone);
             let array = Arc::new(array_with_timezone) as ArrayRef;
             match to_type {
                 Some(DataType::Utf8) | Some(DataType::Date32) => {
@@ -190,7 +190,7 @@ fn timestamp_ntz_to_timestamp(
 }
 
 /// This takes for special pre-casting cases of Spark. E.g., Timestamp to String.
-fn pre_timestamp_cast(array: ArrayRef, timezone: String) -> Result<ArrayRef, ArrowError> {
+fn pre_timestamp_cast(array: ArrayRef, timezone: &str) -> Result<ArrayRef, ArrowError> {
     assert!(!timezone.is_empty());
     match array.data_type() {
         DataType::Timestamp(_, _) => {

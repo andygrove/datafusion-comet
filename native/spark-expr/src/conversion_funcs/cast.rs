@@ -908,7 +908,7 @@ fn cast_array(
     cast_options: &SparkCastOptions,
 ) -> DataFusionResult<ArrayRef> {
     use DataType::*;
-    let array = array_with_timezone(array, cast_options.timezone.clone(), Some(to_type))?;
+    let array = array_with_timezone(array, &cast_options.timezone, Some(to_type))?;
     let from_type = array.data_type().clone();
 
     let native_cast_options: CastOptions = CastOptions {
