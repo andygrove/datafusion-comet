@@ -22,7 +22,9 @@
 use crate::SparkCastOptions;
 use crate::{spark_cast, EvalMode};
 use arrow::array::builder::StringBuilder;
-use arrow::array::{Array, ArrayRef, RecordBatch, StringArray, StructArray};
+use arrow::array::{
+    Array, ArrayRef, Float32Array, Float64Array, RecordBatch, StringArray, StructArray,
+};
 use arrow::datatypes::{DataType, Schema};
 use datafusion::common::Result;
 use datafusion::physical_expr::PhysicalExpr;
@@ -124,12 +126,34 @@ fn array_to_json_string(arr: &Arc<dyn Array>, timezone: &str) -> Result<ArrayRef
     if let Some(struct_array) = arr.as_any().downcast_ref::<StructArray>() {
         struct_to_json(struct_array, timezone)
     } else {
+        // For float types, replace Infinity/NaN with null since JSON doesn't support them
+        let arr = replace_float_special_values(arr);
         spark_cast(
-            ColumnarValue::Array(Arc::clone(arr)),
+            ColumnarValue::Array(Arc::clone(&arr)),
             &DataType::Utf8,
             &SparkCastOptions::new(EvalMode::Legacy, timezone, false),
         )?
         .into_array(arr.len())
+    }
+}
+
+/// Replace Infinity and NaN values with null in float arrays.
+/// JSON doesn't support these special float values.
+fn replace_float_special_values(arr: &Arc<dyn Array>) -> Arc<dyn Array> {
+    if let Some(float_array) = arr.as_any().downcast_ref::<Float64Array>() {
+        let result: Float64Array = float_array
+            .iter()
+            .map(|v| v.filter(|f| f.is_finite()))
+            .collect();
+        Arc::new(result)
+    } else if let Some(float_array) = arr.as_any().downcast_ref::<Float32Array>() {
+        let result: Float32Array = float_array
+            .iter()
+            .map(|v| v.filter(|f| f.is_finite()))
+            .collect();
+        Arc::new(result)
+    } else {
+        Arc::clone(arr)
     }
 }
 
