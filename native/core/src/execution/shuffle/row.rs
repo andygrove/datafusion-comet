@@ -765,6 +765,11 @@ pub fn process_sorted_row_partition(
     initial_checksum: Option<u32>,
     codec: &CompressionCodec,
 ) -> Result<(i64, Option<u32>), CometError> {
+    // Early return for empty partition - avoid unnecessary builder allocation
+    if row_num == 0 {
+        return Ok((0, initial_checksum));
+    }
+
     // The current row number we are reading
     let mut current_row = 0;
     // Total number of bytes written
@@ -776,15 +781,17 @@ pub fn process_sorted_row_partition(
         None
     };
 
+    // Create builders once and reuse them across batches.
+    // Arrow builders reset themselves after finish() is called, so we can reuse them.
+    let mut data_builders: Vec<Box<dyn ArrayBuilder>> = Vec::with_capacity(schema.len());
+    schema.iter().try_for_each(|dt| {
+        make_builders(dt, batch_size, prefer_dictionary_ratio)
+            .map(|builder| data_builders.push(builder))?;
+        Ok::<(), CometError>(())
+    })?;
+
     while current_row < row_num {
         let n = std::cmp::min(batch_size, row_num - current_row);
-
-        let mut data_builders: Vec<Box<dyn ArrayBuilder>> = vec![];
-        schema.iter().try_for_each(|dt| {
-            make_builders(dt, n, prefer_dictionary_ratio)
-                .map(|builder| data_builders.push(builder))?;
-            Ok::<(), CometError>(())
-        })?;
 
         // Appends rows to the array builders.
         // For each column, iterating over rows and appending values to corresponding array
@@ -803,6 +810,7 @@ pub fn process_sorted_row_partition(
         }
 
         // Writes a record batch generated from the array builders to the output file.
+        // Note: builder_to_array calls finish() which resets the builder for reuse.
         let array_refs: Result<Vec<ArrayRef>, _> = data_builders
             .iter_mut()
             .zip(schema.iter())
