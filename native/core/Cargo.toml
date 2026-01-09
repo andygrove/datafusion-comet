@@ -132,3 +132,7 @@ harness = false
 [[bench]]
 name = "parquet_decode"
 harness = false
+
+[[bench]]
+name = "row_accessor"
+harness = false

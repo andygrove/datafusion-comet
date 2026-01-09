@@ -264,7 +264,7 @@ impl SparkUnsafeRow {
 
     /// Returns true if the null bit at the given index of the row is set.
     #[inline]
-    pub(crate) fn is_null_at(&self, index: usize) -> bool {
+    pub fn is_null_at(&self, index: usize) -> bool {
         unsafe {
             let mask: i64 = 1i64 << (index & 0x3f);
             let word_offset = (self.row_addr + (((index >> 6) as i64) << 3)) as *const i64;
