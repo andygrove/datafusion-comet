@@ -73,51 +73,57 @@ pub trait SparkUnsafeObject {
     }
 
     /// Returns boolean value at the given index of the object.
+    #[inline]
     fn get_boolean(&self, index: usize) -> bool {
         let addr = self.get_element_offset(index, 1);
         unsafe { *addr != 0 }
     }
 
     /// Returns byte value at the given index of the object.
+    #[inline]
     fn get_byte(&self, index: usize) -> i8 {
         let addr = self.get_element_offset(index, 1);
-        let slice: &[u8] = unsafe { std::slice::from_raw_parts(addr, 1) };
-        i8::from_le_bytes(slice.try_into().unwrap())
+        unsafe { *addr as i8 }
     }
 
     /// Returns short value at the given index of the object.
+    #[inline]
     fn get_short(&self, index: usize) -> i16 {
         let addr = self.get_element_offset(index, 2);
-        let slice: &[u8] = unsafe { std::slice::from_raw_parts(addr, 2) };
-        i16::from_le_bytes(slice.try_into().unwrap())
+        unsafe { std::ptr::read_unaligned(addr as *const i16) }
     }
 
     /// Returns integer value at the given index of the object.
+    #[inline]
     fn get_int(&self, index: usize) -> i32 {
         let addr = self.get_element_offset(index, 4);
-        let slice: &[u8] = unsafe { std::slice::from_raw_parts(addr, 4) };
-        i32::from_le_bytes(slice.try_into().unwrap())
+        // SAFETY: Spark UnsafeRow stores fixed-width values at 8-byte aligned offsets.
+        // read_unaligned handles any potential alignment issues on non-x86 platforms.
+        unsafe { std::ptr::read_unaligned(addr as *const i32) }
     }
 
     /// Returns long value at the given index of the object.
+    #[inline]
     fn get_long(&self, index: usize) -> i64 {
         let addr = self.get_element_offset(index, 8);
-        let slice: &[u8] = unsafe { std::slice::from_raw_parts(addr, 8) };
-        i64::from_le_bytes(slice.try_into().unwrap())
+        // SAFETY: Spark UnsafeRow stores fixed-width values at 8-byte aligned offsets.
+        unsafe { std::ptr::read_unaligned(addr as *const i64) }
     }
 
     /// Returns float value at the given index of the object.
+    #[inline]
     fn get_float(&self, index: usize) -> f32 {
         let addr = self.get_element_offset(index, 4);
-        let slice: &[u8] = unsafe { std::slice::from_raw_parts(addr, 4) };
-        f32::from_le_bytes(slice.try_into().unwrap())
+        // SAFETY: Spark UnsafeRow stores fixed-width values at 8-byte aligned offsets.
+        unsafe { std::ptr::read_unaligned(addr as *const f32) }
     }
 
     /// Returns double value at the given index of the object.
+    #[inline]
     fn get_double(&self, index: usize) -> f64 {
         let addr = self.get_element_offset(index, 8);
-        let slice: &[u8] = unsafe { std::slice::from_raw_parts(addr, 8) };
-        f64::from_le_bytes(slice.try_into().unwrap())
+        // SAFETY: Spark UnsafeRow stores fixed-width values at 8-byte aligned offsets.
+        unsafe { std::ptr::read_unaligned(addr as *const f64) }
     }
 
     /// Returns string value at the given index of the object.
@@ -137,24 +143,28 @@ pub trait SparkUnsafeObject {
     }
 
     /// Returns date value at the given index of the object.
+    #[inline]
     fn get_date(&self, index: usize) -> i32 {
         let addr = self.get_element_offset(index, 4);
-        let slice: &[u8] = unsafe { std::slice::from_raw_parts(addr, 4) };
-        i32::from_le_bytes(slice.try_into().unwrap())
+        unsafe { std::ptr::read_unaligned(addr as *const i32) }
     }
 
     /// Returns timestamp value at the given index of the object.
+    #[inline]
     fn get_timestamp(&self, index: usize) -> i64 {
         let addr = self.get_element_offset(index, 8);
-        let slice: &[u8] = unsafe { std::slice::from_raw_parts(addr, 8) };
-        i64::from_le_bytes(slice.try_into().unwrap())
+        unsafe { std::ptr::read_unaligned(addr as *const i64) }
     }
 
     /// Returns decimal value at the given index of the object.
+    #[inline]
     fn get_decimal(&self, index: usize, precision: u8) -> i128 {
         if precision <= MAX_LONG_DIGITS {
-            self.get_long(index) as i128
+            // Fast path: decimal fits in i64, read directly and sign-extend to i128
+            let addr = self.get_element_offset(index, 8);
+            unsafe { std::ptr::read_unaligned(addr as *const i64) as i128 }
         } else {
+            // Slow path: high-precision decimal stored as BigInteger bytes
             let slice = self.get_binary(index);
             bytes_to_i128(slice)
         }
