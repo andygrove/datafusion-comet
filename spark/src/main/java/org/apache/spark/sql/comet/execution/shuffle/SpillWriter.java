@@ -68,6 +68,10 @@ public abstract class SpillWriter {
 
   protected byte[][] dataTypes;
 
+  // Track actual bytes written to pages (not allocated page sizes)
+  // This is used for accurate spill metrics reporting
+  protected long totalBytesWritten = 0;
+
   // 0: CRC32, 1: Adler32. Spark uses Adler32 by default.
   protected int checksumAlgo = 1;
   protected long checksum = -1;
@@ -214,17 +218,22 @@ public abstract class SpillWriter {
     return written;
   }
 
-  /** Frees allocated memory pages of this writer */
+  /**
+   * Frees allocated memory pages of this writer and returns the actual bytes that were written to
+   * those pages. Note: this returns the actual data size, not the allocated page sizes, to provide
+   * accurate spill metrics.
+   */
   public long freeMemory() {
-    long freed = 0L;
+    long bytesWritten = totalBytesWritten;
     for (MemoryBlock block : allocatedPages) {
-      freed += allocator.free(block);
+      allocator.free(block);
     }
     allocatedPages.clear();
     currentPage = null;
     pageCursor = 0;
+    totalBytesWritten = 0;
 
-    return freed;
+    return bytesWritten;
   }
 
   /** Returns the amount of memory used by this writer, in bytes. */

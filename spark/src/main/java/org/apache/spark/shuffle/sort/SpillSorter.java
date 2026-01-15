@@ -189,6 +189,7 @@ public class SpillSorter extends SpillWriter {
       inMemSorter.reset();
       sorterArray = allocator.allocateArray(initialSize);
       inMemSorter.expandPointerArray(sorterArray);
+      totalBytesWritten = 0;
       freed = false;
     }
   }
@@ -347,6 +348,8 @@ public class SpillSorter extends SpillWriter {
     pageCursor += uaoSize;
     Platform.copyMemory(recordBase, recordOffset, base, pageCursor, length);
     pageCursor += length;
+    // Track actual bytes written for accurate spill metrics
+    totalBytesWritten += uaoSize + length;
     inMemSorter.insertRecord(recordAddress, partitionId);
   }
 }
