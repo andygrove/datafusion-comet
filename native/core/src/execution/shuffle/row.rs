@@ -439,6 +439,41 @@ pub(crate) fn append_field(
     Ok(())
 }
 
+/// Optimized helper for appending primitive columns.
+/// Pre-computes offsets and uses direct pointer reads to avoid per-row overhead.
+macro_rules! append_primitive_column {
+    ($builder_type:ty, $native_type:ty, $builder:expr, $row_addresses_ptr:expr,
+     $row_start:expr, $row_end:expr, $bitset_width:expr, $column_idx:expr) => {{
+        let builder = $builder
+            .as_any_mut()
+            .downcast_mut::<$builder_type>()
+            .expect(stringify!($builder_type));
+
+        // Pre-compute offsets for this column (same for all rows)
+        let value_offset = $bitset_width + ($column_idx * 8) as i64;
+        let null_word_offset = ((($column_idx) >> 6) as i64) << 3;
+        let null_bit_mask = 1i64 << (($column_idx) & 0x3f);
+
+        for i in $row_start..$row_end {
+            let row_addr = unsafe { *$row_addresses_ptr.add(i) };
+
+            // Check null bit directly
+            let is_null = unsafe {
+                let word = *((row_addr + null_word_offset) as *const i64);
+                (word & null_bit_mask) != 0
+            };
+
+            if is_null {
+                builder.append_null();
+            } else {
+                // Read value directly via pointer cast
+                let value = unsafe { *((row_addr + value_offset) as *const $native_type) };
+                builder.append_value(value);
+            }
+        }
+    }};
+}
+
 /// Appends column of top rows to the given array builder.
 #[allow(clippy::redundant_closure_call, clippy::too_many_arguments)]
 pub(crate) fn append_columns(
@@ -479,58 +514,132 @@ pub(crate) fn append_columns(
     }
 
     let dt = &schema[column_idx];
+    let bitset_width = SparkUnsafeRow::get_row_bitset_width(schema.len()) as i64;
 
     match dt {
         DataType::Boolean => {
-            append_column_to_builder!(
-                BooleanBuilder,
-                |builder: &mut BooleanBuilder, row: &SparkUnsafeRow, idx| builder
-                    .append_value(row.get_boolean(idx))
-            );
+            // Boolean needs special handling - stored as byte, convert to bool
+            let bool_builder = builder
+                .as_any_mut()
+                .downcast_mut::<BooleanBuilder>()
+                .expect("BooleanBuilder");
+
+            let value_offset = bitset_width + (column_idx * 8) as i64;
+            let null_word_offset = ((column_idx >> 6) as i64) << 3;
+            let null_bit_mask = 1i64 << (column_idx & 0x3f);
+
+            for i in row_start..row_end {
+                let row_addr = unsafe { *row_addresses_ptr.add(i) };
+                let is_null = unsafe {
+                    let word = *((row_addr + null_word_offset) as *const i64);
+                    (word & null_bit_mask) != 0
+                };
+                if is_null {
+                    bool_builder.append_null();
+                } else {
+                    let value = unsafe { *((row_addr + value_offset) as *const u8) != 0 };
+                    bool_builder.append_value(value);
+                }
+            }
         }
         DataType::Int8 => {
-            append_column_to_builder!(
+            append_primitive_column!(
                 Int8Builder,
-                |builder: &mut Int8Builder, row: &SparkUnsafeRow, idx| builder
-                    .append_value(row.get_byte(idx))
+                i8,
+                builder,
+                row_addresses_ptr,
+                row_start,
+                row_end,
+                bitset_width,
+                column_idx
             );
         }
         DataType::Int16 => {
-            append_column_to_builder!(
+            append_primitive_column!(
                 Int16Builder,
-                |builder: &mut Int16Builder, row: &SparkUnsafeRow, idx| builder
-                    .append_value(row.get_short(idx))
+                i16,
+                builder,
+                row_addresses_ptr,
+                row_start,
+                row_end,
+                bitset_width,
+                column_idx
             );
         }
         DataType::Int32 => {
-            append_column_to_builder!(
+            append_primitive_column!(
                 Int32Builder,
-                |builder: &mut Int32Builder, row: &SparkUnsafeRow, idx| builder
-                    .append_value(row.get_int(idx))
+                i32,
+                builder,
+                row_addresses_ptr,
+                row_start,
+                row_end,
+                bitset_width,
+                column_idx
             );
         }
         DataType::Int64 => {
-            append_column_to_builder!(
+            append_primitive_column!(
                 Int64Builder,
-                |builder: &mut Int64Builder, row: &SparkUnsafeRow, idx| builder
-                    .append_value(row.get_long(idx))
+                i64,
+                builder,
+                row_addresses_ptr,
+                row_start,
+                row_end,
+                bitset_width,
+                column_idx
             );
         }
         DataType::Float32 => {
-            append_column_to_builder!(
+            append_primitive_column!(
                 Float32Builder,
-                |builder: &mut Float32Builder, row: &SparkUnsafeRow, idx| builder
-                    .append_value(row.get_float(idx))
+                f32,
+                builder,
+                row_addresses_ptr,
+                row_start,
+                row_end,
+                bitset_width,
+                column_idx
             );
         }
         DataType::Float64 => {
-            append_column_to_builder!(
+            append_primitive_column!(
                 Float64Builder,
-                |builder: &mut Float64Builder, row: &SparkUnsafeRow, idx| builder
-                    .append_value(row.get_double(idx))
+                f64,
+                builder,
+                row_addresses_ptr,
+                row_start,
+                row_end,
+                bitset_width,
+                column_idx
+            );
+        }
+        DataType::Date32 => {
+            append_primitive_column!(
+                Date32Builder,
+                i32,
+                builder,
+                row_addresses_ptr,
+                row_start,
+                row_end,
+                bitset_width,
+                column_idx
+            );
+        }
+        DataType::Timestamp(TimeUnit::Microsecond, _) => {
+            append_primitive_column!(
+                TimestampMicrosecondBuilder,
+                i64,
+                builder,
+                row_addresses_ptr,
+                row_start,
+                row_end,
+                bitset_width,
+                column_idx
             );
         }
         DataType::Decimal128(p, _) => {
+            // Decimal needs special handling due to variable precision
             append_column_to_builder!(
                 Decimal128Builder,
                 |builder: &mut Decimal128Builder, row: &SparkUnsafeRow, idx| builder
@@ -568,20 +677,6 @@ pub(crate) fn append_columns(
                         .append_value(row.get_binary(idx))
                 );
             }
-        }
-        DataType::Date32 => {
-            append_column_to_builder!(
-                Date32Builder,
-                |builder: &mut Date32Builder, row: &SparkUnsafeRow, idx| builder
-                    .append_value(row.get_date(idx))
-            );
-        }
-        DataType::Timestamp(TimeUnit::Microsecond, _) => {
-            append_column_to_builder!(
-                TimestampMicrosecondBuilder,
-                |builder: &mut TimestampMicrosecondBuilder, row: &SparkUnsafeRow, idx| builder
-                    .append_value(row.get_timestamp(idx))
-            );
         }
         DataType::Map(field, _) => {
             let map_builder = downcast_builder_ref!(
