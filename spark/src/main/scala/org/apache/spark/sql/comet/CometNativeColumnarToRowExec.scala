@@ -207,6 +207,12 @@ case class CometNativeColumnarToRowExec(child: SparkPlan)
 
   override protected def withNewChildInternal(newChild: SparkPlan): CometNativeColumnarToRowExec =
     copy(child = newChild)
+
+  // SPARK-37779: Override doCanonicalize to avoid triggering the supportsColumnar assertion
+  // when the plan is canonicalized after (de)serialization, as the sparkContext may be null.
+  override def doCanonicalize(): SparkPlan = {
+    CometNativeColumnarToRowExec(child.canonicalized)
+  }
 }
 
 object CometNativeColumnarToRowExec {
