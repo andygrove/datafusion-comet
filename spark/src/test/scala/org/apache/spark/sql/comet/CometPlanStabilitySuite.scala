@@ -267,6 +267,7 @@ trait CometPlanStabilitySuite extends DisableAdaptiveExecutionSuite with TPCDSBa
     conf.set(CometConf.COMET_EXEC_ENABLED.key, "true")
     conf.set(CometConf.COMET_ONHEAP_MEMORY_OVERHEAD.key, "1g")
     conf.set(CometConf.COMET_EXEC_SHUFFLE_ENABLED.key, "true")
+    conf.set(CometConf.COMET_NATIVE_COLUMNAR_TO_ROW_ENABLED.key, "true")
 
     new TestSparkSession(new SparkContext("local[1]", this.getClass.getCanonicalName, conf))
   }
