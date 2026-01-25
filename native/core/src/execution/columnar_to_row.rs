@@ -3125,4 +3125,153 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_num_rows_exceeds_batch_size_fixed_width() {
+        // Test that conversion works correctly when num_rows > batch_size
+        // This tests the fixed-width fast path
+        let schema = vec![DataType::Int32, DataType::Int64];
+        let batch_size = 2; // Small batch_size
+        let mut ctx = ColumnarToRowContext::new(schema, batch_size);
+
+        // Create arrays with more rows than batch_size
+        let num_rows = 10;
+        let array1: ArrayRef = Arc::new(Int32Array::from((0..num_rows).collect::<Vec<i32>>()));
+        let array2: ArrayRef =
+            Arc::new(Int64Array::from((0..num_rows).map(|x| x as i64 * 100).collect::<Vec<i64>>()));
+        let arrays = vec![array1, array2];
+
+        let (ptr, offsets, lengths) = ctx.convert(&arrays, num_rows as usize).unwrap();
+
+        assert!(!ptr.is_null());
+        assert_eq!(offsets.len(), num_rows as usize);
+        assert_eq!(lengths.len(), num_rows as usize);
+
+        // Each row should have: 8 bytes null bitset + 16 bytes for two fields = 24 bytes
+        for len in lengths {
+            assert_eq!(*len, 24);
+        }
+
+        // Verify the values are correct
+        unsafe {
+            for i in 0..num_rows as usize {
+                let row =
+                    std::slice::from_raw_parts(ptr.add(offsets[i] as usize), lengths[i] as usize);
+                // Int32 field at offset 8, stored as 8 bytes (little-endian, padded)
+                let val1 = i32::from_le_bytes(row[8..12].try_into().unwrap());
+                // Int64 field at offset 16
+                let val2 = i64::from_le_bytes(row[16..24].try_into().unwrap());
+                assert_eq!(val1, i as i32, "Row {} Int32 value mismatch", i);
+                assert_eq!(val2, i as i64 * 100, "Row {} Int64 value mismatch", i);
+            }
+        }
+    }
+
+    #[test]
+    fn test_num_rows_exceeds_batch_size_variable_width() {
+        // Test that conversion works correctly when num_rows > batch_size
+        // This tests the general path with variable-length data
+        let schema = vec![DataType::Int32, DataType::Utf8];
+        let batch_size = 2; // Small batch_size
+        let mut ctx = ColumnarToRowContext::new(schema, batch_size);
+
+        // Create arrays with more rows than batch_size
+        let num_rows = 10;
+        let array1: ArrayRef = Arc::new(Int32Array::from((0..num_rows).collect::<Vec<i32>>()));
+        let strings: Vec<String> = (0..num_rows).map(|x| format!("value_{}", x)).collect();
+        let array2: ArrayRef = Arc::new(StringArray::from(
+            strings.iter().map(|s| s.as_str()).collect::<Vec<&str>>(),
+        ));
+        let arrays = vec![array1, array2];
+
+        let (ptr, offsets, lengths) = ctx.convert(&arrays, num_rows as usize).unwrap();
+
+        assert!(!ptr.is_null());
+        assert_eq!(offsets.len(), num_rows as usize);
+        assert_eq!(lengths.len(), num_rows as usize);
+
+        // Verify the Int32 values are correct
+        unsafe {
+            for i in 0..num_rows as usize {
+                let row =
+                    std::slice::from_raw_parts(ptr.add(offsets[i] as usize), lengths[i] as usize);
+                // Int32 field at offset 8
+                let val1 = i32::from_le_bytes(row[8..12].try_into().unwrap());
+                assert_eq!(val1, i as i32, "Row {} Int32 value mismatch", i);
+            }
+        }
+    }
+
+    #[test]
+    fn test_multiple_conversions_with_growing_batch_sizes() {
+        // Test that the converter handles multiple conversions where batch sizes grow
+        let schema = vec![DataType::Int32];
+        let initial_batch_size = 2;
+        let mut ctx = ColumnarToRowContext::new(schema, initial_batch_size);
+
+        // First conversion: small batch (within initial capacity)
+        let array1: ArrayRef = Arc::new(Int32Array::from(vec![1, 2]));
+        let (ptr1, offsets1, lengths1) = ctx.convert(&[array1], 2).unwrap();
+        assert!(!ptr1.is_null());
+        assert_eq!(offsets1.len(), 2);
+        assert_eq!(lengths1.len(), 2);
+
+        // Second conversion: larger batch (exceeds initial capacity)
+        let array2: ArrayRef = Arc::new(Int32Array::from(vec![10, 20, 30, 40, 50]));
+        let (ptr2, offsets2, lengths2) = ctx.convert(&[array2], 5).unwrap();
+        assert!(!ptr2.is_null());
+        assert_eq!(offsets2.len(), 5);
+        assert_eq!(lengths2.len(), 5);
+
+        // Verify the values from the second conversion
+        unsafe {
+            for (i, expected) in [10, 20, 30, 40, 50].iter().enumerate() {
+                let row =
+                    std::slice::from_raw_parts(ptr2.add(offsets2[i] as usize), lengths2[i] as usize);
+                let val = i32::from_le_bytes(row[8..12].try_into().unwrap());
+                assert_eq!(val, *expected, "Row {} value mismatch", i);
+            }
+        }
+
+        // Third conversion: even larger batch
+        let array3: ArrayRef = Arc::new(Int32Array::from((0..100).collect::<Vec<i32>>()));
+        let (ptr3, offsets3, lengths3) = ctx.convert(&[array3], 100).unwrap();
+        assert!(!ptr3.is_null());
+        assert_eq!(offsets3.len(), 100);
+        assert_eq!(lengths3.len(), 100);
+
+        // Verify a sample of values from the third conversion
+        unsafe {
+            for i in [0, 50, 99] {
+                let row =
+                    std::slice::from_raw_parts(ptr3.add(offsets3[i] as usize), lengths3[i] as usize);
+                let val = i32::from_le_bytes(row[8..12].try_into().unwrap());
+                assert_eq!(val, i as i32, "Row {} value mismatch", i);
+            }
+        }
+    }
+
+    #[test]
+    fn test_batch_size_zero_still_works() {
+        // Edge case: batch_size of 0 should still work (vectors grow from 0)
+        let schema = vec![DataType::Int32];
+        let mut ctx = ColumnarToRowContext::new(schema, 0);
+
+        let array: ArrayRef = Arc::new(Int32Array::from(vec![1, 2, 3]));
+        let (ptr, offsets, lengths) = ctx.convert(&[array], 3).unwrap();
+
+        assert!(!ptr.is_null());
+        assert_eq!(offsets.len(), 3);
+        assert_eq!(lengths.len(), 3);
+
+        // Verify values
+        unsafe {
+            for (i, expected) in [1, 2, 3].iter().enumerate() {
+                let row =
+                    std::slice::from_raw_parts(ptr.add(offsets[i] as usize), lengths[i] as usize);
+                let val = i32::from_le_bytes(row[8..12].try_into().unwrap());
+                assert_eq!(val, *expected, "Row {} value mismatch", i);
+            }
+        }
+    }
 }
