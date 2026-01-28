@@ -702,16 +702,17 @@ fn append_nested_struct_fields_field_major(
     Ok(())
 }
 
-/// Reads row address and size from JVM-provided pointer arrays and points the row to that data.
+/// Reads row address and size from JVM-provided slices and points the row to that data.
 ///
 /// # Safety
-/// Caller must ensure row_addresses_ptr and row_sizes_ptr are valid for index i.
-/// This is guaranteed when called from append_columns with indices in [row_start, row_end).
+/// Uses get_unchecked for performance. Caller must ensure index i is valid for the slices.
+/// This is guaranteed when called with indices in [row_start, row_end) and slices created
+/// with length >= row_end.
 macro_rules! read_row_at {
-    ($row:expr, $row_addresses_ptr:expr, $row_sizes_ptr:expr, $i:expr) => {{
-        // SAFETY: Caller guarantees pointers are valid for this index (see macro doc)
-        let row_addr = unsafe { *$row_addresses_ptr.add($i) };
-        let row_size = unsafe { *$row_sizes_ptr.add($i) };
+    ($row:expr, $row_addresses:expr, $row_sizes:expr, $i:expr) => {{
+        // SAFETY: Caller guarantees index is within bounds (see macro doc)
+        let row_addr = unsafe { *$row_addresses.get_unchecked($i) };
+        let row_size = unsafe { *$row_sizes.get_unchecked($i) };
         $row.point_to(row_addr, row_size);
     }};
 }
@@ -730,6 +731,10 @@ fn append_list_column_batch(
     element_type: &DataType,
     list_builder: &mut ListBuilder<Box<dyn ArrayBuilder>>,
 ) -> Result<(), CometError> {
+    // SAFETY: JVM guarantees these pointers point to valid arrays of length >= row_end
+    let row_addresses = unsafe { std::slice::from_raw_parts(row_addresses_ptr, row_end) };
+    let row_sizes = unsafe { std::slice::from_raw_parts(row_sizes_ptr, row_end) };
+
     let mut row = SparkUnsafeRow::new(schema);
 
     // Helper macro for primitive element types - gets builder fresh each iteration
@@ -737,7 +742,7 @@ fn append_list_column_batch(
     macro_rules! process_primitive_lists {
         ($builder_type:ty, $append_fn:ident) => {{
             for i in row_start..row_end {
-                read_row_at!(row, row_addresses_ptr, row_sizes_ptr, i);
+                read_row_at!(row, row_addresses, row_sizes, i);
 
                 if row.is_null_at(column_idx) {
                     list_builder.append_null();
@@ -787,7 +792,7 @@ fn append_list_column_batch(
         // For complex element types, fall back to per-row dispatch
         _ => {
             for i in row_start..row_end {
-                read_row_at!(row, row_addresses_ptr, row_sizes_ptr, i);
+                read_row_at!(row, row_addresses, row_sizes, i);
 
                 if row.is_null_at(column_idx) {
                     list_builder.append_null();
@@ -814,6 +819,10 @@ fn append_map_column_batch(
     field: &arrow::datatypes::FieldRef,
     map_builder: &mut MapBuilder<Box<dyn ArrayBuilder>, Box<dyn ArrayBuilder>>,
 ) -> Result<(), CometError> {
+    // SAFETY: JVM guarantees these pointers point to valid arrays of length >= row_end
+    let row_addresses = unsafe { std::slice::from_raw_parts(row_addresses_ptr, row_end) };
+    let row_sizes = unsafe { std::slice::from_raw_parts(row_sizes_ptr, row_end) };
+
     let mut row = SparkUnsafeRow::new(schema);
     let (key_field, value_field, _) = get_map_key_value_fields(field)?;
     let key_type = key_field.data_type();
@@ -824,7 +833,7 @@ fn append_map_column_batch(
     macro_rules! process_primitive_maps {
         ($key_builder:ty, $key_append:ident, $val_builder:ty, $val_append:ident) => {{
             for i in row_start..row_end {
-                read_row_at!(row, row_addresses_ptr, row_sizes_ptr, i);
+                read_row_at!(row, row_addresses, row_sizes, i);
 
                 if row.is_null_at(column_idx) {
                     map_builder.append(false)?;
@@ -895,7 +904,7 @@ fn append_map_column_batch(
         // For other types, fall back to per-row dispatch
         _ => {
             for i in row_start..row_end {
-                read_row_at!(row, row_addresses_ptr, row_sizes_ptr, i);
+                read_row_at!(row, row_addresses, row_sizes, i);
 
                 if row.is_null_at(column_idx) {
                     map_builder.append(false)?;
@@ -923,6 +932,10 @@ fn append_struct_fields_field_major(
     struct_builder: &mut StructBuilder,
     fields: &arrow::datatypes::Fields,
 ) -> Result<(), CometError> {
+    // SAFETY: JVM guarantees these pointers point to valid arrays of length >= row_end
+    let row_addresses = unsafe { std::slice::from_raw_parts(row_addresses_ptr, row_end) };
+    let row_sizes = unsafe { std::slice::from_raw_parts(row_sizes_ptr, row_end) };
+
     let num_rows = row_end - row_start;
     let num_fields = fields.len();
 
@@ -931,7 +944,7 @@ fn append_struct_fields_field_major(
     let mut struct_is_null = Vec::with_capacity(num_rows);
 
     for i in row_start..row_end {
-        read_row_at!(parent_row, row_addresses_ptr, row_sizes_ptr, i);
+        read_row_at!(parent_row, row_addresses, row_sizes, i);
 
         let is_null = parent_row.is_null_at(column_idx);
         struct_is_null.push(is_null);
@@ -953,7 +966,7 @@ fn append_struct_fields_field_major(
                     // Struct is null, field is also null
                     field_builder.append_null();
                 } else {
-                    read_row_at!(parent_row, row_addresses_ptr, row_sizes_ptr, i);
+                    read_row_at!(parent_row, row_addresses, row_sizes, i);
                     let nested_row = parent_row.get_struct(column_idx, num_fields);
 
                     if nested_row.is_null_at($field_idx) {
@@ -1015,7 +1028,7 @@ fn append_struct_fields_field_major(
                     if struct_is_null[row_idx] {
                         field_builder.append_null();
                     } else {
-                        read_row_at!(parent_row, row_addresses_ptr, row_sizes_ptr, i);
+                        read_row_at!(parent_row, row_addresses, row_sizes, i);
                         let nested_row = parent_row.get_struct(column_idx, num_fields);
 
                         if nested_row.is_null_at(field_idx) {
@@ -1033,7 +1046,7 @@ fn append_struct_fields_field_major(
                     if struct_is_null[row_idx] {
                         field_builder.append_null();
                     } else {
-                        read_row_at!(parent_row, row_addresses_ptr, row_sizes_ptr, i);
+                        read_row_at!(parent_row, row_addresses, row_sizes, i);
                         let nested_row = parent_row.get_struct(column_idx, num_fields);
 
                         if nested_row.is_null_at(field_idx) {
@@ -1053,7 +1066,7 @@ fn append_struct_fields_field_major(
                     if struct_is_null[row_idx] {
                         field_builder.append_null();
                     } else {
-                        read_row_at!(parent_row, row_addresses_ptr, row_sizes_ptr, i);
+                        read_row_at!(parent_row, row_addresses, row_sizes, i);
                         let nested_row = parent_row.get_struct(column_idx, num_fields);
 
                         if nested_row.is_null_at(field_idx) {
@@ -1081,7 +1094,7 @@ fn append_struct_fields_field_major(
                         nested_addresses.push(0);
                         nested_sizes.push(0);
                     } else {
-                        read_row_at!(parent_row, row_addresses_ptr, row_sizes_ptr, i);
+                        read_row_at!(parent_row, row_addresses, row_sizes, i);
                         let parent_struct = parent_row.get_struct(column_idx, num_fields);
 
                         if parent_struct.is_null_at(field_idx) {
@@ -1117,7 +1130,7 @@ fn append_struct_fields_field_major(
                         let null_row = SparkUnsafeRow::default();
                         append_field(dt, struct_builder, &null_row, field_idx)?;
                     } else {
-                        read_row_at!(parent_row, row_addresses_ptr, row_sizes_ptr, i);
+                        read_row_at!(parent_row, row_addresses, row_sizes, i);
                         let nested_row = parent_row.get_struct(column_idx, num_fields);
                         append_field(dt, struct_builder, &nested_row, field_idx)?;
                     }
@@ -1157,6 +1170,10 @@ pub(crate) fn append_columns(
     builder: &mut Box<dyn ArrayBuilder>,
     prefer_dictionary_ratio: f64,
 ) -> Result<(), CometError> {
+    // SAFETY: JVM guarantees these pointers point to valid arrays of length >= row_end
+    let row_addresses = unsafe { std::slice::from_raw_parts(row_addresses_ptr, row_end) };
+    let row_sizes = unsafe { std::slice::from_raw_parts(row_sizes_ptr, row_end) };
+
     /// A macro for generating code of appending values into Arrow array builders.
     macro_rules! append_column_to_builder {
         ($builder_type:ty, $accessor:expr) => {{
@@ -1167,7 +1184,7 @@ pub(crate) fn append_columns(
             let mut row = SparkUnsafeRow::new(schema);
 
             for i in row_start..row_end {
-                read_row_at!(row, row_addresses_ptr, row_sizes_ptr, i);
+                read_row_at!(row, row_addresses, row_sizes, i);
 
                 let is_null = row.is_null_at(column_idx);
 

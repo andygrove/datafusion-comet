@@ -46,33 +46,39 @@ macro_rules! impl_append_to_builder {
                 return;
             }
 
+            // SAFETY: element_offset points to contiguous JVM-allocated data of
+            // length num_elements, guaranteed by Spark UnsafeArray layout
+            let values = unsafe {
+                std::slice::from_raw_parts(
+                    self.element_offset as *const $element_type,
+                    num_elements,
+                )
+            };
+
             if NULLABLE {
-                let mut ptr = self.element_offset as *const $element_type;
-                let null_words = self.null_bitset_ptr();
+                let num_words = num_elements.div_ceil(64);
+                // SAFETY: null_bitset_ptr() returns pointer to Spark UnsafeArray null bitset
+                // containing ceil(num_elements/64) i64 words, guaranteed by Spark UnsafeArray layout
+                let null_bitset =
+                    unsafe { std::slice::from_raw_parts(self.null_bitset_ptr(), num_words) };
+
                 for idx in 0..num_elements {
                     let word_idx = idx >> 6;
                     let bit_idx = idx & 0x3f;
-                    // SAFETY: word_idx < ceil(num_elements/64) since idx < num_elements
-                    let is_null = unsafe { (*null_words.add(word_idx) & (1i64 << bit_idx)) != 0 };
+
+                    // SAFETY: word_idx = idx / 64 < num_words
+                    let is_null =
+                        unsafe { (null_bitset.get_unchecked(word_idx) & (1i64 << bit_idx)) != 0 };
 
                     if is_null {
                         builder.append_null();
                     } else {
-                        // SAFETY: ptr is within element data bounds
-                        builder.append_value(unsafe { *ptr });
+                        // SAFETY: idx < num_elements by loop bounds
+                        builder.append_value(unsafe { *values.get_unchecked(idx) });
                     }
-                    // SAFETY: ptr stays within bounds, iterating num_elements times
-                    ptr = unsafe { ptr.add(1) };
                 }
             } else {
-                // SAFETY: element_offset points to contiguous data of length num_elements
-                let slice = unsafe {
-                    std::slice::from_raw_parts(
-                        self.element_offset as *const $element_type,
-                        num_elements,
-                    )
-                };
-                builder.append_slice(slice);
+                builder.append_slice(values);
             }
         }
     };
@@ -167,30 +173,37 @@ impl SparkUnsafeArray {
             return;
         }
 
-        let mut ptr = self.element_offset as *const u8;
+        // SAFETY: element_offset points to contiguous JVM-allocated data of
+        // length num_elements, guaranteed by Spark UnsafeArray layout
+        let values =
+            unsafe { std::slice::from_raw_parts(self.element_offset as *const u8, num_elements) };
 
         if NULLABLE {
-            let null_words = self.null_bitset_ptr();
+            let num_words = num_elements.div_ceil(64);
+            // SAFETY: null_bitset_ptr() returns pointer to Spark UnsafeArray null bitset
+            // containing ceil(num_elements/64) i64 words, guaranteed by Spark UnsafeArray layout
+            let null_bitset =
+                unsafe { std::slice::from_raw_parts(self.null_bitset_ptr(), num_words) };
+
             for idx in 0..num_elements {
                 let word_idx = idx >> 6;
                 let bit_idx = idx & 0x3f;
-                // SAFETY: word_idx < ceil(num_elements/64) since idx < num_elements
-                let is_null = unsafe { (*null_words.add(word_idx) & (1i64 << bit_idx)) != 0 };
+
+                // SAFETY: word_idx = idx / 64 < num_words
+                let is_null =
+                    unsafe { (null_bitset.get_unchecked(word_idx) & (1i64 << bit_idx)) != 0 };
 
                 if is_null {
                     builder.append_null();
                 } else {
-                    // SAFETY: ptr is within element data bounds
-                    builder.append_value(unsafe { *ptr != 0 });
+                    // SAFETY: idx < num_elements by loop bounds
+                    builder.append_value(unsafe { *values.get_unchecked(idx) != 0 });
                 }
-                // SAFETY: ptr stays within bounds, iterating num_elements times
-                ptr = unsafe { ptr.add(1) };
             }
         } else {
-            for _ in 0..num_elements {
-                // SAFETY: ptr is within element data bounds
-                builder.append_value(unsafe { *ptr != 0 });
-                ptr = unsafe { ptr.add(1) };
+            for idx in 0..num_elements {
+                // SAFETY: idx < num_elements by loop bounds
+                builder.append_value(unsafe { *values.get_unchecked(idx) != 0 });
             }
         }
     }
@@ -205,30 +218,35 @@ impl SparkUnsafeArray {
             return;
         }
 
+        // SAFETY: element_offset points to contiguous JVM-allocated data of
+        // length num_elements, guaranteed by Spark UnsafeArray layout
+        let values =
+            unsafe { std::slice::from_raw_parts(self.element_offset as *const i64, num_elements) };
+
         if NULLABLE {
-            let mut ptr = self.element_offset as *const i64;
-            let null_words = self.null_bitset_ptr();
+            let num_words = num_elements.div_ceil(64);
+            // SAFETY: null_bitset_ptr() returns pointer to Spark UnsafeArray null bitset
+            // containing ceil(num_elements/64) i64 words, guaranteed by Spark UnsafeArray layout
+            let null_bitset =
+                unsafe { std::slice::from_raw_parts(self.null_bitset_ptr(), num_words) };
+
             for idx in 0..num_elements {
                 let word_idx = idx >> 6;
                 let bit_idx = idx & 0x3f;
-                // SAFETY: word_idx < ceil(num_elements/64) since idx < num_elements
-                let is_null = unsafe { (*null_words.add(word_idx) & (1i64 << bit_idx)) != 0 };
+
+                // SAFETY: word_idx = idx / 64 < num_words
+                let is_null =
+                    unsafe { (null_bitset.get_unchecked(word_idx) & (1i64 << bit_idx)) != 0 };
 
                 if is_null {
                     builder.append_null();
                 } else {
-                    // SAFETY: ptr is within element data bounds
-                    builder.append_value(unsafe { *ptr });
+                    // SAFETY: idx < num_elements by loop bounds
+                    builder.append_value(unsafe { *values.get_unchecked(idx) });
                 }
-                // SAFETY: ptr stays within bounds, iterating num_elements times
-                ptr = unsafe { ptr.add(1) };
             }
         } else {
-            // SAFETY: element_offset points to contiguous i64 data of length num_elements
-            let slice = unsafe {
-                std::slice::from_raw_parts(self.element_offset as *const i64, num_elements)
-            };
-            builder.append_slice(slice);
+            builder.append_slice(values);
         }
     }
 
@@ -242,30 +260,35 @@ impl SparkUnsafeArray {
             return;
         }
 
+        // SAFETY: element_offset points to contiguous JVM-allocated data of
+        // length num_elements, guaranteed by Spark UnsafeArray layout
+        let values =
+            unsafe { std::slice::from_raw_parts(self.element_offset as *const i32, num_elements) };
+
         if NULLABLE {
-            let mut ptr = self.element_offset as *const i32;
-            let null_words = self.null_bitset_ptr();
+            let num_words = num_elements.div_ceil(64);
+            // SAFETY: null_bitset_ptr() returns pointer to Spark UnsafeArray null bitset
+            // containing ceil(num_elements/64) i64 words, guaranteed by Spark UnsafeArray layout
+            let null_bitset =
+                unsafe { std::slice::from_raw_parts(self.null_bitset_ptr(), num_words) };
+
             for idx in 0..num_elements {
                 let word_idx = idx >> 6;
                 let bit_idx = idx & 0x3f;
-                // SAFETY: word_idx < ceil(num_elements/64) since idx < num_elements
-                let is_null = unsafe { (*null_words.add(word_idx) & (1i64 << bit_idx)) != 0 };
+
+                // SAFETY: word_idx = idx / 64 < num_words
+                let is_null =
+                    unsafe { (null_bitset.get_unchecked(word_idx) & (1i64 << bit_idx)) != 0 };
 
                 if is_null {
                     builder.append_null();
                 } else {
-                    // SAFETY: ptr is within element data bounds
-                    builder.append_value(unsafe { *ptr });
+                    // SAFETY: idx < num_elements by loop bounds
+                    builder.append_value(unsafe { *values.get_unchecked(idx) });
                 }
-                // SAFETY: ptr stays within bounds, iterating num_elements times
-                ptr = unsafe { ptr.add(1) };
             }
         } else {
-            // SAFETY: element_offset points to contiguous i32 data of length num_elements
-            let slice = unsafe {
-                std::slice::from_raw_parts(self.element_offset as *const i32, num_elements)
-            };
-            builder.append_slice(slice);
+            builder.append_slice(values);
         }
     }
 }
