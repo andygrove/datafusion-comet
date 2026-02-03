@@ -31,6 +31,7 @@ Native Shuffle <native_shuffle>
 Parquet Scans <parquet_scans>
 Development Guide <development>
 Debugging Guide <debugging>
+Code Coverage <code_coverage>
 Benchmarking Guide <benchmarking>
 Adding a New Operator <adding_a_new_operator>
 Adding a New Expression <adding_a_new_expression>
