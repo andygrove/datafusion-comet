@@ -60,15 +60,6 @@ JaCoCo generates reports in multiple formats:
 | XML | `target/site/jacoco/jacoco.xml` | CI/CD tool integration |
 | CSV | `target/site/jacoco/jacoco.csv` | Spreadsheet analysis |
 
-## Running Tests for a Specific Module
-
-To generate coverage for a specific module only:
-
-```shell
-./mvnw -pl common clean verify
-./mvnw -pl spark clean verify
-```
-
 ## Coverage for Specific Test Suites
 
 To run a subset of tests and generate coverage:
