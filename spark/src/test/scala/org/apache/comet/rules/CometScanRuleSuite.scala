@@ -142,6 +142,35 @@ class CometScanRuleSuite extends CometTestBase {
     }
   }
 
+  test("native_datafusion should fallback to Spark when input_file_name() is used") {
+    withTempPath { path =>
+      createTestDataFrame.write.parquet(path.toString)
+      withTempView("test_data") {
+        spark.read.parquet(path.toString).createOrReplaceTempView("test_data")
+
+        // Plan with input_file_name() should fallback to Spark
+        val sparkPlanWithInputFile =
+          createSparkPlan(spark, "SELECT id, input_file_name() FROM test_data")
+
+        withSQLConf(CometConf.COMET_NATIVE_SCAN_IMPL.key -> CometConf.SCAN_NATIVE_DATAFUSION) {
+          val transformedPlan = applyCometScanRule(sparkPlanWithInputFile)
+          assert(countOperators(transformedPlan, classOf[FileSourceScanExec]) == 1)
+          assert(countOperators(transformedPlan, classOf[CometScanExec]) == 0)
+        }
+
+        // Plan without input_file_name() should use CometScanExec
+        val sparkPlanWithoutInputFile =
+          createSparkPlan(spark, "SELECT id, name FROM test_data")
+
+        withSQLConf(CometConf.COMET_NATIVE_SCAN_IMPL.key -> CometConf.SCAN_NATIVE_DATAFUSION) {
+          val transformedPlan = applyCometScanRule(sparkPlanWithoutInputFile)
+          assert(countOperators(transformedPlan, classOf[FileSourceScanExec]) == 0)
+          assert(countOperators(transformedPlan, classOf[CometScanExec]) == 1)
+        }
+      }
+    }
+  }
+
   test("CometScanRule should fallback to Spark for ShortType when safety check enabled") {
     withTempPath { path =>
       // Create test data with ShortType which may be from unsigned UINT_8

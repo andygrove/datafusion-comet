@@ -28,7 +28,7 @@ import scala.jdk.CollectionConverters._
 import org.apache.hadoop.conf.Configuration
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, GenericInternalRow, PlanExpression}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, GenericInternalRow, InputFileBlockLength, InputFileBlockStart, InputFileName, PlanExpression}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.util.{sideBySide, ArrayBasedMapData, GenericArrayData, MetadataColumnHelper}
 import org.apache.spark.sql.catalyst.util.ResolveDefaultColumns.getExistenceDefaultValues
@@ -109,6 +109,14 @@ case class CometScanRule(session: SparkSession) extends Rule[SparkPlan] with Com
       metadataTableSuffix.exists(suffix => scanExec.table.name().endsWith(suffix))
     }
 
+    // Check if any node in the plan references InputFileName, InputFileBlockStart,
+    // or InputFileBlockLength expressions. These read from a thread-local that is set
+    // by Spark's scan operator, and native_datafusion scan does not populate it.
+    val hasInputFileExprs = plan.exists(_.expressions.exists(_.exists {
+      case _: InputFileName | _: InputFileBlockStart | _: InputFileBlockLength => true
+      case _ => false
+    }))
+
     def transformScan(plan: SparkPlan): SparkPlan = plan match {
       case scan if !CometConf.COMET_NATIVE_SCAN_ENABLED.get(conf) =>
         withInfo(scan, "Comet Scan is not enabled")
@@ -118,7 +126,7 @@ case class CometScanRule(session: SparkSession) extends Rule[SparkPlan] with Com
 
       // data source V1
       case scanExec: FileSourceScanExec =>
-        transformV1Scan(scanExec)
+        transformV1Scan(scanExec, hasInputFileExprs)
 
       // data source V2
       case scanExec: BatchScanExec =>
@@ -134,7 +142,9 @@ case class CometScanRule(session: SparkSession) extends Rule[SparkPlan] with Com
     }
   }
 
-  private def transformV1Scan(scanExec: FileSourceScanExec): SparkPlan = {
+  private def transformV1Scan(
+      scanExec: FileSourceScanExec,
+      hasInputFileExprs: Boolean): SparkPlan = {
 
     if (COMET_DPP_FALLBACK_ENABLED.get() &&
       scanExec.partitionFilters.exists(isDynamicPruningFilter)) {
@@ -169,7 +179,8 @@ case class CometScanRule(session: SparkSession) extends Rule[SparkPlan] with Com
             nativeIcebergCompatScan(session, scanExec, r, hadoopConf)
               .getOrElse(scanExec)
           case SCAN_NATIVE_DATAFUSION =>
-            nativeDataFusionScan(session, scanExec, r, hadoopConf).getOrElse(scanExec)
+            nativeDataFusionScan(session, scanExec, r, hadoopConf, hasInputFileExprs)
+              .getOrElse(scanExec)
           case SCAN_NATIVE_ICEBERG_COMPAT =>
             nativeIcebergCompatScan(session, scanExec, r, hadoopConf).getOrElse(scanExec)
           case SCAN_NATIVE_COMET =>
@@ -185,12 +196,20 @@ case class CometScanRule(session: SparkSession) extends Rule[SparkPlan] with Com
       session: SparkSession,
       scanExec: FileSourceScanExec,
       r: HadoopFsRelation,
-      hadoopConf: Configuration): Option[SparkPlan] = {
+      hadoopConf: Configuration,
+      hasInputFileExprs: Boolean): Option[SparkPlan] = {
     if (!CometNativeScan.isSupported(scanExec)) {
       return None
     }
     if (encryptionEnabled(hadoopConf) && !isEncryptionConfigSupported(hadoopConf)) {
       withInfo(scanExec, s"$SCAN_NATIVE_DATAFUSION does not support encryption")
+      return None
+    }
+    if (hasInputFileExprs) {
+      withInfo(
+        scanExec,
+        "Native DataFusion scan does not support " +
+          "input_file_name(), input_file_block_start(), or input_file_block_length()")
       return None
     }
     if (!isSchemaSupported(scanExec, SCAN_NATIVE_DATAFUSION, r)) {
