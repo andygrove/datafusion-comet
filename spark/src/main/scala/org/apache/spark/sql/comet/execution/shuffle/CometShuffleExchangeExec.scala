@@ -627,6 +627,7 @@ object CometShuffleExchangeExec
       shuffleWriterProcessor = ShuffleExchangeExec.createShuffleWriteProcessor(metrics),
       shuffleType = CometNativeShuffle,
       partitioner = partitioner,
+      schema = Some(fromAttributes(outputAttributes)),
       decodeTime = metrics("decode_time"),
       outputPartitioning = Some(outputPartitioning),
       outputAttributes = outputAttributes,
