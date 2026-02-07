@@ -18,20 +18,20 @@
 use crate::execution::shuffle::ShuffleBlockWriter;
 use arrow::array::RecordBatch;
 use datafusion::physical_plan::metrics::Time;
-use std::borrow::Borrow;
+use std::borrow::BorrowMut;
 use std::io::{Cursor, Seek, SeekFrom, Write};
 
 /// Write batches to writer while using a buffer to avoid frequent system calls.
 /// The record batches were first written by ShuffleBlockWriter into an internal buffer.
 /// Once the buffer exceeds the max size, the buffer will be flushed to the writer.
-pub(crate) struct BufBatchWriter<S: Borrow<ShuffleBlockWriter>, W: Write> {
+pub(crate) struct BufBatchWriter<S: BorrowMut<ShuffleBlockWriter>, W: Write> {
     shuffle_block_writer: S,
     writer: W,
     buffer: Vec<u8>,
     buffer_max_size: usize,
 }
 
-impl<S: Borrow<ShuffleBlockWriter>, W: Write> BufBatchWriter<S, W> {
+impl<S: BorrowMut<ShuffleBlockWriter>, W: Write> BufBatchWriter<S, W> {
     pub(crate) fn new(shuffle_block_writer: S, writer: W, buffer_max_size: usize) -> Self {
         Self {
             shuffle_block_writer,
@@ -51,7 +51,7 @@ impl<S: Borrow<ShuffleBlockWriter>, W: Write> BufBatchWriter<S, W> {
         cursor.seek(SeekFrom::End(0))?;
         let bytes_written =
             self.shuffle_block_writer
-                .borrow()
+                .borrow_mut()
                 .write_batch(batch, &mut cursor, encode_time)?;
         let pos = cursor.position();
         if pos >= self.buffer_max_size as u64 {
@@ -75,7 +75,7 @@ impl<S: Borrow<ShuffleBlockWriter>, W: Write> BufBatchWriter<S, W> {
     }
 }
 
-impl<S: Borrow<ShuffleBlockWriter>, W: Write + Seek> BufBatchWriter<S, W> {
+impl<S: BorrowMut<ShuffleBlockWriter>, W: Write + Seek> BufBatchWriter<S, W> {
     pub(crate) fn writer_stream_position(&mut self) -> datafusion::common::Result<u64> {
         self.writer.stream_position().map_err(Into::into)
     }

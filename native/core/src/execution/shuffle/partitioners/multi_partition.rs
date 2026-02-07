@@ -169,7 +169,10 @@ impl MultiPartitionShuffleRepartitioner {
         let shuffle_block_writer = ShuffleBlockWriter::try_new(schema.as_ref(), codec.clone())?;
 
         let partition_writers = (0..num_output_partitions)
-            .map(|_| PartitionWriter::try_new(shuffle_block_writer.clone()))
+            .map(|_| {
+                let writer = ShuffleBlockWriter::try_new(schema.as_ref(), codec.clone())?;
+                PartitionWriter::try_new(writer)
+            })
             .collect::<datafusion::common::Result<Vec<_>>>()?;
 
         let reservation = MemoryConsumer::new(format!("ShuffleRepartitioner[{partition}]"))

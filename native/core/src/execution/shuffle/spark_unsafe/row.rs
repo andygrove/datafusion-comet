@@ -796,6 +796,12 @@ pub fn process_sorted_row_partition(
     // Reusable buffer for serialized batch data
     let mut frozen: Vec<u8> = Vec::new();
 
+    // we do not collect metrics in Native_writeSortedFileNative
+    let ipc_time = Time::default();
+
+    // Create block writer once outside the loop so the Zstd compressor is reused across batches
+    let mut block_writer: Option<ShuffleBlockWriter> = None;
+
     while current_row < row_num {
         let n = std::cmp::min(batch_size, row_num - current_row);
 
@@ -827,10 +833,18 @@ pub fn process_sorted_row_partition(
         frozen.clear();
         let mut cursor = Cursor::new(&mut frozen);
 
-        // we do not collect metrics in Native_writeSortedFileNative
-        let ipc_time = Time::default();
-        let block_writer = ShuffleBlockWriter::try_new(batch.schema().as_ref(), codec.clone())?;
-        written += block_writer.write_batch(&batch, &mut cursor, &ipc_time)?;
+        // Lazily create the block writer on first batch (needs the schema)
+        let writer = match &mut block_writer {
+            Some(w) => w,
+            None => {
+                block_writer = Some(ShuffleBlockWriter::try_new(
+                    batch.schema().as_ref(),
+                    codec.clone(),
+                )?);
+                block_writer.as_mut().unwrap()
+            }
+        };
+        written += writer.write_batch(&batch, &mut cursor, &ipc_time)?;
 
         if let Some(checksum) = &mut current_checksum {
             checksum.update(&mut cursor)?;

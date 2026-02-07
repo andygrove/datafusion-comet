@@ -36,10 +36,13 @@ pub enum CompressionCodec {
     Snappy,
 }
 
-#[derive(Clone)]
 pub struct ShuffleBlockWriter {
     codec: CompressionCodec,
     header_bytes: Vec<u8>,
+    /// Reusable buffer for IPC serialization before compression
+    ipc_buffer: Vec<u8>,
+    /// Reusable Zstd compressor (only populated when codec is Zstd)
+    zstd_compressor: Option<zstd::bulk::Compressor<'static>>,
 }
 
 impl ShuffleBlockWriter {
@@ -65,16 +68,23 @@ impl ShuffleBlockWriter {
 
         let header_bytes = cursor.into_inner();
 
+        let zstd_compressor = match &codec {
+            CompressionCodec::Zstd(level) => Some(zstd::bulk::Compressor::new(*level)?),
+            _ => None,
+        };
+
         Ok(Self {
             codec,
             header_bytes,
+            ipc_buffer: Vec::new(),
+            zstd_compressor,
         })
     }
 
     /// Writes given record batch as Arrow IPC bytes into given writer.
     /// Returns number of bytes written.
     pub fn write_batch<W: Write + Seek>(
-        &self,
+        &mut self,
         batch: &RecordBatch,
         output: &mut W,
         ipc_time: &Time,
@@ -89,40 +99,46 @@ impl ShuffleBlockWriter {
         // write header
         output.write_all(&self.header_bytes)?;
 
-        let output = match &self.codec {
+        match &self.codec {
             CompressionCodec::None => {
-                let mut arrow_writer = StreamWriter::try_new(output, &batch.schema())?;
+                let mut arrow_writer = StreamWriter::try_new(&mut *output, &batch.schema())?;
                 arrow_writer.write(batch)?;
                 arrow_writer.finish()?;
-                arrow_writer.into_inner()?
             }
             CompressionCodec::Lz4Frame => {
-                let mut wtr = lz4_flex::frame::FrameEncoder::new(output);
+                let mut wtr = lz4_flex::frame::FrameEncoder::new(&mut *output);
                 let mut arrow_writer = StreamWriter::try_new(&mut wtr, &batch.schema())?;
                 arrow_writer.write(batch)?;
                 arrow_writer.finish()?;
                 wtr.finish().map_err(|e| {
                     DataFusionError::Execution(format!("lz4 compression error: {e}"))
-                })?
+                })?;
             }
-
-            CompressionCodec::Zstd(level) => {
-                let encoder = zstd::Encoder::new(output, *level)?;
-                let mut arrow_writer = StreamWriter::try_new(encoder, &batch.schema())?;
+            CompressionCodec::Zstd(_) => {
+                // Two-phase write: serialize IPC to buffer, then compress with reusable compressor
+                self.ipc_buffer.clear();
+                let mut arrow_writer =
+                    StreamWriter::try_new(&mut self.ipc_buffer, &batch.schema())?;
                 arrow_writer.write(batch)?;
                 arrow_writer.finish()?;
-                let zstd_encoder = arrow_writer.into_inner()?;
-                zstd_encoder.finish()?
+                let compressed = self
+                    .zstd_compressor
+                    .as_mut()
+                    .expect("zstd compressor should be initialized for Zstd codec")
+                    .compress(&self.ipc_buffer)
+                    .map_err(|e| {
+                        DataFusionError::Execution(format!("zstd compression error: {e}"))
+                    })?;
+                output.write_all(&compressed)?;
             }
-
             CompressionCodec::Snappy => {
-                let mut wtr = snap::write::FrameEncoder::new(output);
+                let mut wtr = snap::write::FrameEncoder::new(&mut *output);
                 let mut arrow_writer = StreamWriter::try_new(&mut wtr, &batch.schema())?;
                 arrow_writer.write(batch)?;
                 arrow_writer.finish()?;
                 wtr.into_inner().map_err(|e| {
                     DataFusionError::Execution(format!("snappy compression error: {e}"))
-                })?
+                })?;
             }
         };
 
