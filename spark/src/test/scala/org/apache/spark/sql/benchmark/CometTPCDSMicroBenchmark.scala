@@ -120,6 +120,13 @@ object CometTPCDSMicroBenchmark extends CometTPCQueryBenchmarkBase {
           cometSpark.sql(queryString).noop()
         }
       }
+      if (glutenEnabled) {
+        benchmark.addCase(s"$name$nameSuffix: Gluten") { _ =>
+          withSQLConf(CometConf.COMET_ENABLED.key -> "false", GLUTEN_ENABLED_KEY -> "true") {
+            cometSpark.sql(queryString).noop()
+          }
+        }
+      }
       benchmark.run()
     }
   }

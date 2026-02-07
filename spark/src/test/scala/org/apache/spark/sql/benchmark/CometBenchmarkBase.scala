@@ -45,6 +45,11 @@ trait CometBenchmarkBase
     extends SqlBasedBenchmark
     with AdaptiveSparkPlanHelper
     with CometPlanChecker {
+
+  protected lazy val glutenEnabled: Boolean = sys.env.contains("GLUTEN_JAR")
+  private final val GLUTEN_PLUGIN = "org.apache.gluten.GlutenPlugin"
+  private final val GLUTEN_ENABLED_KEY = "spark.gluten.enabled"
+
   override def getSparkSession: SparkSession = {
     val conf = new SparkConf()
       .setAppName("CometReadBenchmark")
@@ -52,6 +57,13 @@ trait CometBenchmarkBase
       .set("spark.master", "local[1]")
       .setIfMissing("spark.driver.memory", "3g")
       .setIfMissing("spark.executor.memory", "3g")
+
+    if (glutenEnabled) {
+      conf
+        .set("spark.plugins", GLUTEN_PLUGIN)
+        .set("spark.memory.offHeap.enabled", "true")
+        .set("spark.memory.offHeap.size", "2g")
+    }
 
     val sparkSession = SparkSession.builder
       .config(conf)
@@ -63,6 +75,9 @@ trait CometBenchmarkBase
     sparkSession.conf.set(SQLConf.WHOLESTAGE_CODEGEN_ENABLED.key, "true")
     sparkSession.conf.set(CometConf.COMET_ENABLED.key, "false")
     sparkSession.conf.set(CometConf.COMET_EXEC_ENABLED.key, "false")
+    if (glutenEnabled) {
+      sparkSession.conf.set(GLUTEN_ENABLED_KEY, "false")
+    }
 
     sparkSession
   }
@@ -162,6 +177,14 @@ trait CometBenchmarkBase
       }
     }
 
+    if (glutenEnabled) {
+      benchmark.addCase("Gluten") { _ =>
+        withSQLConf(CometConf.COMET_ENABLED.key -> "false", GLUTEN_ENABLED_KEY -> "true") {
+          spark.sql(query).noop()
+        }
+      }
+    }
+
     benchmark.run()
   }
 
@@ -185,6 +208,17 @@ trait CometBenchmarkBase
             CometConf.COMET_ENABLED.key -> "true",
             CometConf.COMET_EXEC_ENABLED.key -> "true",
             CometConf.COMET_NATIVE_SCAN_IMPL.key -> scanImpl)).toSeq: _*) {
+          spark.sql(query).noop()
+        }
+      }
+    }
+
+    if (glutenEnabled) {
+      benchmark.addCase(s"SQL Parquet - Gluten$suffix") { _ =>
+        withSQLConf(
+          (extraConf ++ Map(
+            CometConf.COMET_ENABLED.key -> "false",
+            GLUTEN_ENABLED_KEY -> "true")).toSeq: _*) {
           spark.sql(query).noop()
         }
       }

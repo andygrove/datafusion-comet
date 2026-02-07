@@ -35,6 +35,11 @@ import org.apache.comet.{CometConf, CometSparkSessionExtensions}
  * Base trait for TPC related query execution
  */
 trait CometTPCQueryBase extends Logging {
+
+  protected lazy val glutenEnabled: Boolean = sys.env.contains("GLUTEN_JAR")
+  private final val GLUTEN_PLUGIN = "org.apache.gluten.GlutenPlugin"
+  protected final val GLUTEN_ENABLED_KEY = "spark.gluten.enabled"
+
   protected val cometSpark: SparkSession = {
     val conf = new SparkConf()
       .setMaster(System.getProperty("spark.sql.test.master", "local[*]"))
@@ -52,6 +57,13 @@ trait CometTPCQueryBase extends Logging {
         "spark.shuffle.manager",
         "org.apache.spark.sql.comet.execution.shuffle.CometShuffleManager")
 
+    if (glutenEnabled) {
+      conf
+        .set("spark.plugins", GLUTEN_PLUGIN)
+        .set("spark.memory.offHeap.enabled", "true")
+        .set("spark.memory.offHeap.size", "2g")
+    }
+
     val sparkSession = SparkSession.builder
       .config(conf)
       .withExtensions(new CometSparkSessionExtensions)
@@ -62,6 +74,9 @@ trait CometTPCQueryBase extends Logging {
     sparkSession.conf.set(SQLConf.WHOLESTAGE_CODEGEN_ENABLED.key, "true")
     sparkSession.conf.set(CometConf.COMET_ENABLED.key, "false")
     sparkSession.conf.set(CometConf.COMET_EXEC_ENABLED.key, "false")
+    if (glutenEnabled) {
+      sparkSession.conf.set(GLUTEN_ENABLED_KEY, "false")
+    }
 
     sparkSession
   }

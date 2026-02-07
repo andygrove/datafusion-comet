@@ -72,6 +72,13 @@ trait CometTPCQueryBenchmarkBase extends SqlBasedBenchmark with CometTPCQueryBas
           cometSpark.sql(queryString).noop()
         }
       }
+      if (glutenEnabled) {
+        benchmark.addCase(s"$name$nameSuffix: Gluten") { _ =>
+          withSQLConf(CometConf.COMET_ENABLED.key -> "false", GLUTEN_ENABLED_KEY -> "true") {
+            cometSpark.sql(queryString).noop()
+          }
+        }
+      }
       benchmark.run()
     }
   }
