@@ -35,9 +35,11 @@ import org.apache.spark.storage.BlockManagerId
 import org.apache.spark.storage.ShuffleBlockFetcherIterator
 import org.apache.spark.util.CompletionIterator
 
+import org.apache.comet.serde.QueryPlanSerde
+
 /**
- * Shuffle reader that reads data from the block manager. It reads Arrow-serialized data (IPC
- * format) and returns an iterator of ColumnarBatch.
+ * Shuffle reader that reads data from the block manager. It reads CSB1-encoded data and returns
+ * an iterator of ColumnarBatch.
  */
 class CometBlockStoreShuffleReader[K, C](
     handle: BaseShuffleHandle[K, _, C],
@@ -52,6 +54,21 @@ class CometBlockStoreShuffleReader[K, C](
     with Logging {
 
   private val dep = handle.dependency.asInstanceOf[CometShuffleDependency[_, _, _]]
+
+  // Serialize the schema once for reuse across all native decode calls
+  private val serializedDatatypes: Array[Array[Byte]] = dep.schema match {
+    case Some(schema) =>
+      schema.fields.map { field =>
+        QueryPlanSerde.serializeDataType(field.dataType) match {
+          case Some(dataType) => dataType.toByteArray
+          case None =>
+            throw new UnsupportedOperationException(
+              s"Data type ${field.dataType} is not supported for CSB1 shuffle decoding")
+        }
+      }
+    case None =>
+      throw new IllegalStateException("Schema is required for CSB1 shuffle block decoding")
+  }
 
   private def fetchIterator: Iterator[(BlockId, InputStream)] = {
     new ShuffleBlockFetcherIterator(
@@ -102,8 +119,11 @@ class CometBlockStoreShuffleReader[K, C](
         if (currentReadIterator != null) {
           currentReadIterator.close()
         }
-        currentReadIterator =
-          NativeBatchDecoderIterator(blockIdAndStream._2, context, dep.decodeTime)
+        currentReadIterator = NativeBatchDecoderIterator(
+          blockIdAndStream._2,
+          context,
+          dep.decodeTime,
+          serializedDatatypes)
         currentReadIterator
       })
       .map(b => (0, b))

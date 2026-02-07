@@ -76,7 +76,7 @@ use crate::execution::memory_pools::{
     create_memory_pool, handle_task_shared_pool_release, parse_memory_pool_config, MemoryPoolConfig,
 };
 use crate::execution::operators::ScanExec;
-use crate::execution::shuffle::{read_ipc_compressed, CompressionCodec};
+use crate::execution::shuffle::{read_csb1, CompressionCodec};
 use crate::execution::spark_plan::SparkPlan;
 
 use crate::execution::tracing::{log_memory_usage, trace_begin, trace_end, with_trace};
@@ -774,14 +774,23 @@ pub unsafe extern "system" fn Java_org_apache_comet_Native_decodeShuffleBlock(
     length: jint,
     array_addrs: JLongArray,
     schema_addrs: JLongArray,
+    serialized_datatypes: JObjectArray,
     tracing_enabled: jboolean,
 ) -> jlong {
     try_unwrap_or_throw(&e, |mut env| {
         with_trace("decodeShuffleBlock", tracing_enabled != JNI_FALSE, || {
+            let data_types = convert_datatype_arrays(&mut env, serialized_datatypes)?;
+            let fields: Vec<arrow::datatypes::Field> = data_types
+                .into_iter()
+                .enumerate()
+                .map(|(i, dt)| arrow::datatypes::Field::new(format!("c{i}"), dt, true))
+                .collect();
+            let schema = arrow::datatypes::Schema::new(fields);
+
             let raw_pointer = env.get_direct_buffer_address(&byte_buffer)?;
             let length = length as usize;
             let slice: &[u8] = unsafe { std::slice::from_raw_parts(raw_pointer, length) };
-            let batch = read_ipc_compressed(slice)?;
+            let batch = read_csb1(slice, &schema)?;
             prepare_output(&mut env, array_addrs, schema_addrs, batch, false)
         })
     })

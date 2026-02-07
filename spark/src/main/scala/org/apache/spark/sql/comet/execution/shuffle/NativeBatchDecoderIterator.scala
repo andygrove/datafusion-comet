@@ -38,7 +38,8 @@ import org.apache.comet.vector.NativeUtil
 case class NativeBatchDecoderIterator(
     in: InputStream,
     taskContext: TaskContext,
-    decodeTime: SQLMetric)
+    decodeTime: SQLMetric,
+    serializedDatatypes: Array[Array[Byte]])
     extends Iterator[ColumnarBatch] {
 
   private var isClosed = false
@@ -168,6 +169,7 @@ case class NativeBatchDecoderIterator(
           bytesToRead.toInt,
           arrayAddrs,
           schemaAddrs,
+          serializedDatatypes,
           tracingEnabled)
       })
     decodeTime.add(System.nanoTime() - startTime)

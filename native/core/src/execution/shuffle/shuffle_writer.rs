@@ -265,7 +265,7 @@ async fn external_shuffle(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::execution::shuffle::{read_ipc_compressed, ShuffleBlockWriter};
+    use crate::execution::shuffle::{read_csb1, ShuffleBlockWriter};
     use arrow::array::{Array, StringArray, StringBuilder};
     use arrow::datatypes::{DataType, Field, Schema};
     use arrow::record_batch::RecordBatch;
@@ -285,8 +285,9 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)] // miri can't call foreign function `ZSTD_createCCtx`
-    fn roundtrip_ipc() {
+    fn roundtrip_csb1() {
         let batch = create_batch(8192);
+        let schema = batch.schema();
         for codec in &[
             CompressionCodec::None,
             CompressionCodec::Zstd(1),
@@ -295,15 +296,15 @@ mod test {
         ] {
             let mut output = vec![];
             let mut cursor = Cursor::new(&mut output);
-            let writer =
-                ShuffleBlockWriter::try_new(batch.schema().as_ref(), codec.clone()).unwrap();
+            let writer = ShuffleBlockWriter::try_new(schema.as_ref(), codec.clone()).unwrap();
             let length = writer
                 .write_batch(&batch, &mut cursor, &Time::default())
                 .unwrap();
             assert_eq!(length, output.len());
 
-            let ipc_without_length_prefix = &output[16..];
-            let batch2 = read_ipc_compressed(ipc_without_length_prefix).unwrap();
+            // Skip 8-byte block_size and 8-byte field_count to get to codec+payload
+            let csb1_without_length_prefix = &output[16..];
+            let batch2 = read_csb1(csb1_without_length_prefix, schema.as_ref()).unwrap();
             assert_eq!(batch, batch2);
         }
     }

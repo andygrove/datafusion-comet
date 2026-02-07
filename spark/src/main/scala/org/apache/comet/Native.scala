@@ -162,21 +162,26 @@ class Native extends NativeBase {
   @native def sortRowPartitionsNative(addr: Long, size: Long, tracingEnabled: Boolean): Unit
 
   /**
-   * Decompress and decode a native shuffle block.
+   * Decompress and decode a native shuffle block in CSB1 format.
    * @param shuffleBlock
-   *   the encoded anc compressed shuffle block.
+   *   the encoded and compressed shuffle block.
    * @param length
    *   the limit of the byte buffer.
-   * @param addr
-   *   the address of the array of compressed and encoded bytes.
-   * @param size
-   *   the size of the array.
+   * @param arrayAddrs
+   *   the addresses of Arrow Array structures for output.
+   * @param schemaAddrs
+   *   the addresses of Arrow Schema structures for output.
+   * @param serializedDatatypes
+   *   the serialized data types for each column, used to reconstruct the Arrow schema.
+   * @param tracingEnabled
+   *   whether tracing is enabled.
    */
   @native def decodeShuffleBlock(
       shuffleBlock: ByteBuffer,
       length: Int,
       arrayAddrs: Array[Long],
       schemaAddrs: Array[Long],
+      serializedDatatypes: Array[Array[Byte]],
       tracingEnabled: Boolean): Long
 
   /**

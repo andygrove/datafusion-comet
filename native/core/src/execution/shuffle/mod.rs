@@ -23,6 +23,6 @@ mod shuffle_writer;
 pub mod spark_unsafe;
 mod writers;
 
-pub use codec::{read_ipc_compressed, CompressionCodec, ShuffleBlockWriter};
+pub use codec::{read_csb1, CompressionCodec, ShuffleBlockWriter};
 pub use comet_partitioning::CometPartitioning;
 pub use shuffle_writer::ShuffleWriterExec;
