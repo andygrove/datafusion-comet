@@ -2072,7 +2072,12 @@ case class CometSortMergeJoinExec(
 }
 
 object CometScanWrapper extends CometSink[SparkPlan] {
-  override def isFfiSafe: Boolean = true
+  override def isFfiSafe(op: SparkPlan): Boolean = op match {
+    // CometScanExec (native_iceberg_compat) uses immutable Arrow readers
+    case _: CometScanExec => true
+    // CometBatchScanExec (Iceberg Java integration) still uses mutable buffers
+    case _ => false
+  }
 
   override def createExec(nativeOp: Operator, op: SparkPlan): CometNativeExec = {
     CometScanWrapper(nativeOp, op)
