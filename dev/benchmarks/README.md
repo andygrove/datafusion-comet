@@ -149,3 +149,159 @@ python3 generate-comparison.py --benchmark tpch \
     --title "TPC-H @ 100 GB: Parquet vs Iceberg" \
     comet-tpch-*.json comet-iceberg-tpch-*.json
 ```
+
+## Docker Benchmarking
+
+A `Dockerfile` is provided for running benchmarks in a container with controllable CPU and memory
+constraints. This is useful for reproducible benchmarking without dedicated hardware.
+
+### Prerequisites
+
+Before building the Docker image, you need the following on the host:
+
+- TPC-H or TPC-DS data in Parquet format (generate with [tpchgen-cli])
+- TPC-H or TPC-DS SQL query files
+- A pre-built Comet JAR (e.g. from `make release`)
+
+[tpchgen-cli]: https://github.com/clarkzjw/tpchgen-rs
+
+### Build the image
+
+```shell
+cd dev/benchmarks
+docker build -t comet-bench .
+```
+
+### Volume mounts
+
+The container expects data to be mounted at these paths:
+
+| Mount Point  | Description                                        |
+| ------------ | -------------------------------------------------- |
+| `/data`      | TPC-H or TPC-DS data directory (Parquet files)     |
+| `/queries`   | SQL query files (`q1.sql` through `q22.sql`, etc.) |
+| `/jars`      | Directory containing the Comet JAR                 |
+| `/results`   | Output directory for benchmark result JSON files   |
+
+### Run TPC-H benchmark
+
+```shell
+docker run --rm \
+    -v /path/to/tpch/data:/data:ro \
+    -v /path/to/tpch/queries:/queries:ro \
+    -v /path/to/comet-jar-dir:/jars:ro \
+    -v /path/to/results:/results \
+    -e COMET_JAR=/jars/comet-spark-spark3.5_2.12-0.10.0.jar \
+    comet-bench \
+    bash -c "./comet-tpch.sh"
+```
+
+For TPC-DS, use `comet-tpcds.sh` and mount TPC-DS data and queries instead.
+
+### Running with CPU and memory constraints
+
+Docker's `--cpus` and `--memory` flags let you simulate different hardware configurations
+for reproducible benchmarks.
+
+**Limit to 8 CPUs and 32 GB of memory:**
+
+```shell
+docker run --rm \
+    --cpus=8 \
+    --memory=32g \
+    -v /path/to/tpch/data:/data:ro \
+    -v /path/to/tpch/queries:/queries:ro \
+    -v /path/to/comet-jar-dir:/jars:ro \
+    -v /path/to/results:/results \
+    -e COMET_JAR=/jars/comet-spark-spark3.5_2.12-0.10.0.jar \
+    comet-bench \
+    bash -c "./comet-tpch.sh"
+```
+
+**Limit to 4 CPUs and 16 GB of memory:**
+
+```shell
+docker run --rm \
+    --cpus=4 \
+    --memory=16g \
+    -v /path/to/tpch/data:/data:ro \
+    -v /path/to/tpch/queries:/queries:ro \
+    -v /path/to/comet-jar-dir:/jars:ro \
+    -v /path/to/results:/results \
+    -e COMET_JAR=/jars/comet-spark-spark3.5_2.12-0.10.0.jar \
+    comet-bench \
+    bash -c "./comet-tpch.sh"
+```
+
+**Pin to specific CPU cores (useful for avoiding efficiency cores on hybrid CPUs):**
+
+```shell
+docker run --rm \
+    --cpuset-cpus="0-7" \
+    --memory=32g \
+    -v /path/to/tpch/data:/data:ro \
+    -v /path/to/tpch/queries:/queries:ro \
+    -v /path/to/comet-jar-dir:/jars:ro \
+    -v /path/to/results:/results \
+    -e COMET_JAR=/jars/comet-spark-spark3.5_2.12-0.10.0.jar \
+    comet-bench \
+    bash -c "./comet-tpch.sh"
+```
+
+### Constraint reference
+
+| Docker Flag      | Description                                  | Example        |
+| ---------------- | -------------------------------------------- | -------------- |
+| `--cpus`         | Number of CPUs (can be fractional)           | `--cpus=8`     |
+| `--cpuset-cpus`  | Pin to specific CPU cores                    | `--cpuset-cpus="0-7"` |
+| `--memory`       | Maximum memory (hard limit)                  | `--memory=32g` |
+| `--memory-swap`  | Total memory + swap (`--memory` to disable swap) | `--memory-swap=32g` |
+
+When setting memory constraints, ensure the limit accommodates both Spark driver memory
+(8 GB) and executor memory (16 GB on-heap + 16 GB off-heap) as configured in the
+benchmark scripts. A minimum of 32 GB is recommended for the default configurations.
+
+To disable swap (recommended for consistent benchmark results), set `--memory-swap` equal
+to `--memory`:
+
+```shell
+docker run --rm \
+    --cpus=8 \
+    --memory=32g \
+    --memory-swap=32g \
+    ...
+```
+
+### Overriding environment variables
+
+You can override any environment variable used by the scripts with `-e`:
+
+```shell
+docker run --rm \
+    -e SPARK_MASTER=spark://localhost:7077 \
+    -e COMET_JAR=/jars/comet.jar \
+    -e TPCH_DATA=/data \
+    -e TPCH_QUERIES=/queries \
+    ...
+```
+
+### Comparing Docker-constrained runs
+
+Run benchmarks with different resource limits and compare:
+
+```shell
+# Run with 8 CPUs
+docker run --rm --cpus=8 --memory=32g \
+    -v ... \
+    comet-bench bash -c "./comet-tpch.sh && cp *.json /results/"
+
+# Run with 4 CPUs
+docker run --rm --cpus=4 --memory=32g \
+    -v ... \
+    comet-bench bash -c "./comet-tpch.sh && cp *.json /results/"
+
+# Compare results
+python3 generate-comparison.py --benchmark tpch \
+    --labels "8 CPUs" "4 CPUs" \
+    results/comet-tpch-*8cpu*.json results/comet-tpch-*4cpu*.json
+```
