@@ -49,14 +49,16 @@ use std::task::{Context, Poll};
 
 use arrow::array::{types::UInt64Type, *};
 use arrow::compute::{
-    self, concat_batches, filter_record_batch, is_not_null, take, SortOptions,
+    self, and, concat_batches, filter_record_batch, is_not_null, is_null, take,
+    SortOptions,
 };
-use arrow::datatypes::{DataType, SchemaRef, TimeUnit};
+use arrow::compute::kernels::cmp::eq;
+use arrow::datatypes::SchemaRef;
 use arrow::error::ArrowError;
 use arrow::ipc::reader::StreamReader;
 use datafusion::common::cast::as_boolean_array;
 use datafusion::common::{
-    config::SpillCompression, exec_err, internal_err, not_impl_err, DataFusionError,
+    config::SpillCompression, exec_err, internal_err, DataFusionError,
     HashSet, JoinSide, JoinType, NullEquality, Result,
 };
 use datafusion::execution::disk_manager::RefCountedTempFile;
@@ -1317,17 +1319,25 @@ impl CometSortMergeJoinStream {
                     if self.buffered_data.tail_batch().range.end
                         < self.buffered_data.tail_batch().num_rows
                     {
-                        while self.buffered_data.tail_batch().range.end
-                            < self.buffered_data.tail_batch().num_rows
                         {
-                            if is_join_arrays_equal(
-                                &self.buffered_data.head_batch().join_arrays,
-                                self.buffered_data.head_batch().range.start,
-                                &self.buffered_data.tail_batch().join_arrays,
-                                self.buffered_data.tail_batch().range.end,
-                            )? {
-                                self.buffered_data.tail_batch_mut().range.end += 1;
-                            } else {
+                            let head_arrays =
+                                &self.buffered_data.head_batch().join_arrays;
+                            let head_start =
+                                self.buffered_data.head_batch().range.start;
+                            let tail = self.buffered_data.tail_batch();
+                            let matching = find_key_group_boundary(
+                                head_arrays,
+                                head_start,
+                                &tail.join_arrays,
+                                tail.range.end,
+                                tail.num_rows,
+                            )?;
+                            self.buffered_data.tail_batch_mut().range.end +=
+                                matching;
+
+                            if self.buffered_data.tail_batch().range.end
+                                < self.buffered_data.tail_batch().num_rows
+                            {
                                 self.buffered_state = BufferedState::Ready;
                                 return Poll::Ready(Some(Ok(())));
                             }
@@ -2168,76 +2178,54 @@ fn join_arrays(batch: &RecordBatch, on_column: &[PhysicalExprRef]) -> Vec<ArrayR
         .collect()
 }
 
-/// A faster version of compare_join_arrays() that only checks equality
-fn is_join_arrays_equal(
-    left_arrays: &[ArrayRef],
-    left: usize,
-    right_arrays: &[ArrayRef],
-    right: usize,
-) -> Result<bool> {
-    let mut is_equal = true;
-    for (left_array, right_array) in left_arrays.iter().zip(right_arrays) {
-        macro_rules! compare_value {
-            ($T:ty) => {{
-                match (left_array.is_null(left), right_array.is_null(right)) {
-                    (false, false) => {
-                        let left_array =
-                            left_array.as_any().downcast_ref::<$T>().unwrap();
-                        let right_array =
-                            right_array.as_any().downcast_ref::<$T>().unwrap();
-                        if left_array.value(left) != right_array.value(right) {
-                            is_equal = false;
-                        }
-                    }
-                    (true, false) => is_equal = false,
-                    (false, true) => is_equal = false,
-                    _ => {}
-                }
-            }};
-        }
-
-        match left_array.data_type() {
-            DataType::Null => {}
-            DataType::Boolean => compare_value!(BooleanArray),
-            DataType::Int8 => compare_value!(Int8Array),
-            DataType::Int16 => compare_value!(Int16Array),
-            DataType::Int32 => compare_value!(Int32Array),
-            DataType::Int64 => compare_value!(Int64Array),
-            DataType::UInt8 => compare_value!(UInt8Array),
-            DataType::UInt16 => compare_value!(UInt16Array),
-            DataType::UInt32 => compare_value!(UInt32Array),
-            DataType::UInt64 => compare_value!(UInt64Array),
-            DataType::Float32 => compare_value!(Float32Array),
-            DataType::Float64 => compare_value!(Float64Array),
-            DataType::Utf8 => compare_value!(StringArray),
-            DataType::Utf8View => compare_value!(StringViewArray),
-            DataType::LargeUtf8 => compare_value!(LargeStringArray),
-            DataType::Binary => compare_value!(BinaryArray),
-            DataType::BinaryView => compare_value!(BinaryViewArray),
-            DataType::FixedSizeBinary(_) => compare_value!(FixedSizeBinaryArray),
-            DataType::LargeBinary => compare_value!(LargeBinaryArray),
-            DataType::Decimal32(..) => compare_value!(Decimal32Array),
-            DataType::Decimal64(..) => compare_value!(Decimal64Array),
-            DataType::Decimal128(..) => compare_value!(Decimal128Array),
-            DataType::Decimal256(..) => compare_value!(Decimal256Array),
-            DataType::Timestamp(time_unit, None) => match time_unit {
-                TimeUnit::Second => compare_value!(TimestampSecondArray),
-                TimeUnit::Millisecond => compare_value!(TimestampMillisecondArray),
-                TimeUnit::Microsecond => compare_value!(TimestampMicrosecondArray),
-                TimeUnit::Nanosecond => compare_value!(TimestampNanosecondArray),
-            },
-            DataType::Date32 => compare_value!(Date32Array),
-            DataType::Date64 => compare_value!(Date64Array),
-            dt => {
-                return not_impl_err!(
-                    "Unsupported data type in sort merge join comparator: {}",
-                    dt
-                );
-            }
-        }
-        if !is_equal {
-            return Ok(false);
-        }
+/// Vectorized key-group boundary detection.
+///
+/// Returns the number of consecutive rows starting from `start` in `target_arrays`
+/// that have the same key as `ref_arrays[ref_idx]`. Uses Arrow's SIMD-accelerated
+/// `eq` kernel instead of row-by-row comparison with runtime type dispatch.
+///
+/// Null semantics: NULL == NULL for grouping purposes (matching Spark's behavior
+/// for buffered-side key grouping). Non-null vs null is always unequal.
+fn find_key_group_boundary(
+    ref_arrays: &[ArrayRef],
+    ref_idx: usize,
+    target_arrays: &[ArrayRef],
+    start: usize,
+    num_rows: usize,
+) -> Result<usize> {
+    let len = num_rows - start;
+    if len == 0 {
+        return Ok(0);
     }
-    Ok(true)
+
+    let mut combined_mask: Option<BooleanArray> = None;
+
+    for (ref_arr, target_arr) in ref_arrays.iter().zip(target_arrays) {
+        let target_slice = target_arr.slice(start, len);
+
+        let col_mask = if ref_arr.is_null(ref_idx) {
+            // NULL == NULL for grouping purposes
+            is_null(&target_slice)?
+        } else {
+            let ref_scalar = Scalar::new(ref_arr.slice(ref_idx, 1));
+            let eq_result = eq(&target_slice, &ref_scalar)?;
+            // eq returns NULL where target is null; convert nulls to false
+            if eq_result.null_count() > 0 {
+                let values = eq_result.values() & eq_result.nulls().unwrap().inner();
+                BooleanArray::new(values, None)
+            } else {
+                eq_result
+            }
+        };
+
+        combined_mask = Some(match combined_mask {
+            None => col_mask,
+            Some(prev) => and(&prev, &col_mask)?,
+        });
+    }
+
+    let mask = combined_mask.unwrap();
+    // Find position of first false (end of matching group)
+    let count = mask.values().iter().take_while(|&v| v).count();
+    Ok(count)
 }
