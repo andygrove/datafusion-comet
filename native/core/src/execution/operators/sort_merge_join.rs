@@ -652,6 +652,8 @@ struct BufferedBatch {
     pub size_estimation: usize,
     pub join_filter_not_matched_map: HashMap<u64, bool>,
     pub num_rows: usize,
+    /// Cache for deserialized spilled batches to avoid redundant disk I/O
+    pub spill_cache: Option<RecordBatch>,
 }
 
 impl BufferedBatch {
@@ -680,6 +682,7 @@ impl BufferedBatch {
             size_estimation,
             join_filter_not_matched_map: HashMap::new(),
             num_rows,
+            spill_cache: None,
         }
     }
 }
@@ -1220,7 +1223,8 @@ impl CometSortMergeJoinStream {
         }
     }
 
-    fn free_reservation(&mut self, buffered_batch: BufferedBatch) -> Result<()> {
+    fn free_reservation(&mut self, mut buffered_batch: BufferedBatch) -> Result<()> {
+        buffered_batch.spill_cache = None;
         if let BufferedBatchState::InMemory(_) = buffered_batch.batch {
             self.reservation
                 .try_shrink(buffered_batch.size_estimation)?;
@@ -1613,7 +1617,7 @@ impl CometSortMergeJoinStream {
                     vec![]
                 } else if let Some(buffered_idx) = chunk.buffered_batch_idx {
                     fetch_right_columns_by_idxs(
-                        &self.buffered_data,
+                        &mut self.buffered_data,
                         buffered_idx,
                         &right_indices,
                     )?
@@ -1632,7 +1636,7 @@ impl CometSortMergeJoinStream {
                         JoinType::LeftSemi | JoinType::LeftAnti | JoinType::LeftMark
                     ) {
                         let right_cols = fetch_right_columns_by_idxs(
-                            &self.buffered_data,
+                            &mut self.buffered_data,
                             chunk.buffered_batch_idx.unwrap(),
                             &right_indices,
                         )?;
@@ -1643,7 +1647,7 @@ impl CometSortMergeJoinStream {
                         JoinType::RightAnti | JoinType::RightSemi | JoinType::RightMark
                     ) {
                         let right_cols = fetch_right_columns_by_idxs(
-                            &self.buffered_data,
+                            &mut self.buffered_data,
                             chunk.buffered_batch_idx.unwrap(),
                             &right_indices,
                         )?;
@@ -2014,7 +2018,7 @@ fn produce_buffered_null_batch(
     schema: &SchemaRef,
     streamed_schema: &SchemaRef,
     buffered_indices: &PrimitiveArray<UInt64Type>,
-    buffered_batch: &BufferedBatch,
+    buffered_batch: &mut BufferedBatch,
 ) -> Result<Option<RecordBatch>> {
     if buffered_indices.is_empty() {
         return Ok(None);
@@ -2040,19 +2044,19 @@ fn produce_buffered_null_batch(
 /// Get `buffered_indices` rows for `buffered_data[buffered_batch_idx]`
 #[inline(always)]
 fn fetch_right_columns_by_idxs(
-    buffered_data: &BufferedData,
+    buffered_data: &mut BufferedData,
     buffered_batch_idx: usize,
     buffered_indices: &UInt64Array,
 ) -> Result<Vec<ArrayRef>> {
     fetch_right_columns_from_batch_by_idxs(
-        &buffered_data.batches[buffered_batch_idx],
+        &mut buffered_data.batches[buffered_batch_idx],
         buffered_indices,
     )
 }
 
 #[inline(always)]
 fn fetch_right_columns_from_batch_by_idxs(
-    buffered_batch: &BufferedBatch,
+    buffered_batch: &mut BufferedBatch,
     buffered_indices: &UInt64Array,
 ) -> Result<Vec<ArrayRef>> {
     match &buffered_batch.batch {
@@ -2063,19 +2067,27 @@ fn fetch_right_columns_from_batch_by_idxs(
             .collect::<Result<Vec<_>, ArrowError>>()
             .map_err(Into::<DataFusionError>::into)?),
         BufferedBatchState::Spilled(spill_file) => {
-            let mut buffered_cols: Vec<ArrayRef> =
-                Vec::with_capacity(buffered_indices.len());
+            let batch = if let Some(cached) = &buffered_batch.spill_cache {
+                cached.clone()
+            } else {
+                let file = BufReader::new(File::open(spill_file.path())?);
+                let reader = StreamReader::try_new(file, None)?;
 
-            let file = BufReader::new(File::open(spill_file.path())?);
-            let reader = StreamReader::try_new(file, None)?;
+                let mut batches = Vec::new();
+                for b in reader {
+                    batches.push(b?);
+                }
+                let batch = concat_batches(&batches[0].schema(), &batches)?;
+                buffered_batch.spill_cache = Some(batch.clone());
+                batch
+            };
 
-            for batch in reader {
-                batch?.columns().iter().for_each(|column| {
-                    buffered_cols.extend(take(column, &buffered_indices, None))
-                });
-            }
-
-            Ok(buffered_cols)
+            Ok(batch
+                .columns()
+                .iter()
+                .map(|column| take(column, &buffered_indices, None))
+                .collect::<Result<Vec<_>, ArrowError>>()
+                .map_err(Into::<DataFusionError>::into)?)
         }
     }
 }
