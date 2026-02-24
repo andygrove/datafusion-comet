@@ -61,7 +61,7 @@ use datafusion::{
     physical_plan::{
         aggregates::{AggregateMode as DFAggregateMode, PhysicalGroupBy},
         empty::EmptyExec,
-        joins::{utils::JoinFilter, HashJoinExec, PartitionMode, SortMergeJoinExec},
+        joins::{utils::JoinFilter, HashJoinExec, PartitionMode},
         limit::LocalLimitExec,
         projection::ProjectionExec,
         sorts::sort::SortExec,
@@ -1468,23 +1468,22 @@ impl PhysicalPlanner {
                 let left = Arc::clone(&join_params.left.native_plan);
                 let right = Arc::clone(&join_params.right.native_plan);
 
-                let join = Arc::new(SortMergeJoinExec::try_new(
-                    Arc::clone(&left),
-                    Arc::clone(&right),
-                    join_params.join_on,
-                    join_params.join_filter,
-                    join_params.join_type,
-                    sort_options,
-                    // null doesn't equal to null in Spark join key. If the join key is
-                    // `EqualNullSafe`, Spark will rewrite it during planning.
-                    NullEquality::NullEqualsNothing,
-                )?);
+                let join = Arc::new(
+                    crate::execution::operators::CometSortMergeJoinExec::try_new(
+                        Arc::clone(&left),
+                        Arc::clone(&right),
+                        join_params.join_on,
+                        join_params.join_filter,
+                        join_params.join_type,
+                        sort_options,
+                    )?,
+                );
 
                 if join.filter.is_some() {
                     // SMJ with join filter produces lots of tiny batches
                     let coalesce_batches: Arc<dyn ExecutionPlan> =
                         Arc::new(CoalesceBatchesExec::new(
-                            Arc::<SortMergeJoinExec>::clone(&join),
+                            Arc::<crate::execution::operators::CometSortMergeJoinExec>::clone(&join),
                             self.session_ctx
                                 .state()
                                 .config_options()

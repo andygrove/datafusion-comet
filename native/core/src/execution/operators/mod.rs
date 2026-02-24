@@ -35,6 +35,8 @@ mod csv_scan;
 pub mod projection;
 mod scan;
 pub use csv_scan::init_csv_datasource_exec;
+mod sort_merge_join;
+pub use sort_merge_join::CometSortMergeJoinExec;
 
 /// Error returned during executing operators.
 #[derive(thiserror::Error, Debug)]
