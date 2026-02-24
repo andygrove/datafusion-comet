@@ -97,9 +97,18 @@ The buffered side accumulates all rows with the same join key. If memory limits 
 7. **Display**: Shows `CometSortMergeJoin` instead of `SortMergeJoin`, removed NullEquality display (always NullEqualsNothing)
 8. **Import paths**: Uses `datafusion::` umbrella crate paths instead of direct `datafusion_common::`, `datafusion_execution::`, etc.
 
+### v2 (Built-in Batch Coalescing)
+
+DataFusion's SMJ with join filters produces tiny batches because filtering removes rows from already-small output batches. Previously, the planner wrapped filtered SMJ with `CoalesceBatchesExec` to coalesce these. Now coalescing is built directly into `CometSortMergeJoinStream`:
+
+1. **`Exhausted` state**: Instead of emitting filtered batches directly, merges them into `self.output` (the accumulator that the `Init` state already uses) before emitting. This ensures the final batch is coalesced with any previously accumulated rows.
+2. **Removed `CoalesceBatchesExec` wrapper**: The planner no longer wraps filtered SMJ with `CoalesceBatchesExec`, eliminating one operator and one `concat_batches` copy from the query plan.
+
+The `Init` state already had coalescing logic (accumulating filtered batches into `self.output` and only emitting when `num_rows >= batch_size`). The v2 change ensures the `Exhausted` state uses the same accumulator instead of bypassing it.
+
 ### Integration Points
 
-**Planner** (`native/core/src/execution/planner.rs`): The `OpStruct::SortMergeJoin` match arm creates `CometSortMergeJoinExec` instead of `SortMergeJoinExec`. The `NullEquality::NullEqualsNothing` argument is no longer passed (hardcoded inside).
+**Planner** (`native/core/src/execution/planner.rs`): The `OpStruct::SortMergeJoin` match arm creates `CometSortMergeJoinExec` instead of `SortMergeJoinExec`. The `NullEquality::NullEqualsNothing` argument is no longer passed (hardcoded inside). No `CoalesceBatchesExec` wrapping — coalescing is built into the join stream.
 
 **Module registration** (`native/core/src/execution/operators/mod.rs`): Declares `mod sort_merge_join` and `pub use sort_merge_join::CometSortMergeJoinExec`.
 
@@ -155,12 +164,13 @@ Add Spark-compatible metrics:
 - Buffer utilization metrics
 - Join key cardinality tracking
 
-### Phase 6: Built-in Batch Coalescing
+### ~~Phase 6: Built-in Batch Coalescing~~ (Done in v2)
 
-Currently, filtered SMJ output is wrapped with `CoalesceBatchesExec`. Building coalescing directly into the join stream eliminates the overhead of an extra operator and reduces memory copies.
+Built-in coalescing is now part of the join stream. The `Exhausted` state merges filtered output into the accumulator before emitting, and the planner no longer wraps with `CoalesceBatchesExec`.
 
 ## Changelog
 
-| Date       | Change       | Details                                                              |
-| ---------- | ------------ | -------------------------------------------------------------------- |
-| 2026-02-24 | Initial fork | Fork DataFusion 51.0.0 SMJ, rename, hardcode null equality, simplify |
+| Date       | Change             | Details                                                              |
+| ---------- | ------------------ | -------------------------------------------------------------------- |
+| 2026-02-24 | Initial fork (v1)  | Fork DataFusion 51.0.0 SMJ, rename, hardcode null equality, simplify |
+| 2026-02-24 | Batch coalescing (v2) | Built-in coalescing in Exhausted state, removed CoalesceBatchesExec wrapper |

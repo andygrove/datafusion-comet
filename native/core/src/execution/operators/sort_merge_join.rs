@@ -1081,13 +1081,25 @@ impl Stream for CometSortMergeJoinStream {
                                     | JoinType::RightMark
                             )
                         {
-                            let record_batch = self.filter_joined_batch()?;
-                            return Poll::Ready(Some(Ok(record_batch)));
+                            // Coalesce the final filtered batch into self.output
+                            // instead of emitting directly. This avoids tiny final
+                            // batches and eliminates the need for an external
+                            // CoalesceBatchesExec wrapper.
+                            let filtered_batch = self.filter_joined_batch()?;
+                            if filtered_batch.num_rows() > 0 {
+                                self.output = concat_batches(
+                                    &self.schema(),
+                                    [&self.output, &filtered_batch],
+                                )?;
+                            }
+                            // Fall through to emit self.output below
                         } else {
                             let record_batch = self.output_record_batch_and_reset()?;
                             return Poll::Ready(Some(Ok(record_batch)));
                         }
-                    } else if self.output.num_rows() > 0 {
+                    }
+
+                    if self.output.num_rows() > 0 {
                         let schema = self.output.schema();
                         let record_batch = std::mem::replace(
                             &mut self.output,
