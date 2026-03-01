@@ -367,16 +367,26 @@ mod test {
 
         repartitioner.insert_batch(batch.clone()).await.unwrap();
 
-        // After insert_batch, spill files are created lazily by partition writers
+        // After one insert of 900 rows (split across 2 partitions ~450 each),
+        // spill files may not exist yet because the coalescer (batch_size=1024)
+        // hasn't emitted any completed batches.
         {
             let partition_writers = repartitioner.partition_writers();
             assert_eq!(partition_writers.len(), 2);
+        }
+
+        // Insert another batch to accumulate more rows
+        repartitioner.insert_batch(batch.clone()).await.unwrap();
+
+        // Spill flushes coalescers to IPC files
+        repartitioner.spill().unwrap();
+
+        // After spill, both partitions should have spill files
+        {
+            let partition_writers = repartitioner.partition_writers();
             assert!(partition_writers[0].has_spill_file());
             assert!(partition_writers[1].has_spill_file());
         }
-
-        // Spill flushes the partition writers
-        repartitioner.spill().unwrap();
 
         // Insert another batch after spilling
         repartitioner.insert_batch(batch.clone()).await.unwrap();

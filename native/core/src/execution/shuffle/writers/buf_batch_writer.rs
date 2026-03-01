@@ -64,6 +64,13 @@ impl<S: Borrow<ShuffleBlockWriter>, W: Write> BufBatchWriter<S, W> {
         encode_time: &Time,
         write_time: &Time,
     ) -> datafusion::common::Result<usize> {
+        if batch.num_rows() >= self.batch_size {
+            // Large batch fast path: flush coalescer, then write directly (no clone)
+            let mut bytes = self.flush_coalescer(encode_time, write_time)?;
+            bytes += self.write_batch_to_buffer(batch, encode_time, write_time)?;
+            return Ok(bytes);
+        }
+
         let coalescer = self
             .coalescer
             .get_or_insert_with(|| BatchCoalescer::new(batch.schema(), self.batch_size));
@@ -106,12 +113,12 @@ impl<S: Borrow<ShuffleBlockWriter>, W: Write> BufBatchWriter<S, W> {
         Ok(bytes_written)
     }
 
-    pub(crate) fn flush(
+    /// Flush any remaining buffered rows in the coalescer to the byte buffer.
+    fn flush_coalescer(
         &mut self,
         encode_time: &Time,
         write_time: &Time,
-    ) -> datafusion::common::Result<()> {
-        // Finish any remaining buffered rows in the coalescer
+    ) -> datafusion::common::Result<usize> {
         let mut remaining = Vec::new();
         if let Some(coalescer) = &mut self.coalescer {
             coalescer.finish_buffered_batch()?;
@@ -119,9 +126,19 @@ impl<S: Borrow<ShuffleBlockWriter>, W: Write> BufBatchWriter<S, W> {
                 remaining.push(batch);
             }
         }
+        let mut bytes_written = 0;
         for batch in &remaining {
-            self.write_batch_to_buffer(batch, encode_time, write_time)?;
+            bytes_written += self.write_batch_to_buffer(batch, encode_time, write_time)?;
         }
+        Ok(bytes_written)
+    }
+
+    pub(crate) fn flush(
+        &mut self,
+        encode_time: &Time,
+        write_time: &Time,
+    ) -> datafusion::common::Result<()> {
+        self.flush_coalescer(encode_time, write_time)?;
 
         // Flush the byte buffer to the underlying writer
         let mut write_timer = write_time.timer();

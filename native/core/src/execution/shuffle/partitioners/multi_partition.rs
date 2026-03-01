@@ -18,6 +18,7 @@
 use crate::execution::shuffle::metrics::ShufflePartitionerMetrics;
 use crate::execution::shuffle::partitioners::ShufflePartitioner;
 use crate::execution::shuffle::writers::PartitionWriter;
+use crate::execution::shuffle::writers::BufBatchWriter;
 use crate::execution::shuffle::{
     comet_partitioning, CometPartitioning, CompressionCodec, ShuffleBlockWriter,
 };
@@ -25,6 +26,7 @@ use crate::execution::tracing::{with_trace, with_trace_async};
 use arrow::array::{ArrayRef, RecordBatch, UInt32Array};
 use arrow::compute::take;
 use arrow::datatypes::SchemaRef;
+use arrow::ipc::reader::StreamReader;
 use datafusion::common::DataFusionError;
 use datafusion::execution::memory_pool::{MemoryConsumer, MemoryReservation};
 use datafusion::execution::runtime_env::RuntimeEnv;
@@ -116,6 +118,10 @@ pub(crate) struct MultiPartitionShuffleRepartitioner {
     /// Reservation for repartitioning
     reservation: MemoryReservation,
     tracing_enabled: bool,
+    /// ShuffleBlockWriter for compressing during shuffle_write
+    shuffle_block_writer: ShuffleBlockWriter,
+    /// Write buffer size for the final compressed output
+    write_buffer_size: usize,
 }
 
 impl MultiPartitionShuffleRepartitioner {
@@ -159,13 +165,7 @@ impl MultiPartitionShuffleRepartitioner {
         let shuffle_block_writer = ShuffleBlockWriter::try_new(schema.as_ref(), codec.clone())?;
 
         let partition_writers = (0..num_output_partitions)
-            .map(|_| {
-                PartitionWriter::try_new(
-                    shuffle_block_writer.clone(),
-                    write_buffer_size,
-                    batch_size,
-                )
-            })
+            .map(|_| PartitionWriter::try_new(Arc::clone(&schema), batch_size))
             .collect::<datafusion::common::Result<Vec<_>>>()?;
 
         let reservation = MemoryConsumer::new(format!("ShuffleRepartitioner[{partition}]"))
@@ -183,6 +183,8 @@ impl MultiPartitionShuffleRepartitioner {
             batch_size,
             reservation,
             tracing_enabled,
+            shuffle_block_writer,
+            write_buffer_size,
         })
     }
 
@@ -458,7 +460,7 @@ impl MultiPartitionShuffleRepartitioner {
 
         with_trace("shuffle_spill", self.tracing_enabled, || {
             for partition_writer in &mut self.partition_writers {
-                partition_writer.flush(&self.metrics)?;
+                partition_writer.flush(&self.runtime, &self.metrics)?;
             }
 
             self.reservation.free();
@@ -498,7 +500,8 @@ impl ShufflePartitioner for MultiPartitionShuffleRepartitioner {
         .await
     }
 
-    /// Writes buffered shuffled record batches into Arrow IPC bytes.
+    /// Writes buffered shuffled record batches into compressed Spark shuffle format.
+    /// Reads uncompressed Arrow IPC from spill files and re-encodes with compression.
     fn shuffle_write(&mut self) -> datafusion::common::Result<()> {
         with_trace("shuffle_write", self.tracing_enabled, || {
             let start_time = Instant::now();
@@ -509,9 +512,9 @@ impl ShufflePartitioner for MultiPartitionShuffleRepartitioner {
             let data_file = self.output_data_file.clone();
             let index_file = self.output_index_file.clone();
 
-            // Flush all partition writers to ensure all data is written to spill files
+            // Finalize all IPC streams (flush coalescers + write EOS markers)
             for partition_writer in &mut self.partition_writers {
-                partition_writer.flush(&self.metrics)?;
+                partition_writer.finish(&self.runtime, &self.metrics)?;
             }
 
             let output_data = OpenOptions::new()
@@ -523,16 +526,38 @@ impl ShufflePartitioner for MultiPartitionShuffleRepartitioner {
 
             let mut output_data = BufWriter::new(output_data);
 
-            #[allow(clippy::needless_range_loop)]
-            for i in 0..num_output_partitions {
-                offsets[i] = output_data.stream_position()?;
+            {
+                // Create a compressed BufBatchWriter for re-encoding spill data
+                let mut buf_writer = BufBatchWriter::new(
+                    &self.shuffle_block_writer,
+                    &mut output_data,
+                    self.write_buffer_size,
+                    self.batch_size,
+                );
 
-                // Copy the spill file contents into the shuffle file
-                if let Some(spill_path) = self.partition_writers[i].path() {
-                    let mut spill_file = BufReader::new(File::open(spill_path)?);
-                    let mut write_timer = self.metrics.write_time.timer();
-                    std::io::copy(&mut spill_file, &mut output_data)?;
-                    write_timer.stop();
+                #[allow(clippy::needless_range_loop)]
+                for i in 0..num_output_partitions {
+                    offsets[i] = buf_writer.writer_stream_position()?;
+
+                    // Read back uncompressed IPC and re-encode with compression
+                    if let Some(spill_path) = self.partition_writers[i].path() {
+                        let spill_file = BufReader::new(File::open(spill_path)?);
+                        let reader = unsafe {
+                            StreamReader::try_new(spill_file, None)?.with_skip_validation(true)
+                        };
+                        for batch_result in reader {
+                            let batch = batch_result?;
+                            buf_writer.write(
+                                &batch,
+                                &self.metrics.encode_time,
+                                &self.metrics.write_time,
+                            )?;
+                        }
+                        buf_writer.flush(
+                            &self.metrics.encode_time,
+                            &self.metrics.write_time,
+                        )?;
+                    }
                 }
             }
 
