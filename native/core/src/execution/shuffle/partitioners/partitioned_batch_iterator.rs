@@ -16,95 +16,41 @@
 // under the License.
 
 use arrow::array::RecordBatch;
-use arrow::compute::interleave_record_batch;
-use datafusion::common::DataFusionError;
 
-/// A helper struct to produce shuffled batches.
-/// This struct takes ownership of the buffered batches and partition indices from the
-/// ShuffleRepartitioner, and provides an iterator over the batches in the specified partitions.
+/// A helper struct to produce partitioned batches.
+/// This struct takes ownership of pre-partitioned sub-batches and provides an iterator
+/// over the batches for a specified partition.
 pub(super) struct PartitionedBatchesProducer {
-    buffered_batches: Vec<RecordBatch>,
-    partition_indices: Vec<Vec<(u32, u32)>>,
-    batch_size: usize,
+    partition_batches: Vec<Vec<RecordBatch>>,
 }
 
 impl PartitionedBatchesProducer {
-    pub(super) fn new(
-        buffered_batches: Vec<RecordBatch>,
-        indices: Vec<Vec<(u32, u32)>>,
-        batch_size: usize,
-    ) -> Self {
-        Self {
-            partition_indices: indices,
-            buffered_batches,
-            batch_size,
-        }
+    pub(super) fn new(partition_batches: Vec<Vec<RecordBatch>>) -> Self {
+        Self { partition_batches }
     }
 
     pub(super) fn produce(&mut self, partition_id: usize) -> PartitionedBatchIterator<'_> {
-        PartitionedBatchIterator::new(
-            &self.partition_indices[partition_id],
-            &self.buffered_batches,
-            self.batch_size,
-        )
-    }
-}
-
-pub(crate) struct PartitionedBatchIterator<'a> {
-    record_batches: Vec<&'a RecordBatch>,
-    batch_size: usize,
-    indices: Vec<(usize, usize)>,
-    pos: usize,
-}
-
-impl<'a> PartitionedBatchIterator<'a> {
-    fn new(
-        indices: &'a [(u32, u32)],
-        buffered_batches: &'a [RecordBatch],
-        batch_size: usize,
-    ) -> Self {
-        if indices.is_empty() {
-            // Avoid unnecessary allocations when the partition is empty
-            return Self {
-                record_batches: vec![],
-                batch_size,
-                indices: vec![],
-                pos: 0,
-            };
-        }
-        let record_batches = buffered_batches.iter().collect::<Vec<_>>();
-        let current_indices = indices
-            .iter()
-            .map(|(i_batch, i_row)| (*i_batch as usize, *i_row as usize))
-            .collect::<Vec<_>>();
-        Self {
-            record_batches,
-            batch_size,
-            indices: current_indices,
+        PartitionedBatchIterator {
+            batches: &self.partition_batches[partition_id],
             pos: 0,
         }
     }
 }
 
-impl Iterator for PartitionedBatchIterator<'_> {
+pub(crate) struct PartitionedBatchIterator<'a> {
+    batches: &'a [RecordBatch],
+    pos: usize,
+}
+
+impl<'a> Iterator for PartitionedBatchIterator<'a> {
     type Item = datafusion::common::Result<RecordBatch>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.pos >= self.indices.len() {
+        if self.pos >= self.batches.len() {
             return None;
         }
-
-        let indices_end = std::cmp::min(self.pos + self.batch_size, self.indices.len());
-        let indices = &self.indices[self.pos..indices_end];
-        match interleave_record_batch(&self.record_batches, indices) {
-            Ok(batch) => {
-                self.pos = indices_end;
-                Some(Ok(batch))
-            }
-            Err(e) => Some(Err(DataFusionError::ArrowError(
-                Box::from(e),
-                Some(DataFusionError::get_back_trace()),
-            ))),
-        }
+        let batch = self.batches[self.pos].clone();
+        self.pos += 1;
+        Some(Ok(batch))
     }
 }
