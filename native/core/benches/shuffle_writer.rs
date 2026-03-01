@@ -16,13 +16,14 @@
 // under the License.
 
 use arrow::array::builder::{Date32Builder, Decimal128Builder, Int32Builder};
-use arrow::array::{builder::StringBuilder, Array, Int32Array, RecordBatch};
+use arrow::array::{builder::StringBuilder, Array, Int32Array, RecordBatch, UInt32Array};
+use arrow::compute::{concat_batches, interleave_record_batch, take};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::row::{RowConverter, SortField};
 use comet::execution::shuffle::{
     CometPartitioning, CompressionCodec, ShuffleBlockWriter, ShuffleWriterExec,
 };
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use datafusion::datasource::memory::MemorySourceConfig;
 use datafusion::datasource::source::DataSourceExec;
 use datafusion::physical_expr::expressions::{col, Column};
@@ -32,10 +33,258 @@ use datafusion::{
     physical_plan::{common::collect, ExecutionPlan},
     prelude::SessionContext,
 };
+use datafusion_comet_spark_expr::murmur3::create_murmur3_hashes;
 use itertools::Itertools;
 use std::io::Cursor;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
+
+/// Simulates hash partitioning to produce partition assignments for a batch.
+/// Returns (partition_starts, partition_row_indices) just like ScratchSpace does.
+fn compute_partition_assignments(
+    batch: &RecordBatch,
+    num_partitions: usize,
+) -> (Vec<u32>, Vec<u32>) {
+    let num_rows = batch.num_rows();
+    let arrays = vec![Arc::clone(batch.column(0))];
+    let mut hashes = vec![42u32; num_rows];
+    create_murmur3_hashes(&arrays, &mut hashes).unwrap();
+
+    let partition_ids: Vec<u32> = hashes
+        .iter()
+        .map(|h| h.rem_euclid(num_partitions as u32))
+        .collect();
+
+    // Count per partition
+    let mut counts = vec![0u32; num_partitions + 1];
+    for &pid in &partition_ids {
+        counts[pid as usize] += 1;
+    }
+
+    // Accumulate into ends
+    let mut accum = 0u32;
+    for c in counts.iter_mut() {
+        *c += accum;
+        accum = *c;
+    }
+
+    // Build row indices (same algorithm as ScratchSpace)
+    let mut row_indices = vec![0u32; num_rows];
+    for (index, pid) in partition_ids.iter().enumerate().rev() {
+        counts[*pid as usize] -= 1;
+        row_indices[counts[*pid as usize] as usize] = index as u32;
+    }
+
+    (counts, row_indices)
+}
+
+/// Benchmark: the "take" approach — take from a single batch per partition
+fn bench_take_partitioning(
+    batch: &RecordBatch,
+    partition_starts: &[u32],
+    partition_row_indices: &[u32],
+    num_partitions: usize,
+) -> Vec<Vec<RecordBatch>> {
+    let mut result: Vec<Vec<RecordBatch>> = vec![vec![]; num_partitions];
+    for partition_id in 0..num_partitions {
+        let start = partition_starts[partition_id] as usize;
+        let end = partition_starts[partition_id + 1] as usize;
+        if start == end {
+            continue;
+        }
+        let indices = UInt32Array::from(partition_row_indices[start..end].to_vec());
+        let columns: Vec<_> = batch
+            .columns()
+            .iter()
+            .map(|col| take(col.as_ref(), &indices, None).unwrap())
+            .collect();
+        let sub_batch = RecordBatch::try_new(batch.schema(), columns).unwrap();
+        result[partition_id].push(sub_batch);
+    }
+    result
+}
+
+/// Benchmark: the "take + coalesce" approach — take then concat when reaching batch_size
+fn bench_take_coalesce_partitioning(
+    batch: &RecordBatch,
+    partition_starts: &[u32],
+    partition_row_indices: &[u32],
+    num_partitions: usize,
+    batch_size: usize,
+) -> Vec<Vec<RecordBatch>> {
+    let mut result: Vec<Vec<RecordBatch>> = vec![vec![]; num_partitions];
+    for partition_id in 0..num_partitions {
+        let start = partition_starts[partition_id] as usize;
+        let end = partition_starts[partition_id + 1] as usize;
+        if start == end {
+            continue;
+        }
+        let indices = UInt32Array::from(partition_row_indices[start..end].to_vec());
+        let columns: Vec<_> = batch
+            .columns()
+            .iter()
+            .map(|col| take(col.as_ref(), &indices, None).unwrap())
+            .collect();
+        let sub_batch = RecordBatch::try_new(batch.schema(), columns).unwrap();
+        let partition = &mut result[partition_id];
+        partition.push(sub_batch);
+
+        let total_rows: usize = partition.iter().map(|b| b.num_rows()).sum();
+        if total_rows >= batch_size {
+            let schema = partition[0].schema();
+            let coalesced = concat_batches(&schema, partition.iter()).unwrap();
+            partition.clear();
+            partition.push(coalesced);
+        }
+    }
+    result
+}
+
+/// Benchmark: the old "interleave" approach — buffer batches + indices, then interleave
+fn bench_interleave_partitioning(
+    buffered_batches: &[RecordBatch],
+    all_partition_indices: &[Vec<(u32, u32)>],
+    num_partitions: usize,
+    batch_size: usize,
+) -> Vec<Vec<RecordBatch>> {
+    let batch_refs: Vec<&RecordBatch> = buffered_batches.iter().collect();
+    let mut result: Vec<Vec<RecordBatch>> = vec![vec![]; num_partitions];
+    for partition_id in 0..num_partitions {
+        let indices = &all_partition_indices[partition_id];
+        if indices.is_empty() {
+            continue;
+        }
+        let usize_indices: Vec<(usize, usize)> = indices
+            .iter()
+            .map(|(b, r)| (*b as usize, *r as usize))
+            .collect();
+        for chunk in usize_indices.chunks(batch_size) {
+            let batch = interleave_record_batch(&batch_refs, chunk).unwrap();
+            result[partition_id].push(batch);
+        }
+    }
+    result
+}
+
+/// Micro-benchmarks comparing take vs interleave partitioning strategies
+fn partitioning_benchmark(c: &mut Criterion) {
+    let mut group = c.benchmark_group("partitioning");
+
+    for num_partitions in [16, 200] {
+        let batch = create_batch(8192, true);
+        let (partition_starts, partition_row_indices) =
+            compute_partition_assignments(&batch, num_partitions);
+
+        // Benchmark: take (single batch)
+        group.bench_function(
+            BenchmarkId::new("take", format!("{num_partitions}p")),
+            |b| {
+                b.iter(|| {
+                    bench_take_partitioning(
+                        &batch,
+                        &partition_starts,
+                        &partition_row_indices,
+                        num_partitions,
+                    )
+                });
+            },
+        );
+
+        // Benchmark: take + coalesce (single batch, but exercises the coalesce path)
+        group.bench_function(
+            BenchmarkId::new("take_coalesce", format!("{num_partitions}p")),
+            |b| {
+                b.iter(|| {
+                    bench_take_coalesce_partitioning(
+                        &batch,
+                        &partition_starts,
+                        &partition_row_indices,
+                        num_partitions,
+                        8192,
+                    )
+                });
+            },
+        );
+
+        // Benchmark: simulate multi-batch take + coalesce (10 batches, like the end-to-end test)
+        // This exercises the coalesce path more realistically since batches accumulate
+        group.bench_function(
+            BenchmarkId::new("take_coalesce_multi", format!("{num_partitions}p")),
+            |b| {
+                let batches = create_batches(8192, 10);
+                // Pre-compute assignments for each batch
+                let assignments: Vec<_> = batches
+                    .iter()
+                    .map(|batch| compute_partition_assignments(batch, num_partitions))
+                    .collect();
+                b.iter(|| {
+                    let mut result: Vec<Vec<RecordBatch>> = vec![vec![]; num_partitions];
+                    for (batch, (starts, indices)) in batches.iter().zip(&assignments) {
+                        for partition_id in 0..num_partitions {
+                            let start = starts[partition_id] as usize;
+                            let end = starts[partition_id + 1] as usize;
+                            if start == end {
+                                continue;
+                            }
+                            let idx_array =
+                                UInt32Array::from(indices[start..end].to_vec());
+                            let columns: Vec<_> = batch
+                                .columns()
+                                .iter()
+                                .map(|col| take(col.as_ref(), &idx_array, None).unwrap())
+                                .collect();
+                            let sub_batch =
+                                RecordBatch::try_new(batch.schema(), columns).unwrap();
+                            let partition = &mut result[partition_id];
+                            partition.push(sub_batch);
+
+                            let total_rows: usize =
+                                partition.iter().map(|b| b.num_rows()).sum();
+                            if total_rows >= 8192 {
+                                let schema = partition[0].schema();
+                                let coalesced =
+                                    concat_batches(&schema, partition.iter()).unwrap();
+                                partition.clear();
+                                partition.push(coalesced);
+                            }
+                        }
+                    }
+                    result
+                });
+            },
+        );
+
+        // Benchmark: interleave (old approach) with equivalent multi-batch buffering
+        group.bench_function(
+            BenchmarkId::new("interleave_multi", format!("{num_partitions}p")),
+            |b| {
+                let batches = create_batches(8192, 10);
+                // Pre-compute partition indices in the old (batch_idx, row_idx) format
+                let mut all_indices: Vec<Vec<(u32, u32)>> = vec![vec![]; num_partitions];
+                for (batch_idx, batch) in batches.iter().enumerate() {
+                    let (starts, row_indices) =
+                        compute_partition_assignments(batch, num_partitions);
+                    for partition_id in 0..num_partitions {
+                        let start = starts[partition_id] as usize;
+                        let end = starts[partition_id + 1] as usize;
+                        for &row_idx in &row_indices[start..end] {
+                            all_indices[partition_id].push((batch_idx as u32, row_idx));
+                        }
+                    }
+                }
+                b.iter(|| {
+                    bench_interleave_partitioning(
+                        &batches,
+                        &all_indices,
+                        num_partitions,
+                        8192,
+                    )
+                });
+            },
+        );
+    }
+    group.finish();
+}
 
 fn criterion_benchmark(c: &mut Criterion) {
     let batch = create_batch(8192, true);
@@ -134,6 +383,27 @@ fn criterion_benchmark(c: &mut Criterion) {
             },
         );
     }
+
+    // Benchmark with varying partition counts to isolate partitioning overhead
+    for num_partitions in [16, 200] {
+        let compression_codec = CompressionCodec::None;
+        let partitioning =
+            CometPartitioning::Hash(vec![Arc::new(Column::new("a", 0))], num_partitions);
+        group.bench_function(
+            BenchmarkId::new("end_to_end_hash", format!("{num_partitions}p")),
+            |b| {
+                let ctx = SessionContext::new();
+                let exec =
+                    create_shuffle_writer_exec(compression_codec.clone(), partitioning.clone());
+                b.iter(|| {
+                    let task_ctx = ctx.task_ctx();
+                    let stream = exec.execute(0, task_ctx).unwrap();
+                    let rt = Runtime::new().unwrap();
+                    rt.block_on(collect(stream)).unwrap();
+                });
+            },
+        );
+    }
 }
 
 fn create_shuffle_writer_exec(
@@ -207,6 +477,6 @@ fn config() -> Criterion {
 criterion_group! {
     name = benches;
     config = config();
-    targets = criterion_benchmark
+    targets = criterion_benchmark, partitioning_benchmark
 }
 criterion_main!(benches);
