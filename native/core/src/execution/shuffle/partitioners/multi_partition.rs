@@ -26,7 +26,7 @@ use crate::execution::shuffle::{
 };
 use crate::execution::tracing::{with_trace, with_trace_async};
 use arrow::array::{ArrayRef, RecordBatch, UInt32Array};
-use arrow::compute::take;
+use arrow::compute::{concat_batches, take};
 use arrow::datatypes::SchemaRef;
 use datafusion::common::DataFusionError;
 use datafusion::execution::memory_pool::{MemoryConsumer, MemoryReservation};
@@ -427,8 +427,24 @@ impl MultiPartitionShuffleRepartitioner {
                 })?;
 
             let sub_batch = RecordBatch::try_new(input.schema(), columns)?;
-            mem_growth += sub_batch.get_array_memory_size();
-            self.partition_batches[partition_id].push(sub_batch);
+            let partition = &mut self.partition_batches[partition_id];
+            partition.push(sub_batch);
+
+            // Coalesce accumulated batches when they reach batch_size rows to avoid
+            // storing many tiny sub-batches per partition
+            let total_rows: usize = partition.iter().map(|b| b.num_rows()).sum();
+            if total_rows >= self.batch_size {
+                let schema = partition[0].schema();
+                let old_size: usize = partition.iter().map(|b| b.get_array_memory_size()).sum();
+                let coalesced = concat_batches(&schema, partition.iter())?;
+                let new_size = coalesced.get_array_memory_size();
+                partition.clear();
+                partition.push(coalesced);
+                // Adjust memory: new coalesced batch may be smaller due to fewer array headers
+                mem_growth += new_size.saturating_sub(old_size);
+            } else {
+                mem_growth += partition.last().unwrap().get_array_memory_size();
+            }
         }
 
         if self.reservation.try_grow(mem_growth).is_err() {
