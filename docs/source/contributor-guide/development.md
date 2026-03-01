@@ -148,17 +148,27 @@ For regular development and testing, use `make` or `make core` which build in de
 
 ### Running Rust Tests
 
-When running Rust tests directly with `cargo test`, the JVM library (`libjvm.so`) must be on
-your library path. Set the `LD_LIBRARY_PATH` environment variable to include your JDK's `lib/server`
-directory:
+When running Rust tests directly with `cargo test`, the JVM library (`libjvm`) must be
+discoverable at runtime. The approach varies by platform:
+
+**Linux:**
 
 ```sh
-# Find your libjvm.so location (example for typical JDK installation)
 export LD_LIBRARY_PATH=$JAVA_HOME/lib/server:$LD_LIBRARY_PATH
-
-# Now you can run Rust tests
 cd native && cargo test
 ```
+
+**macOS:**
+
+On macOS, `DYLD_LIBRARY_PATH` is stripped by System Integrity Protection (SIP) for child
+processes, so it often doesn't work reliably. Instead, embed the JVM library path as an rpath
+in the test binary via `RUSTFLAGS`:
+
+```sh
+RUSTFLAGS="-C link-arg=-Wl,-rpath,$JAVA_HOME/lib/server" cargo test
+```
+
+This also applies to `cargo bench` and other commands that build and run binaries.
 
 Alternatively, use `make test-rust` which handles the JVM compilation dependency automatically.
 
