@@ -16,22 +16,18 @@
 // under the License.
 
 use crate::execution::shuffle::metrics::ShufflePartitionerMetrics;
-use crate::execution::shuffle::partitioners::partitioned_batch_iterator::{
-    PartitionedBatchIterator, PartitionedBatchesProducer,
-};
 use crate::execution::shuffle::partitioners::ShufflePartitioner;
-use crate::execution::shuffle::writers::{BufBatchWriter, PartitionWriter};
+use crate::execution::shuffle::writers::PartitionWriter;
 use crate::execution::shuffle::{
     comet_partitioning, CometPartitioning, CompressionCodec, ShuffleBlockWriter,
 };
 use crate::execution::tracing::{with_trace, with_trace_async};
 use arrow::array::{ArrayRef, RecordBatch, UInt32Array};
-use arrow::compute::kernels::coalesce::BatchCoalescer;
+use arrow::compute::take;
 use arrow::datatypes::SchemaRef;
 use datafusion::common::DataFusionError;
 use datafusion::execution::memory_pool::{MemoryConsumer, MemoryReservation};
 use datafusion::execution::runtime_env::RuntimeEnv;
-use datafusion::physical_plan::metrics::Time;
 use datafusion_comet_spark_expr::murmur3::create_murmur3_hashes;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
@@ -108,11 +104,7 @@ impl ScratchSpace {
 pub(crate) struct MultiPartitionShuffleRepartitioner {
     output_data_file: String,
     output_index_file: String,
-    /// Per-partition coalescers that accumulate rows via `push_batch_with_indices`
-    /// and produce `batch_size`-row output batches.
-    partition_coalescers: Vec<BatchCoalescer>,
     partition_writers: Vec<PartitionWriter>,
-    shuffle_block_writer: ShuffleBlockWriter,
     /// Partitioning scheme to use
     partitioning: CometPartitioning,
     runtime: Arc<RuntimeEnv>,
@@ -124,8 +116,6 @@ pub(crate) struct MultiPartitionShuffleRepartitioner {
     /// Reservation for repartitioning
     reservation: MemoryReservation,
     tracing_enabled: bool,
-    /// Size of the write buffer in bytes
-    write_buffer_size: usize,
 }
 
 impl MultiPartitionShuffleRepartitioner {
@@ -169,23 +159,23 @@ impl MultiPartitionShuffleRepartitioner {
         let shuffle_block_writer = ShuffleBlockWriter::try_new(schema.as_ref(), codec.clone())?;
 
         let partition_writers = (0..num_output_partitions)
-            .map(|_| PartitionWriter::try_new(shuffle_block_writer.clone()))
+            .map(|_| {
+                PartitionWriter::try_new(
+                    shuffle_block_writer.clone(),
+                    write_buffer_size,
+                    batch_size,
+                )
+            })
             .collect::<datafusion::common::Result<Vec<_>>>()?;
 
         let reservation = MemoryConsumer::new(format!("ShuffleRepartitioner[{partition}]"))
             .with_can_spill(true)
             .register(&runtime.memory_pool);
 
-        let partition_coalescers = (0..num_output_partitions)
-            .map(|_| BatchCoalescer::new(Arc::clone(&schema), batch_size))
-            .collect();
-
         Ok(Self {
             output_data_file,
             output_index_file,
-            partition_coalescers,
             partition_writers,
-            shuffle_block_writer,
             partitioning,
             runtime,
             metrics,
@@ -193,7 +183,6 @@ impl MultiPartitionShuffleRepartitioner {
             batch_size,
             reservation,
             tracing_enabled,
-            write_buffer_size,
         })
     }
 
@@ -396,70 +385,51 @@ impl MultiPartitionShuffleRepartitioner {
         Ok(())
     }
 
-    /// Pushes rows from the input batch into per-partition coalescers using
-    /// `BatchCoalescer::push_batch_with_indices`. The coalescer internally performs
-    /// take + coalescing, avoiding intermediate tiny RecordBatch allocations.
+    /// Reorders the input batch with a single `take` using all partition_row_indices,
+    /// then uses zero-copy `RecordBatch::slice()` to carve out each partition's sub-batch
+    /// and writes each slice directly to the partition writer's spill file.
     async fn buffer_partitioned_batch_may_spill(
         &mut self,
         input: RecordBatch,
         partition_row_indices: &[u32],
         partition_starts: &[u32],
     ) -> datafusion::common::Result<()> {
-        let mut mem_growth: usize = 0;
-        let num_partitions = partition_starts.len() - 1;
+        let num_rows = input.num_rows();
+        if num_rows == 0 {
+            return Ok(());
+        }
 
+        // Single take to reorder the entire batch by partition assignment
+        let all_indices = UInt32Array::from(partition_row_indices[..num_rows].to_vec());
+        let reordered_columns: Vec<ArrayRef> = input
+            .columns()
+            .iter()
+            .map(|col| take(col.as_ref(), &all_indices, None))
+            .collect::<Result<Vec<_>, _>>()?;
+        let reordered = RecordBatch::try_new(input.schema(), reordered_columns)?;
+
+        // Write each partition's slice directly to the partition writer
+        let num_partitions = partition_starts.len() - 1;
+        let mut bytes_written = 0;
         for partition_id in 0..num_partitions {
             let start = partition_starts[partition_id] as usize;
-            let end = partition_starts[partition_id + 1] as usize;
-            if start == end {
-                continue;
-            }
-
-            let indices = UInt32Array::from(partition_row_indices[start..end].to_vec());
-            let coalescer = &mut self.partition_coalescers[partition_id];
-            let num_indices = end - start;
-            coalescer
-                .push_batch_with_indices(input.clone(), &indices)
-                .map_err(|e| {
-                    DataFusionError::ArrowError(
-                        Box::from(e),
-                        Some(DataFusionError::get_back_trace()),
-                    )
-                })?;
-            // Estimate memory growth proportional to the rows added
-            if num_indices > 0 && input.num_rows() > 0 {
-                mem_growth +=
-                    input.get_array_memory_size() * num_indices / input.num_rows();
+            let len = partition_starts[partition_id + 1] as usize - start;
+            if len > 0 {
+                let slice = reordered.slice(start, len);
+                bytes_written += self.partition_writers[partition_id].write_batch(
+                    &slice,
+                    &self.runtime,
+                    &self.metrics,
+                )?;
             }
         }
 
-        if self.reservation.try_grow(mem_growth).is_err() {
+        // Track memory for bytes written to spill files (for spill accounting)
+        // The reordered batch is dropped at end of scope, no persistent memory growth
+        if self.reservation.try_grow(bytes_written).is_err() {
             self.spill()?;
         }
 
-        Ok(())
-    }
-
-    fn shuffle_write_partition(
-        partition_iter: &mut PartitionedBatchIterator,
-        shuffle_block_writer: &mut ShuffleBlockWriter,
-        output_data: &mut BufWriter<File>,
-        encode_time: &Time,
-        write_time: &Time,
-        write_buffer_size: usize,
-        batch_size: usize,
-    ) -> datafusion::common::Result<()> {
-        let mut buf_batch_writer = BufBatchWriter::new(
-            shuffle_block_writer,
-            output_data,
-            write_buffer_size,
-            batch_size,
-        );
-        for batch in partition_iter {
-            let batch = batch?;
-            buf_batch_writer.write(&batch, encode_time, write_time)?;
-        }
-        buf_batch_writer.flush(encode_time, write_time)?;
         Ok(())
     }
 
@@ -479,28 +449,6 @@ impl MultiPartitionShuffleRepartitioner {
         self.metrics.data_size.value()
     }
 
-    /// Drains completed and buffered batches from each partition's coalescer into a
-    /// PartitionedBatchesProducer for iteration during spill or final write.
-    fn partitioned_batches(&mut self) -> datafusion::common::Result<PartitionedBatchesProducer> {
-        let mut partition_batches = Vec::with_capacity(self.partition_coalescers.len());
-        for coalescer in &mut self.partition_coalescers {
-            // Flush any remaining buffered rows into the completed queue
-            coalescer.finish_buffered_batch().map_err(|e| {
-                DataFusionError::ArrowError(
-                    Box::from(e),
-                    Some(DataFusionError::get_back_trace()),
-                )
-            })?;
-            // Drain all completed batches
-            let mut batches = Vec::new();
-            while let Some(batch) = coalescer.next_completed_batch() {
-                batches.push(batch);
-            }
-            partition_batches.push(batches);
-        }
-        Ok(PartitionedBatchesProducer::new(partition_batches))
-    }
-
     pub(crate) fn spill(&mut self) -> datafusion::common::Result<()> {
         log::info!(
             "ShuffleRepartitioner spilling shuffle data of {} to disk while inserting ({} time(s) so far)",
@@ -508,31 +456,13 @@ impl MultiPartitionShuffleRepartitioner {
             self.spill_count()
         );
 
-        // we could always get a chance to free some memory as long as we are holding some
-        if self.partition_coalescers.iter().all(|c| c.is_empty()) {
-            return Ok(());
-        }
-
         with_trace("shuffle_spill", self.tracing_enabled, || {
-            let num_output_partitions = self.partition_writers.len();
-            let mut partitioned_batches = self.partitioned_batches()?;
-            let mut spilled_bytes = 0;
-
-            for partition_id in 0..num_output_partitions {
-                let partition_writer = &mut self.partition_writers[partition_id];
-                let mut iter = partitioned_batches.produce(partition_id);
-                spilled_bytes += partition_writer.spill(
-                    &mut iter,
-                    &self.runtime,
-                    &self.metrics,
-                    self.write_buffer_size,
-                    self.batch_size,
-                )?;
+            for partition_writer in &mut self.partition_writers {
+                partition_writer.flush(&self.metrics)?;
             }
 
             self.reservation.free();
             self.metrics.spill_count.add(1);
-            self.metrics.spilled_bytes.add(spilled_bytes);
             Ok(())
         })
     }
@@ -573,12 +503,16 @@ impl ShufflePartitioner for MultiPartitionShuffleRepartitioner {
         with_trace("shuffle_write", self.tracing_enabled, || {
             let start_time = Instant::now();
 
-            let mut partitioned_batches = self.partitioned_batches()?;
-            let num_output_partitions = self.partition_coalescers.len();
+            let num_output_partitions = self.partition_writers.len();
             let mut offsets = vec![0; num_output_partitions + 1];
 
             let data_file = self.output_data_file.clone();
             let index_file = self.output_index_file.clone();
+
+            // Flush all partition writers to ensure all data is written to spill files
+            for partition_writer in &mut self.partition_writers {
+                partition_writer.flush(&self.metrics)?;
+            }
 
             let output_data = OpenOptions::new()
                 .write(true)
@@ -593,26 +527,13 @@ impl ShufflePartitioner for MultiPartitionShuffleRepartitioner {
             for i in 0..num_output_partitions {
                 offsets[i] = output_data.stream_position()?;
 
-                // if we wrote a spill file for this partition then copy the
-                // contents into the shuffle file
+                // Copy the spill file contents into the shuffle file
                 if let Some(spill_path) = self.partition_writers[i].path() {
                     let mut spill_file = BufReader::new(File::open(spill_path)?);
                     let mut write_timer = self.metrics.write_time.timer();
                     std::io::copy(&mut spill_file, &mut output_data)?;
                     write_timer.stop();
                 }
-
-                // Write in memory batches to output data file
-                let mut partition_iter = partitioned_batches.produce(i);
-                Self::shuffle_write_partition(
-                    &mut partition_iter,
-                    &mut self.shuffle_block_writer,
-                    &mut output_data,
-                    &self.metrics.encode_time,
-                    &self.metrics.write_time,
-                    self.write_buffer_size,
-                    self.batch_size,
-                )?;
             }
 
             let mut write_timer = self.metrics.write_time.timer();

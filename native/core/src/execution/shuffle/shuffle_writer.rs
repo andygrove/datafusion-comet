@@ -367,24 +367,18 @@ mod test {
 
         repartitioner.insert_batch(batch.clone()).await.unwrap();
 
+        // After insert_batch, spill files are created lazily by partition writers
         {
             let partition_writers = repartitioner.partition_writers();
             assert_eq!(partition_writers.len(), 2);
-
-            assert!(!partition_writers[0].has_spill_file());
-            assert!(!partition_writers[1].has_spill_file());
-        }
-
-        repartitioner.spill().unwrap();
-
-        // after spill, there should be spill files
-        {
-            let partition_writers = repartitioner.partition_writers();
             assert!(partition_writers[0].has_spill_file());
             assert!(partition_writers[1].has_spill_file());
         }
 
-        // insert another batch after spilling
+        // Spill flushes the partition writers
+        repartitioner.spill().unwrap();
+
+        // Insert another batch after spilling
         repartitioner.insert_batch(batch.clone()).await.unwrap();
     }
 

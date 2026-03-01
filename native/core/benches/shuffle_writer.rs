@@ -17,8 +17,7 @@
 
 use arrow::array::builder::{Date32Builder, Decimal128Builder, Int32Builder};
 use arrow::array::{builder::StringBuilder, Array, Int32Array, RecordBatch, UInt32Array};
-use arrow::compute::kernels::coalesce::BatchCoalescer;
-use arrow::compute::{concat_batches, interleave_record_batch, take};
+use arrow::compute::{interleave_record_batch, take};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::row::{RowConverter, SortField};
 use comet::execution::shuffle::{
@@ -79,68 +78,6 @@ fn compute_partition_assignments(
     (counts, row_indices)
 }
 
-/// Benchmark: the "take" approach — take from a single batch per partition
-fn bench_take_partitioning(
-    batch: &RecordBatch,
-    partition_starts: &[u32],
-    partition_row_indices: &[u32],
-    num_partitions: usize,
-) -> Vec<Vec<RecordBatch>> {
-    let mut result: Vec<Vec<RecordBatch>> = vec![vec![]; num_partitions];
-    for partition_id in 0..num_partitions {
-        let start = partition_starts[partition_id] as usize;
-        let end = partition_starts[partition_id + 1] as usize;
-        if start == end {
-            continue;
-        }
-        let indices = UInt32Array::from(partition_row_indices[start..end].to_vec());
-        let columns: Vec<_> = batch
-            .columns()
-            .iter()
-            .map(|col| take(col.as_ref(), &indices, None).unwrap())
-            .collect();
-        let sub_batch = RecordBatch::try_new(batch.schema(), columns).unwrap();
-        result[partition_id].push(sub_batch);
-    }
-    result
-}
-
-/// Benchmark: the "take + coalesce" approach — take then concat when reaching batch_size
-fn bench_take_coalesce_partitioning(
-    batch: &RecordBatch,
-    partition_starts: &[u32],
-    partition_row_indices: &[u32],
-    num_partitions: usize,
-    batch_size: usize,
-) -> Vec<Vec<RecordBatch>> {
-    let mut result: Vec<Vec<RecordBatch>> = vec![vec![]; num_partitions];
-    for partition_id in 0..num_partitions {
-        let start = partition_starts[partition_id] as usize;
-        let end = partition_starts[partition_id + 1] as usize;
-        if start == end {
-            continue;
-        }
-        let indices = UInt32Array::from(partition_row_indices[start..end].to_vec());
-        let columns: Vec<_> = batch
-            .columns()
-            .iter()
-            .map(|col| take(col.as_ref(), &indices, None).unwrap())
-            .collect();
-        let sub_batch = RecordBatch::try_new(batch.schema(), columns).unwrap();
-        let partition = &mut result[partition_id];
-        partition.push(sub_batch);
-
-        let total_rows: usize = partition.iter().map(|b| b.num_rows()).sum();
-        if total_rows >= batch_size {
-            let schema = partition[0].schema();
-            let coalesced = concat_batches(&schema, partition.iter()).unwrap();
-            partition.clear();
-            partition.push(coalesced);
-        }
-    }
-    result
-}
-
 /// Benchmark: the old "interleave" approach — buffer batches + indices, then interleave
 fn bench_interleave_partitioning(
     buffered_batches: &[RecordBatch],
@@ -172,48 +109,11 @@ fn partitioning_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("partitioning");
 
     for num_partitions in [16, 200] {
-        let batch = create_batch(8192, true);
-        let (partition_starts, partition_row_indices) =
-            compute_partition_assignments(&batch, num_partitions);
-
-        // Benchmark: take (single batch)
+        // Benchmark: single take + zero-copy slice (current approach)
         group.bench_function(
-            BenchmarkId::new("take", format!("{num_partitions}p")),
-            |b| {
-                b.iter(|| {
-                    bench_take_partitioning(
-                        &batch,
-                        &partition_starts,
-                        &partition_row_indices,
-                        num_partitions,
-                    )
-                });
-            },
-        );
-
-        // Benchmark: take + coalesce (single batch, but exercises the coalesce path)
-        group.bench_function(
-            BenchmarkId::new("take_coalesce", format!("{num_partitions}p")),
-            |b| {
-                b.iter(|| {
-                    bench_take_coalesce_partitioning(
-                        &batch,
-                        &partition_starts,
-                        &partition_row_indices,
-                        num_partitions,
-                        8192,
-                    )
-                });
-            },
-        );
-
-        // Benchmark: simulate multi-batch take + coalesce (10 batches, like the end-to-end test)
-        // This exercises the coalesce path more realistically since batches accumulate
-        group.bench_function(
-            BenchmarkId::new("take_coalesce_multi", format!("{num_partitions}p")),
+            BenchmarkId::new("take_slice_multi", format!("{num_partitions}p")),
             |b| {
                 let batches = create_batches(8192, 10);
-                // Pre-compute assignments for each batch
                 let assignments: Vec<_> = batches
                     .iter()
                     .map(|batch| compute_partition_assignments(batch, num_partitions))
@@ -221,32 +121,22 @@ fn partitioning_benchmark(c: &mut Criterion) {
                 b.iter(|| {
                     let mut result: Vec<Vec<RecordBatch>> = vec![vec![]; num_partitions];
                     for (batch, (starts, indices)) in batches.iter().zip(&assignments) {
+                        let num_rows = batch.num_rows();
+                        let all_indices =
+                            UInt32Array::from(indices[..num_rows].to_vec());
+                        let reordered_columns: Vec<_> = batch
+                            .columns()
+                            .iter()
+                            .map(|col| take(col.as_ref(), &all_indices, None).unwrap())
+                            .collect();
+                        let reordered =
+                            RecordBatch::try_new(batch.schema(), reordered_columns).unwrap();
                         for partition_id in 0..num_partitions {
                             let start = starts[partition_id] as usize;
-                            let end = starts[partition_id + 1] as usize;
-                            if start == end {
-                                continue;
-                            }
-                            let idx_array =
-                                UInt32Array::from(indices[start..end].to_vec());
-                            let columns: Vec<_> = batch
-                                .columns()
-                                .iter()
-                                .map(|col| take(col.as_ref(), &idx_array, None).unwrap())
-                                .collect();
-                            let sub_batch =
-                                RecordBatch::try_new(batch.schema(), columns).unwrap();
-                            let partition = &mut result[partition_id];
-                            partition.push(sub_batch);
-
-                            let total_rows: usize =
-                                partition.iter().map(|b| b.num_rows()).sum();
-                            if total_rows >= 8192 {
-                                let schema = partition[0].schema();
-                                let coalesced =
-                                    concat_batches(&schema, partition.iter()).unwrap();
-                                partition.clear();
-                                partition.push(coalesced);
+                            let len =
+                                starts[partition_id + 1] as usize - start;
+                            if len > 0 {
+                                result[partition_id].push(reordered.slice(start, len));
                             }
                         }
                     }
@@ -280,49 +170,6 @@ fn partitioning_benchmark(c: &mut Criterion) {
                         num_partitions,
                         8192,
                     )
-                });
-            },
-        );
-
-        // Benchmark: BatchCoalescer::push_batch_with_indices (current approach)
-        group.bench_function(
-            BenchmarkId::new("coalescer_multi", format!("{num_partitions}p")),
-            |b| {
-                let batches = create_batches(8192, 10);
-                let schema = batches[0].schema();
-                let assignments: Vec<_> = batches
-                    .iter()
-                    .map(|batch| compute_partition_assignments(batch, num_partitions))
-                    .collect();
-                b.iter(|| {
-                    let mut coalescers: Vec<BatchCoalescer> = (0..num_partitions)
-                        .map(|_| BatchCoalescer::new(Arc::clone(&schema), 8192))
-                        .collect();
-                    for (batch, (starts, indices)) in batches.iter().zip(&assignments) {
-                        for partition_id in 0..num_partitions {
-                            let start = starts[partition_id] as usize;
-                            let end = starts[partition_id + 1] as usize;
-                            if start == end {
-                                continue;
-                            }
-                            let idx_array =
-                                UInt32Array::from(indices[start..end].to_vec());
-                            coalescers[partition_id]
-                                .push_batch_with_indices(batch.clone(), &idx_array)
-                                .unwrap();
-                        }
-                    }
-                    // Drain all completed + buffered batches
-                    let mut result: Vec<Vec<RecordBatch>> = Vec::with_capacity(num_partitions);
-                    for coalescer in &mut coalescers {
-                        coalescer.finish_buffered_batch().unwrap();
-                        let mut batches = Vec::new();
-                        while let Some(batch) = coalescer.next_completed_batch() {
-                            batches.push(batch);
-                        }
-                        result.push(batches);
-                    }
-                    result
                 });
             },
         );
