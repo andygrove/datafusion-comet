@@ -17,6 +17,7 @@
 
 use arrow::array::builder::{Date32Builder, Decimal128Builder, Int32Builder};
 use arrow::array::{builder::StringBuilder, Array, Int32Array, RecordBatch, UInt32Array};
+use arrow::compute::kernels::coalesce::BatchCoalescer;
 use arrow::compute::{concat_batches, interleave_record_batch, take};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::row::{RowConverter, SortField};
@@ -279,6 +280,49 @@ fn partitioning_benchmark(c: &mut Criterion) {
                         num_partitions,
                         8192,
                     )
+                });
+            },
+        );
+
+        // Benchmark: BatchCoalescer::push_batch_with_indices (current approach)
+        group.bench_function(
+            BenchmarkId::new("coalescer_multi", format!("{num_partitions}p")),
+            |b| {
+                let batches = create_batches(8192, 10);
+                let schema = batches[0].schema();
+                let assignments: Vec<_> = batches
+                    .iter()
+                    .map(|batch| compute_partition_assignments(batch, num_partitions))
+                    .collect();
+                b.iter(|| {
+                    let mut coalescers: Vec<BatchCoalescer> = (0..num_partitions)
+                        .map(|_| BatchCoalescer::new(Arc::clone(&schema), 8192))
+                        .collect();
+                    for (batch, (starts, indices)) in batches.iter().zip(&assignments) {
+                        for partition_id in 0..num_partitions {
+                            let start = starts[partition_id] as usize;
+                            let end = starts[partition_id + 1] as usize;
+                            if start == end {
+                                continue;
+                            }
+                            let idx_array =
+                                UInt32Array::from(indices[start..end].to_vec());
+                            coalescers[partition_id]
+                                .push_batch_with_indices(batch.clone(), &idx_array)
+                                .unwrap();
+                        }
+                    }
+                    // Drain all completed + buffered batches
+                    let mut result: Vec<Vec<RecordBatch>> = Vec::with_capacity(num_partitions);
+                    for coalescer in &mut coalescers {
+                        coalescer.finish_buffered_batch().unwrap();
+                        let mut batches = Vec::new();
+                        while let Some(batch) = coalescer.next_completed_batch() {
+                            batches.push(batch);
+                        }
+                        result.push(batches);
+                    }
+                    result
                 });
             },
         );
