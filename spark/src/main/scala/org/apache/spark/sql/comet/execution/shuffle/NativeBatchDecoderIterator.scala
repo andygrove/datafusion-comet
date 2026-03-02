@@ -20,7 +20,6 @@
 package org.apache.spark.sql.comet.execution.shuffle
 
 import java.io.InputStream
-import java.nio.ByteBuffer
 import java.nio.channels.Channels
 
 import org.apache.spark.TaskContext
@@ -52,37 +51,21 @@ case class NativeBatchDecoderIterator(
     })
   }
 
-  // Read all bytes directly into a DirectByteBuffer (doubling growth)
-  // and create the native reader. dataBuf is kept alive as a field
-  // because native code holds a raw pointer into its memory.
-  private var dataBuf: ByteBuffer = _
+  // Stream Arrow IPC data incrementally via a ReadableByteChannel backed by
+  // a BufferedInputStream. Native code reads from this channel via JNI callbacks,
+  // so decoding can start as soon as the first IPC message arrives.
   private val (readerHandle, fieldCount) = {
     if (in == null) {
       (0L, 0)
     } else {
-      val channel = Channels.newChannel(in)
-      var capacity = NativeBatchDecoderIterator.INITIAL_BUFFER_SIZE
-      dataBuf = ByteBuffer.allocateDirect(capacity)
-      while (channel.read(dataBuf) >= 0) {
-        if (!dataBuf.hasRemaining) {
-          val newCap = Math.min(capacity.toLong * 2, Integer.MAX_VALUE).toInt
-          val newBuf = ByteBuffer.allocateDirect(newCap)
-          dataBuf.flip()
-          newBuf.put(dataBuf)
-          dataBuf = newBuf
-          capacity = newCap
-        }
-      }
-      dataBuf.flip()
-      val totalRead = dataBuf.remaining()
-
-      if (totalRead == 0) {
-        dataBuf = null
+      val buffered =
+        new java.io.BufferedInputStream(in, NativeBatchDecoderIterator.READ_BUFFER_SIZE)
+      val channel = Channels.newChannel(buffered)
+      val handle = native.createShuffleStreamReader(channel, tracingEnabled)
+      if (handle == 0L) {
         (0L, 0)
       } else {
-        val handle = native.createShuffleStreamReader(dataBuf, totalRead, tracingEnabled)
-        val cols =
-          native.getShuffleStreamReaderColumns(handle)
+        val cols = native.getShuffleStreamReaderColumns(handle)
         (handle, cols)
       }
     }
@@ -150,7 +133,6 @@ case class NativeBatchDecoderIterator(
         if (readerHandle != 0) {
           native.closeShuffleStreamReader(readerHandle)
         }
-        dataBuf = null
         if (in != null) {
           in.close()
         }
@@ -162,5 +144,5 @@ case class NativeBatchDecoderIterator(
 }
 
 object NativeBatchDecoderIterator {
-  private val INITIAL_BUFFER_SIZE = 128 * 1024
+  private val READ_BUFFER_SIZE = 64 * 1024
 }

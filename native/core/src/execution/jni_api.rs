@@ -57,7 +57,6 @@ use datafusion_spark::function::string::char::CharFunc;
 use datafusion_spark::function::string::concat::SparkConcat;
 use futures::poll;
 use futures::stream::StreamExt;
-use jni::objects::JByteBuffer;
 use jni::sys::{jlongArray, JNI_FALSE};
 use jni::{
     errors::Result as JNIResult,
@@ -840,71 +839,90 @@ pub extern "system" fn Java_org_apache_comet_Native_sortRowPartitionsNative(
 
 use arrow::ipc::reader::StreamReader;
 
-/// Reads directly from a raw memory region (e.g. JNI DirectByteBuffer).
-/// The caller must ensure the backing memory outlives this reader.
-struct DirectBufferReader {
-    ptr: *const u8,
-    len: usize,
-    pos: usize,
+/// Reads from a JVM `ReadableByteChannel` via JNI callbacks.
+/// Each `read()` wraps the Rust buffer as a JNI DirectByteBuffer and calls
+/// `channel.read(byteBuffer)`, so the JVM writes directly into Rust memory.
+struct JniChannelReader {
+    channel: GlobalRef,
 }
 
-impl std::io::Read for DirectBufferReader {
+unsafe impl Send for JniChannelReader {}
+
+impl std::io::Read for JniChannelReader {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let remaining = self.len - self.pos;
-        let n = buf.len().min(remaining);
-        if n > 0 {
-            unsafe {
-                std::ptr::copy_nonoverlapping(self.ptr.add(self.pos), buf.as_mut_ptr(), n);
-            }
-            self.pos += n;
+        let mut env = JVMClasses::get_env()
+            .map_err(|e| std::io::Error::other(format!("Failed to get JNIEnv: {e}")))?;
+        env.push_local_frame(2)
+            .map_err(|e| std::io::Error::other(format!("push_local_frame failed: {e}")))?;
+        let direct_buf = unsafe { env.new_direct_byte_buffer(buf.as_mut_ptr(), buf.len()) }
+            .map_err(|e| std::io::Error::other(format!("new_direct_byte_buffer failed: {e}")))?;
+        let classes = JVMClasses::get();
+        let n: i32 = unsafe {
+            env.call_method_unchecked(
+                self.channel.as_obj(),
+                classes.readable_byte_channel.method_read,
+                classes.readable_byte_channel.method_read_ret.clone(),
+                &[jni::objects::JValue::from(&direct_buf).as_jni()],
+            )
         }
-        Ok(n)
+        .and_then(|v| v.i())
+        .map_err(|e| std::io::Error::other(format!("channel.read() failed: {e}")))?;
+        // Check for JVM exception
+        if env.exception_check().unwrap_or(false) {
+            env.exception_clear().ok();
+            let _ = unsafe { env.pop_local_frame(&JObject::null()) };
+            return Err(std::io::Error::other("JVM IOException during channel.read()"));
+        }
+        let _ = unsafe { env.pop_local_frame(&JObject::null()) };
+        if n < 0 {
+            Ok(0)
+        } else {
+            Ok(n as usize)
+        }
     }
 }
 
-// Required because *const u8 is not Send
-unsafe impl Send for DirectBufferReader {}
+/// Returns true if the error is the "empty stream" IPC error from Arrow,
+/// indicating there is no more data to read.
+fn is_empty_stream_error(e: &arrow::error::ArrowError) -> bool {
+    matches!(e, arrow::error::ArrowError::IpcError(msg) if msg.contains("empty stream"))
+}
 
 /// Holds a stateful Arrow IPC StreamReader for reading shuffle data.
 /// Supports reading concatenated IPC streams (from multiple spills).
 struct ShuffleStreamReader {
-    reader: StreamReader<DirectBufferReader>,
+    reader: StreamReader<JniChannelReader>,
     num_columns: usize,
-    ptr: *const u8,
-    data_len: usize,
+    channel: GlobalRef,
 }
 
 impl ShuffleStreamReader {
     /// Try to advance to the next IPC stream in concatenated data.
     /// Returns true if a new stream was found, false if we've consumed all data.
     fn try_next_stream(&mut self) -> Result<bool, arrow::error::ArrowError> {
-        let pos = self.reader.get_ref().pos;
-        if pos >= self.data_len {
-            return Ok(false);
+        let channel_reader = JniChannelReader {
+            channel: self.channel.clone(),
+        };
+        match StreamReader::try_new(channel_reader, None) {
+            Ok(reader) => {
+                self.reader = unsafe { reader.with_skip_validation(true) };
+                Ok(true)
+            }
+            Err(e) if is_empty_stream_error(&e) => Ok(false),
+            Err(e) => Err(e),
         }
-        // Create a new DirectBufferReader starting at the current position — no allocation
-        let buf_reader = DirectBufferReader {
-            ptr: self.ptr,
-            len: self.data_len,
-            pos,
-        };
-        self.reader = unsafe {
-            StreamReader::try_new(buf_reader, None)?.with_skip_validation(true)
-        };
-        Ok(true)
     }
 }
 
 #[no_mangle]
-/// Create a ShuffleStreamReader from a DirectByteBuffer containing an Arrow IPC stream.
-/// Returns a handle (pointer) to the reader.
+/// Create a ShuffleStreamReader from a JVM ReadableByteChannel.
+/// Returns a handle (pointer) to the reader, or 0 if the channel is empty.
 /// # Safety
 /// This function is inherently unsafe since it deals with raw pointers passed from JNI.
 pub unsafe extern "system" fn Java_org_apache_comet_Native_createShuffleStreamReader(
     e: JNIEnv,
     _class: JClass,
-    byte_buffer: JByteBuffer,
-    length: jint,
+    channel: JObject,
     tracing_enabled: jboolean,
 ) -> jlong {
     try_unwrap_or_throw(&e, |env| {
@@ -912,22 +930,20 @@ pub unsafe extern "system" fn Java_org_apache_comet_Native_createShuffleStreamRe
             "createShuffleStreamReader",
             tracing_enabled != JNI_FALSE,
             || {
-                let raw_pointer = env.get_direct_buffer_address(&byte_buffer)?;
-                let length = length as usize;
-                let buf_reader = DirectBufferReader {
-                    ptr: raw_pointer,
-                    len: length,
-                    pos: 0,
+                let channel_ref = env.new_global_ref(&channel)?;
+                let channel_reader = JniChannelReader {
+                    channel: channel_ref.clone(),
                 };
-                let reader = unsafe {
-                    StreamReader::try_new(buf_reader, None)?.with_skip_validation(true)
+                let reader = match StreamReader::try_new(channel_reader, None) {
+                    Ok(r) => unsafe { r.with_skip_validation(true) },
+                    Err(e) if is_empty_stream_error(&e) => return Ok(0),
+                    Err(e) => return Err(CometError::Arrow { source: e }),
                 };
                 let num_columns = reader.schema().fields().len();
                 let boxed = Box::new(ShuffleStreamReader {
                     reader,
                     num_columns,
-                    ptr: raw_pointer,
-                    data_len: length,
+                    channel: channel_ref,
                 });
                 Ok(Box::into_raw(boxed) as jlong)
             },

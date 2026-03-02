@@ -19,8 +19,6 @@
 
 package org.apache.comet
 
-import java.nio.ByteBuffer
-
 import org.apache.spark.CometTaskMemoryManager
 import org.apache.spark.sql.comet.CometMetricNode
 
@@ -162,14 +160,12 @@ class Native extends NativeBase {
   @native def sortRowPartitionsNative(addr: Long, size: Long, tracingEnabled: Boolean): Unit
 
   /**
-   * Create a ShuffleStreamReader from a DirectByteBuffer containing an Arrow IPC stream.
+   * Create a ShuffleStreamReader from a ReadableByteChannel backed by a shuffle input stream.
+   * Native code reads from this channel incrementally via JNI callbacks.
    * @return
-   *   handle to the native reader
+   *   handle to the native reader, or 0 if the channel is empty
    */
-  @native def createShuffleStreamReader(
-      data: ByteBuffer,
-      length: Int,
-      tracingEnabled: Boolean): Long
+  @native def createShuffleStreamReader(channel: Object, tracingEnabled: Boolean): Long
 
   /**
    * Get the number of columns from a ShuffleStreamReader.
