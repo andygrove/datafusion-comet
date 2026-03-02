@@ -19,48 +19,23 @@ use arrow::array::builder::{Date32Builder, Decimal128Builder, Int32Builder};
 use arrow::array::{builder::StringBuilder, Array, Int32Array, RecordBatch};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::row::{RowConverter, SortField};
-use comet::execution::shuffle::{
-    CometPartitioning, CompressionCodec, ShuffleBlockWriter, ShuffleWriterExec,
-};
+use comet::execution::shuffle::{CometPartitioning, CompressionCodec, ShuffleWriterExec};
 use criterion::{criterion_group, criterion_main, Criterion};
 use datafusion::datasource::memory::MemorySourceConfig;
 use datafusion::datasource::source::DataSourceExec;
 use datafusion::physical_expr::expressions::{col, Column};
 use datafusion::physical_expr::{LexOrdering, PhysicalSortExpr};
-use datafusion::physical_plan::metrics::Time;
 use datafusion::{
     physical_plan::{common::collect, ExecutionPlan},
     prelude::SessionContext,
 };
 use itertools::Itertools;
-use std::io::Cursor;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
 fn criterion_benchmark(c: &mut Criterion) {
     let batch = create_batch(8192, true);
     let mut group = c.benchmark_group("shuffle_writer");
-    for compression_codec in &[
-        CompressionCodec::None,
-        CompressionCodec::Lz4Frame,
-        CompressionCodec::Snappy,
-        CompressionCodec::Zstd(1),
-        CompressionCodec::Zstd(6),
-    ] {
-        let name = format!("shuffle_writer: write encoded (compression={compression_codec:?})");
-        group.bench_function(name, |b| {
-            let mut buffer = vec![];
-            let ipc_time = Time::default();
-            let w =
-                ShuffleBlockWriter::try_new(&batch.schema(), compression_codec.clone()).unwrap();
-            b.iter(|| {
-                buffer.clear();
-                let mut cursor = Cursor::new(&mut buffer);
-                w.write_batch(&batch, &mut cursor, &ipc_time).unwrap();
-            });
-        });
-    }
-
     for compression_codec in [
         CompressionCodec::None,
         CompressionCodec::Lz4Frame,
@@ -152,7 +127,6 @@ fn create_shuffle_writer_exec(
         "/tmp/data.out".to_string(),
         "/tmp/index.out".to_string(),
         false,
-        1024 * 1024,
     )
     .unwrap()
 }

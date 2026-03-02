@@ -21,7 +21,8 @@ use crate::{
     errors::CometError,
     execution::{
         shuffle::{
-            codec::{Checksum, ShuffleBlockWriter},
+            codec::Checksum,
+            ipc_write_options,
             spark_unsafe::{
                 list::{append_list_element, SparkUnsafeArray},
                 map::{append_map_elements, get_map_key_value_fields, SparkUnsafeMap},
@@ -43,7 +44,7 @@ use arrow::array::{
 use arrow::compute::cast;
 use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
 use arrow::error::ArrowError;
-use datafusion::physical_plan::metrics::Time;
+use arrow::ipc::writer::StreamWriter;
 use jni::sys::{jint, jlong};
 use std::{
     fs::OpenOptions,
@@ -810,8 +811,7 @@ pub fn process_sorted_row_partition(
 ) -> Result<(i64, Option<u32>), CometError> {
     // The current row number we are reading
     let mut current_row = 0;
-    // Total number of bytes written
-    let mut written = 0;
+    // Total number of bytes written (set below after IPC stream is complete)
     // The current checksum value. This is updated incrementally in the following loop.
     let mut current_checksum = if checksum_enabled {
         Some(Checksum::try_new(checksum_algo, initial_checksum)?)
@@ -828,58 +828,68 @@ pub fn process_sorted_row_partition(
         Ok::<(), CometError>(())
     })?;
 
-    // Open the output file once and reuse it across batches
+    // Write batches into a Vec<u8> buffer, then write to file with checksum
+    let ipc_opts = ipc_write_options(codec)?;
+
+    // Helper: build one batch from current_row, advancing current_row by n.
+    let build_batch =
+        |data_builders: &mut Vec<Box<dyn ArrayBuilder>>, current_row: usize, n: usize| {
+            for (idx, builder) in data_builders.iter_mut().enumerate() {
+                append_columns(
+                    row_addresses_ptr,
+                    row_sizes_ptr,
+                    current_row,
+                    current_row + n,
+                    schema,
+                    idx,
+                    builder,
+                    prefer_dictionary_ratio,
+                )?;
+            }
+            let array_refs: Result<Vec<ArrayRef>, _> = data_builders
+                .iter_mut()
+                .zip(schema.iter())
+                .map(|(builder, datatype)| {
+                    builder_to_array(builder, datatype, prefer_dictionary_ratio)
+                })
+                .collect();
+            make_batch(array_refs?, n).map_err(CometError::from)
+        };
+
+    // Build the first batch to discover the actual schema (may include dictionary types).
+    let mut buf: Vec<u8> = Vec::new();
+    if current_row < row_num {
+        let n = std::cmp::min(batch_size, row_num - current_row);
+        let first_batch = build_batch(&mut data_builders, current_row, n)?;
+        current_row += n;
+
+        let mut ipc_writer =
+            StreamWriter::try_new_with_options(&mut buf, &first_batch.schema(), ipc_opts)?;
+        ipc_writer.write(&first_batch)?;
+
+        while current_row < row_num {
+            let n = std::cmp::min(batch_size, row_num - current_row);
+            let batch = build_batch(&mut data_builders, current_row, n)?;
+            ipc_writer.write(&batch)?;
+            current_row += n;
+        }
+
+        ipc_writer.finish()?;
+    }
+    let written = buf.len();
+
+    // Compute checksum over the serialized bytes if enabled
+    if let Some(checksum) = &mut current_checksum {
+        let mut cursor = Cursor::new(&mut buf);
+        checksum.update(&mut cursor)?;
+    }
+
+    // Append to output file (multiple spills accumulate in the same file)
     let mut output_data = OpenOptions::new()
         .create(true)
         .append(true)
         .open(&output_path)?;
-
-    // Reusable buffer for serialized batch data
-    let mut frozen: Vec<u8> = Vec::new();
-
-    while current_row < row_num {
-        let n = std::cmp::min(batch_size, row_num - current_row);
-
-        // Appends rows to the array builders.
-        // For each column, iterating over rows and appending values to corresponding array
-        // builder.
-        for (idx, builder) in data_builders.iter_mut().enumerate() {
-            append_columns(
-                row_addresses_ptr,
-                row_sizes_ptr,
-                current_row,
-                current_row + n,
-                schema,
-                idx,
-                builder,
-                prefer_dictionary_ratio,
-            )?;
-        }
-
-        // Writes a record batch generated from the array builders to the output file.
-        // Note: builder_to_array calls finish() which resets the builder, making it reusable for the next batch.
-        let array_refs: Result<Vec<ArrayRef>, _> = data_builders
-            .iter_mut()
-            .zip(schema.iter())
-            .map(|(builder, datatype)| builder_to_array(builder, datatype, prefer_dictionary_ratio))
-            .collect();
-        let batch = make_batch(array_refs?, n)?;
-
-        frozen.clear();
-        let mut cursor = Cursor::new(&mut frozen);
-
-        // we do not collect metrics in Native_writeSortedFileNative
-        let ipc_time = Time::default();
-        let block_writer = ShuffleBlockWriter::try_new(batch.schema().as_ref(), codec.clone())?;
-        written += block_writer.write_batch(&batch, &mut cursor, &ipc_time)?;
-
-        if let Some(checksum) = &mut current_checksum {
-            checksum.update(&mut cursor)?;
-        }
-
-        output_data.write_all(&frozen)?;
-        current_row += n;
-    }
+    output_data.write_all(&buf)?;
 
     Ok((written as i64, current_checksum.map(|c| c.finalize())))
 }

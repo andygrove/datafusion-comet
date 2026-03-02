@@ -16,109 +16,174 @@
 // under the License.
 
 use crate::execution::shuffle::metrics::ShufflePartitionerMetrics;
-use crate::execution::shuffle::partitioners::PartitionedBatchIterator;
-use crate::execution::shuffle::writers::buf_batch_writer::BufBatchWriter;
-use crate::execution::shuffle::ShuffleBlockWriter;
+use arrow::array::RecordBatch;
+use arrow::compute::kernels::coalesce::BatchCoalescer;
+use arrow::datatypes::SchemaRef;
+use arrow::ipc::writer::{IpcWriteOptions, StreamWriter};
 use datafusion::common::DataFusionError;
 use datafusion::execution::disk_manager::RefCountedTempFile;
 use datafusion::execution::runtime_env::RuntimeEnv;
 use std::fs::{File, OpenOptions};
 
-struct SpillFile {
-    temp_file: RefCountedTempFile,
-    file: File,
-}
-
+/// Writes batches for a single partition to a spill file as a single Arrow IPC stream.
+/// Small batches are coalesced via `BatchCoalescer` before writing.
 pub(crate) struct PartitionWriter {
-    /// Spill file for intermediate shuffle output for this partition. Each spill event
-    /// will append to this file and the contents will be copied to the shuffle file at
-    /// the end of processing.
-    spill_file: Option<SpillFile>,
-    /// Writer that performs encoding and compression
-    shuffle_block_writer: ShuffleBlockWriter,
+    schema: SchemaRef,
+    ipc_options: IpcWriteOptions,
+    temp_file: Option<RefCountedTempFile>,
+    ipc_writer: Option<StreamWriter<File>>,
+    coalescer: Option<BatchCoalescer>,
+    batch_size: usize,
 }
 
 impl PartitionWriter {
     pub(crate) fn try_new(
-        shuffle_block_writer: ShuffleBlockWriter,
+        schema: SchemaRef,
+        batch_size: usize,
+        ipc_options: IpcWriteOptions,
     ) -> datafusion::common::Result<Self> {
         Ok(Self {
-            spill_file: None,
-            shuffle_block_writer,
+            schema,
+            ipc_options,
+            temp_file: None,
+            ipc_writer: None,
+            coalescer: None,
+            batch_size,
         })
     }
 
-    fn ensure_spill_file_created(
+    /// Ensure the spill file and IPC writer exist, creating them lazily.
+    fn ensure_writer(
         &mut self,
         runtime: &RuntimeEnv,
-    ) -> datafusion::common::Result<()> {
-        if self.spill_file.is_none() {
-            // Spill file is not yet created, create it
-            let spill_file = runtime
+    ) -> datafusion::common::Result<&mut StreamWriter<File>> {
+        if self.ipc_writer.is_none() {
+            let temp_file = runtime
                 .disk_manager
                 .create_tmp_file("shuffle writer spill")?;
-            let spill_data = OpenOptions::new()
+            let file = OpenOptions::new()
+                .read(true)
                 .write(true)
                 .create(true)
                 .truncate(true)
-                .open(spill_file.path())
+                .open(temp_file.path())
                 .map_err(|e| {
                     DataFusionError::Execution(format!("Error occurred while spilling {e}"))
                 })?;
-            self.spill_file = Some(SpillFile {
-                temp_file: spill_file,
-                file: spill_data,
-            });
+            self.temp_file = Some(temp_file);
+            let writer = StreamWriter::try_new_with_options(
+                file,
+                &self.schema,
+                self.ipc_options.clone(),
+            )?;
+            self.ipc_writer = Some(writer);
+        }
+        Ok(self.ipc_writer.as_mut().unwrap())
+    }
+
+    /// Write a batch to this partition's spill file.
+    /// Large batches (>= batch_size) are written directly; small batches are coalesced first.
+    /// Returns the batch's array memory size for memory accounting.
+    pub(crate) fn write_batch(
+        &mut self,
+        batch: &RecordBatch,
+        runtime: &RuntimeEnv,
+        metrics: &ShufflePartitionerMetrics,
+    ) -> datafusion::common::Result<usize> {
+        if batch.num_rows() == 0 {
+            return Ok(0);
+        }
+
+        let mem_size = batch.get_array_memory_size();
+
+        if batch.num_rows() >= self.batch_size {
+            // Large batch: flush coalescer first, then write directly (no clone)
+            self.flush_coalescer(runtime, metrics)?;
+            let writer = self.ensure_writer(runtime)?;
+            let mut timer = metrics.encode_time.timer();
+            writer.write(batch)?;
+            timer.stop();
+        } else {
+            // Small batch: push to coalescer
+            let coalescer = self
+                .coalescer
+                .get_or_insert_with(|| BatchCoalescer::new(batch.schema(), self.batch_size));
+            coalescer.push_batch(batch.clone())?;
+
+            // Drain completed batches to the IPC writer
+            let mut completed = Vec::new();
+            while let Some(batch) = coalescer.next_completed_batch() {
+                completed.push(batch);
+            }
+            if !completed.is_empty() {
+                let writer = self.ensure_writer(runtime)?;
+                let mut timer = metrics.encode_time.timer();
+                for batch in &completed {
+                    writer.write(batch)?;
+                }
+                timer.stop();
+            }
+        }
+
+        Ok(mem_size)
+    }
+
+    /// Flush the coalescer's remaining buffered rows to the IPC writer (for spill).
+    fn flush_coalescer(
+        &mut self,
+        runtime: &RuntimeEnv,
+        metrics: &ShufflePartitionerMetrics,
+    ) -> datafusion::common::Result<()> {
+        let mut remaining = Vec::new();
+        if let Some(coalescer) = &mut self.coalescer {
+            coalescer.finish_buffered_batch()?;
+            while let Some(batch) = coalescer.next_completed_batch() {
+                remaining.push(batch);
+            }
+        }
+        if !remaining.is_empty() {
+            let writer = self.ensure_writer(runtime)?;
+            let mut timer = metrics.encode_time.timer();
+            for batch in &remaining {
+                writer.write(batch)?;
+            }
+            timer.stop();
         }
         Ok(())
     }
 
-    pub(crate) fn spill(
+    /// Flush the coalescer (for spill). Does NOT finish the IPC stream,
+    /// so more batches can be written after spilling.
+    pub(crate) fn flush(
         &mut self,
-        iter: &mut PartitionedBatchIterator,
         runtime: &RuntimeEnv,
         metrics: &ShufflePartitionerMetrics,
-        write_buffer_size: usize,
-        batch_size: usize,
-    ) -> datafusion::common::Result<usize> {
-        if let Some(batch) = iter.next() {
-            self.ensure_spill_file_created(runtime)?;
+    ) -> datafusion::common::Result<()> {
+        self.flush_coalescer(runtime, metrics)
+    }
 
-            let total_bytes_written = {
-                let mut buf_batch_writer = BufBatchWriter::new(
-                    &mut self.shuffle_block_writer,
-                    &mut self.spill_file.as_mut().unwrap().file,
-                    write_buffer_size,
-                    batch_size,
-                );
-                let mut bytes_written =
-                    buf_batch_writer.write(&batch?, &metrics.encode_time, &metrics.write_time)?;
-                for batch in iter {
-                    let batch = batch?;
-                    bytes_written += buf_batch_writer.write(
-                        &batch,
-                        &metrics.encode_time,
-                        &metrics.write_time,
-                    )?;
-                }
-                buf_batch_writer.flush(&metrics.encode_time, &metrics.write_time)?;
-                bytes_written
-            };
-
-            Ok(total_bytes_written)
-        } else {
-            Ok(0)
+    /// Flush coalescer and finish the IPC stream (writes EOS marker).
+    /// After this, no more batches can be written.
+    pub(crate) fn finish(
+        &mut self,
+        runtime: &RuntimeEnv,
+        metrics: &ShufflePartitionerMetrics,
+    ) -> datafusion::common::Result<()> {
+        self.flush_coalescer(runtime, metrics)?;
+        if let Some(mut writer) = self.ipc_writer.take() {
+            let mut timer = metrics.encode_time.timer();
+            writer.finish()?;
+            timer.stop();
         }
+        Ok(())
     }
 
     pub(crate) fn path(&self) -> Option<&std::path::Path> {
-        self.spill_file
-            .as_ref()
-            .map(|spill_file| spill_file.temp_file.path())
+        self.temp_file.as_ref().map(|t| t.path())
     }
 
     #[cfg(test)]
     pub(crate) fn has_spill_file(&self) -> bool {
-        self.spill_file.is_some()
+        self.temp_file.is_some()
     }
 }

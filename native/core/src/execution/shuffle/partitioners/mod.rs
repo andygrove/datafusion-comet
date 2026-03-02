@@ -16,14 +16,12 @@
 // under the License.
 
 mod multi_partition;
-mod partitioned_batch_iterator;
 mod single_partition;
 
 use arrow::record_batch::RecordBatch;
 use datafusion::common::Result;
 
 pub(super) use multi_partition::MultiPartitionShuffleRepartitioner;
-pub(super) use partitioned_batch_iterator::PartitionedBatchIterator;
 pub(super) use single_partition::SinglePartitionShufflePartitioner;
 
 #[async_trait::async_trait]
