@@ -839,13 +839,38 @@ pub extern "system" fn Java_org_apache_comet_Native_sortRowPartitionsNative(
 // ============================================================================
 
 use arrow::ipc::reader::StreamReader;
-use std::io::Cursor;
+
+/// Reads directly from a raw memory region (e.g. JNI DirectByteBuffer).
+/// The caller must ensure the backing memory outlives this reader.
+struct DirectBufferReader {
+    ptr: *const u8,
+    len: usize,
+    pos: usize,
+}
+
+impl std::io::Read for DirectBufferReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let remaining = self.len - self.pos;
+        let n = buf.len().min(remaining);
+        if n > 0 {
+            unsafe {
+                std::ptr::copy_nonoverlapping(self.ptr.add(self.pos), buf.as_mut_ptr(), n);
+            }
+            self.pos += n;
+        }
+        Ok(n)
+    }
+}
+
+// Required because *const u8 is not Send
+unsafe impl Send for DirectBufferReader {}
 
 /// Holds a stateful Arrow IPC StreamReader for reading shuffle data.
 /// Supports reading concatenated IPC streams (from multiple spills).
 struct ShuffleStreamReader {
-    reader: StreamReader<Cursor<Vec<u8>>>,
+    reader: StreamReader<DirectBufferReader>,
     num_columns: usize,
+    ptr: *const u8,
     data_len: usize,
 }
 
@@ -853,18 +878,18 @@ impl ShuffleStreamReader {
     /// Try to advance to the next IPC stream in concatenated data.
     /// Returns true if a new stream was found, false if we've consumed all data.
     fn try_next_stream(&mut self) -> Result<bool, arrow::error::ArrowError> {
-        // Get the current cursor position (after the previous stream's EOS)
-        let cursor = self.reader.get_ref();
-        let pos = cursor.position() as usize;
+        let pos = self.reader.get_ref().pos;
         if pos >= self.data_len {
             return Ok(false);
         }
-        // There's more data — create a new StreamReader from the remaining bytes
-        let data = cursor.get_ref().clone();
-        let mut new_cursor = Cursor::new(data);
-        new_cursor.set_position(pos as u64);
+        // Create a new DirectBufferReader starting at the current position — no allocation
+        let buf_reader = DirectBufferReader {
+            ptr: self.ptr,
+            len: self.data_len,
+            pos,
+        };
         self.reader = unsafe {
-            StreamReader::try_new(new_cursor, None)?.with_skip_validation(true)
+            StreamReader::try_new(buf_reader, None)?.with_skip_validation(true)
         };
         Ok(true)
     }
@@ -889,15 +914,19 @@ pub unsafe extern "system" fn Java_org_apache_comet_Native_createShuffleStreamRe
             || {
                 let raw_pointer = env.get_direct_buffer_address(&byte_buffer)?;
                 let length = length as usize;
-                let slice: &[u8] = unsafe { std::slice::from_raw_parts(raw_pointer, length) };
-                let data = slice.to_vec();
-                let cursor = Cursor::new(data);
-                let reader =
-                    unsafe { StreamReader::try_new(cursor, None)?.with_skip_validation(true) };
+                let buf_reader = DirectBufferReader {
+                    ptr: raw_pointer,
+                    len: length,
+                    pos: 0,
+                };
+                let reader = unsafe {
+                    StreamReader::try_new(buf_reader, None)?.with_skip_validation(true)
+                };
                 let num_columns = reader.schema().fields().len();
                 let boxed = Box::new(ShuffleStreamReader {
                     reader,
                     num_columns,
+                    ptr: raw_pointer,
                     data_len: length,
                 });
                 Ok(Box::into_raw(boxed) as jlong)

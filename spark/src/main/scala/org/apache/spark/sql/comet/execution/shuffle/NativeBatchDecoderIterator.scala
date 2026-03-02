@@ -52,35 +52,34 @@ case class NativeBatchDecoderIterator(
     })
   }
 
-  // Read all bytes from the input stream into a DirectByteBuffer and create the native reader
+  // Read all bytes directly into a DirectByteBuffer (doubling growth)
+  // and create the native reader. dataBuf is kept alive as a field
+  // because native code holds a raw pointer into its memory.
+  private var dataBuf: ByteBuffer = _
   private val (readerHandle, fieldCount) = {
     if (in == null) {
       (0L, 0)
     } else {
       val channel = Channels.newChannel(in)
-      // Read all bytes into a growing byte array
-      var buf = new Array[Byte](NativeBatchDecoderIterator.INITIAL_BUFFER_SIZE)
-      var totalRead = 0
-      var n = 0
-      do {
-        if (totalRead == buf.length) {
-          val newBuf = new Array[Byte](Math.min(buf.length.toLong * 2, Integer.MAX_VALUE).toInt)
-          System.arraycopy(buf, 0, newBuf, 0, totalRead)
-          buf = newBuf
+      var capacity = NativeBatchDecoderIterator.INITIAL_BUFFER_SIZE
+      dataBuf = ByteBuffer.allocateDirect(capacity)
+      while (channel.read(dataBuf) >= 0) {
+        if (!dataBuf.hasRemaining) {
+          val newCap = Math.min(capacity.toLong * 2, Integer.MAX_VALUE).toInt
+          val newBuf = ByteBuffer.allocateDirect(newCap)
+          dataBuf.flip()
+          newBuf.put(dataBuf)
+          dataBuf = newBuf
+          capacity = newCap
         }
-        val bb = ByteBuffer.wrap(buf, totalRead, buf.length - totalRead)
-        n = channel.read(bb)
-        if (n > 0) totalRead += n
-      } while (n >= 0)
+      }
+      dataBuf.flip()
+      val totalRead = dataBuf.remaining()
 
       if (totalRead == 0) {
+        dataBuf = null
         (0L, 0)
       } else {
-        // Copy into a DirectByteBuffer for JNI
-        val dataBuf = ByteBuffer.allocateDirect(totalRead)
-        dataBuf.put(buf, 0, totalRead)
-        dataBuf.flip()
-
         val handle = native.createShuffleStreamReader(dataBuf, totalRead, tracingEnabled)
         val cols =
           native.getShuffleStreamReaderColumns(handle)
@@ -151,6 +150,7 @@ case class NativeBatchDecoderIterator(
         if (readerHandle != 0) {
           native.closeShuffleStreamReader(readerHandle)
         }
+        dataBuf = null
         if (in != null) {
           in.close()
         }

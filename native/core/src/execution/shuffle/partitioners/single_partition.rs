@@ -29,7 +29,7 @@ use tokio::time::Instant;
 
 /// A partitioner that writes all shuffle data to a single file as a single Arrow IPC stream.
 pub(crate) struct SinglePartitionShufflePartitioner {
-    ipc_writer: StreamWriter<File>,
+    ipc_writer: StreamWriter<BufWriter<File>>,
     output_index_path: String,
     coalescer: Option<BatchCoalescer>,
     metrics: ShufflePartitionerMetrics,
@@ -54,8 +54,11 @@ impl SinglePartitionShufflePartitioner {
             .truncate(true)
             .open(output_data_path)?;
 
-        let ipc_writer =
-            StreamWriter::try_new_with_options(output_data_file, &schema, ipc_opts)?;
+        let ipc_writer = StreamWriter::try_new_with_options(
+            BufWriter::new(output_data_file),
+            &schema,
+            ipc_opts,
+        )?;
 
         Ok(Self {
             ipc_writer,

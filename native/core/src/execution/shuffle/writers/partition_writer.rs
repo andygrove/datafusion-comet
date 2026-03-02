@@ -24,6 +24,7 @@ use datafusion::common::DataFusionError;
 use datafusion::execution::disk_manager::RefCountedTempFile;
 use datafusion::execution::runtime_env::RuntimeEnv;
 use std::fs::{File, OpenOptions};
+use std::io::BufWriter;
 
 /// Writes batches for a single partition to a spill file as a single Arrow IPC stream.
 /// Small batches are coalesced via `BatchCoalescer` before writing.
@@ -31,7 +32,7 @@ pub(crate) struct PartitionWriter {
     schema: SchemaRef,
     ipc_options: IpcWriteOptions,
     temp_file: Option<RefCountedTempFile>,
-    ipc_writer: Option<StreamWriter<File>>,
+    ipc_writer: Option<StreamWriter<BufWriter<File>>>,
     coalescer: Option<BatchCoalescer>,
     batch_size: usize,
 }
@@ -56,7 +57,7 @@ impl PartitionWriter {
     fn ensure_writer(
         &mut self,
         runtime: &RuntimeEnv,
-    ) -> datafusion::common::Result<&mut StreamWriter<File>> {
+    ) -> datafusion::common::Result<&mut StreamWriter<BufWriter<File>>> {
         if self.ipc_writer.is_none() {
             let temp_file = runtime
                 .disk_manager
@@ -72,7 +73,7 @@ impl PartitionWriter {
                 })?;
             self.temp_file = Some(temp_file);
             let writer = StreamWriter::try_new_with_options(
-                file,
+                BufWriter::new(file),
                 &self.schema,
                 self.ipc_options.clone(),
             )?;
