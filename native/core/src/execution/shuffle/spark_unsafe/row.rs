@@ -21,7 +21,8 @@ use crate::{
     errors::CometError,
     execution::{
         shuffle::{
-            codec::{Checksum, ShuffleBlockWriter},
+            codec::Checksum,
+            ipc_write_options,
             spark_unsafe::{
                 list::{append_list_element, SparkUnsafeArray},
                 map::{append_map_elements, get_map_key_value_fields, SparkUnsafeMap},
@@ -43,7 +44,7 @@ use arrow::array::{
 use arrow::compute::cast;
 use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
 use arrow::error::ArrowError;
-use datafusion::physical_plan::metrics::Time;
+use arrow::ipc::writer::StreamWriter;
 use jni::sys::{jint, jlong};
 use std::{
     fs::OpenOptions,
@@ -810,8 +811,7 @@ pub fn process_sorted_row_partition(
 ) -> Result<(i64, Option<u32>), CometError> {
     // The current row number we are reading
     let mut current_row = 0;
-    // Total number of bytes written
-    let mut written = 0;
+    // Total number of bytes written (set below after IPC stream is complete)
     // The current checksum value. This is updated incrementally in the following loop.
     let mut current_checksum = if checksum_enabled {
         Some(Checksum::try_new(checksum_algo, initial_checksum)?)
@@ -828,14 +828,21 @@ pub fn process_sorted_row_partition(
         Ok::<(), CometError>(())
     })?;
 
-    // Open the output file once and reuse it across batches
-    let mut output_data = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&output_path)?;
+    // Write batches into a Vec<u8> buffer, then write to file with checksum
+    let ipc_opts = ipc_write_options(codec)?;
 
-    // Reusable buffer for serialized batch data
-    let mut frozen: Vec<u8> = Vec::new();
+    // Build the Arrow schema from the DataType slice
+    let arrow_schema = Arc::new(Schema::new(
+        schema
+            .iter()
+            .enumerate()
+            .map(|(i, dt)| Field::new(format!("col_{i}"), dt.clone(), true))
+            .collect::<Vec<_>>(),
+    ));
+
+    let mut buf: Vec<u8> = Vec::new();
+    let mut ipc_writer =
+        StreamWriter::try_new_with_options(&mut buf, &arrow_schema, ipc_opts)?;
 
     while current_row < row_num {
         let n = std::cmp::min(batch_size, row_num - current_row);
@@ -856,7 +863,7 @@ pub fn process_sorted_row_partition(
             )?;
         }
 
-        // Writes a record batch generated from the array builders to the output file.
+        // Writes a record batch generated from the array builders to the IPC writer.
         // Note: builder_to_array calls finish() which resets the builder, making it reusable for the next batch.
         let array_refs: Result<Vec<ArrayRef>, _> = data_builders
             .iter_mut()
@@ -865,21 +872,28 @@ pub fn process_sorted_row_partition(
             .collect();
         let batch = make_batch(array_refs?, n)?;
 
-        frozen.clear();
-        let mut cursor = Cursor::new(&mut frozen);
+        ipc_writer.write(&batch)?;
 
-        // we do not collect metrics in Native_writeSortedFileNative
-        let ipc_time = Time::default();
-        let block_writer = ShuffleBlockWriter::try_new(batch.schema().as_ref(), codec.clone())?;
-        written += block_writer.write_batch(&batch, &mut cursor, &ipc_time)?;
-
-        if let Some(checksum) = &mut current_checksum {
-            checksum.update(&mut cursor)?;
-        }
-
-        output_data.write_all(&frozen)?;
         current_row += n;
     }
+
+    ipc_writer.finish()?;
+    drop(ipc_writer);
+    let written = buf.len();
+
+    // Compute checksum over the serialized bytes if enabled
+    if let Some(checksum) = &mut current_checksum {
+        let mut cursor = Cursor::new(&mut buf);
+        checksum.update(&mut cursor)?;
+    }
+
+    // Write to output file
+    let mut output_data = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&output_path)?;
+    output_data.write_all(&buf)?;
 
     Ok((written as i64, current_checksum.map(|c| c.finalize())))
 }

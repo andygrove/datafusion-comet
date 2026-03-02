@@ -162,22 +162,35 @@ class Native extends NativeBase {
   @native def sortRowPartitionsNative(addr: Long, size: Long, tracingEnabled: Boolean): Unit
 
   /**
-   * Decompress and decode a native shuffle block.
-   * @param shuffleBlock
-   *   the encoded anc compressed shuffle block.
-   * @param length
-   *   the limit of the byte buffer.
-   * @param addr
-   *   the address of the array of compressed and encoded bytes.
-   * @param size
-   *   the size of the array.
+   * Create a ShuffleStreamReader from a DirectByteBuffer containing an Arrow IPC stream.
+   * @return
+   *   handle to the native reader
    */
-  @native def decodeShuffleBlock(
-      shuffleBlock: ByteBuffer,
+  @native def createShuffleStreamReader(
+      data: ByteBuffer,
       length: Int,
+      tracingEnabled: Boolean): Long
+
+  /**
+   * Get the number of columns from a ShuffleStreamReader.
+   */
+  @native def getShuffleStreamReaderColumns(handle: Long): Int
+
+  /**
+   * Read the next batch from a ShuffleStreamReader.
+   * @return
+   *   number of rows, or -1 if EOF
+   */
+  @native def nextShuffleBatch(
+      handle: Long,
       arrayAddrs: Array[Long],
       schemaAddrs: Array[Long],
       tracingEnabled: Boolean): Long
+
+  /**
+   * Close and release a ShuffleStreamReader.
+   */
+  @native def closeShuffleStreamReader(handle: Long): Unit
 
   /**
    * Log the beginning of an event.

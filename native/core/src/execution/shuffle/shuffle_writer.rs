@@ -66,8 +66,6 @@ pub struct ShuffleWriterExec {
     /// The compression codec to use when compressing shuffle blocks
     codec: CompressionCodec,
     tracing_enabled: bool,
-    /// Size of the write buffer in bytes
-    write_buffer_size: usize,
 }
 
 impl ShuffleWriterExec {
@@ -80,7 +78,6 @@ impl ShuffleWriterExec {
         output_data_file: String,
         output_index_file: String,
         tracing_enabled: bool,
-        write_buffer_size: usize,
     ) -> Result<Self> {
         let cache = PlanProperties::new(
             EquivalenceProperties::new(Arc::clone(&input.schema())),
@@ -98,7 +95,6 @@ impl ShuffleWriterExec {
             cache,
             codec,
             tracing_enabled,
-            write_buffer_size,
         })
     }
 }
@@ -162,7 +158,6 @@ impl ExecutionPlan for ShuffleWriterExec {
                 self.output_data_file.clone(),
                 self.output_index_file.clone(),
                 self.tracing_enabled,
-                self.write_buffer_size,
             )?)),
             _ => panic!("ShuffleWriterExec wrong number of children"),
         }
@@ -189,7 +184,6 @@ impl ExecutionPlan for ShuffleWriterExec {
                     context,
                     self.codec.clone(),
                     self.tracing_enabled,
-                    self.write_buffer_size,
                 )
                 .map_err(|e| ArrowError::ExternalError(Box::new(e))),
             )
@@ -209,7 +203,6 @@ async fn external_shuffle(
     context: Arc<TaskContext>,
     codec: CompressionCodec,
     tracing_enabled: bool,
-    write_buffer_size: usize,
 ) -> Result<SendableRecordBatchStream> {
     with_trace_async("external_shuffle", tracing_enabled, || async {
         let schema = input.schema();
@@ -223,7 +216,6 @@ async fn external_shuffle(
                     metrics,
                     context.session_config().batch_size(),
                     codec,
-                    write_buffer_size,
                 )?)
             }
             _ => Box::new(MultiPartitionShuffleRepartitioner::try_new(
@@ -237,7 +229,6 @@ async fn external_shuffle(
                 context.session_config().batch_size(),
                 codec,
                 tracing_enabled,
-                write_buffer_size,
             )?),
         };
 
@@ -265,9 +256,9 @@ async fn external_shuffle(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::execution::shuffle::{read_ipc_compressed, ShuffleBlockWriter};
     use arrow::array::{Array, StringArray, StringBuilder};
     use arrow::datatypes::{DataType, Field, Schema};
+    use arrow::ipc::reader::StreamReader;
     use arrow::record_batch::RecordBatch;
     use arrow::row::{RowConverter, SortField};
     use datafusion::datasource::memory::MemorySourceConfig;
@@ -277,7 +268,6 @@ mod test {
     use datafusion::physical_expr::expressions::{col, Column};
     use datafusion::physical_expr::{LexOrdering, PhysicalSortExpr};
     use datafusion::physical_plan::common::collect;
-    use datafusion::physical_plan::metrics::Time;
     use datafusion::prelude::SessionContext;
     use itertools::Itertools;
     use std::io::Cursor;
@@ -286,25 +276,30 @@ mod test {
     #[test]
     #[cfg_attr(miri, ignore)] // miri can't call foreign function `ZSTD_createCCtx`
     fn roundtrip_ipc() {
+        use arrow::ipc::writer::StreamWriter;
+        use crate::execution::shuffle::ipc_write_options;
+
         let batch = create_batch(8192);
         for codec in &[
             CompressionCodec::None,
             CompressionCodec::Zstd(1),
-            CompressionCodec::Snappy,
             CompressionCodec::Lz4Frame,
         ] {
+            let ipc_opts = ipc_write_options(codec).unwrap();
             let mut output = vec![];
-            let mut cursor = Cursor::new(&mut output);
-            let writer =
-                ShuffleBlockWriter::try_new(batch.schema().as_ref(), codec.clone()).unwrap();
-            let length = writer
-                .write_batch(&batch, &mut cursor, &Time::default())
-                .unwrap();
-            assert_eq!(length, output.len());
+            {
+                let mut writer =
+                    StreamWriter::try_new_with_options(&mut output, &batch.schema(), ipc_opts)
+                        .unwrap();
+                writer.write(&batch).unwrap();
+                writer.finish().unwrap();
+            }
 
-            let ipc_without_length_prefix = &output[16..];
-            let batch2 = read_ipc_compressed(ipc_without_length_prefix).unwrap();
+            // Read back via StreamReader
+            let mut reader = StreamReader::try_new(Cursor::new(&output), None).unwrap();
+            let batch2 = reader.next().unwrap().unwrap();
             assert_eq!(batch, batch2);
+            assert!(reader.next().is_none());
         }
     }
 
@@ -361,22 +356,27 @@ mod test {
             1024,
             CompressionCodec::Lz4Frame,
             false,
-            1024 * 1024, // write_buffer_size: 1MB default
         )
         .unwrap();
 
         repartitioner.insert_batch(batch.clone()).await.unwrap();
 
-        // After insert_batch, spill files are created lazily by partition writers
+        // After insert_batch with small batches, data is buffered in coalescer (no spill files yet)
         {
             let partition_writers = repartitioner.partition_writers();
             assert_eq!(partition_writers.len(), 2);
+            assert!(!partition_writers[0].has_spill_file());
+            assert!(!partition_writers[1].has_spill_file());
+        }
+
+        // Spill flushes the coalescer and creates spill files
+        repartitioner.spill().unwrap();
+
+        {
+            let partition_writers = repartitioner.partition_writers();
             assert!(partition_writers[0].has_spill_file());
             assert!(partition_writers[1].has_spill_file());
         }
-
-        // Spill flushes the partition writers
-        repartitioner.spill().unwrap();
 
         // Insert another batch after spilling
         repartitioner.insert_batch(batch.clone()).await.unwrap();
@@ -459,7 +459,6 @@ mod test {
                 "/tmp/data.out".to_string(),
                 "/tmp/index.out".to_string(),
                 false,
-                1024 * 1024, // write_buffer_size: 1MB default
             )
             .unwrap();
 
@@ -518,7 +517,6 @@ mod test {
                 data_file.clone(),
                 index_file.clone(),
                 false,
-                1024 * 1024,
             )
             .unwrap();
 
@@ -580,15 +578,17 @@ mod test {
         let _ = fs::remove_file("/tmp/rr_index_1.out");
     }
 
-    /// Test that batch coalescing in BufBatchWriter reduces output size by
-    /// writing fewer, larger IPC blocks instead of many small ones.
+    /// Test that batch coalescing with StreamWriter reduces output size by
+    /// writing fewer, larger batches within a single IPC stream instead of many small ones.
     #[test]
     #[cfg_attr(miri, ignore)]
     fn test_batch_coalescing_reduces_size() {
-        use crate::execution::shuffle::writers::BufBatchWriter;
         use arrow::array::Int32Array;
+        use arrow::compute::kernels::coalesce::BatchCoalescer;
+        use arrow::ipc::writer::StreamWriter;
+        use crate::execution::shuffle::ipc_write_options;
 
-        // Create a wide schema to amplify per-block schema overhead
+        // Create a wide schema to amplify per-batch overhead
         let fields: Vec<Field> = (0..20)
             .map(|i| Field::new(format!("col_{i}"), DataType::Int32, false))
             .collect();
@@ -610,42 +610,41 @@ mod test {
             .collect();
 
         let codec = CompressionCodec::Lz4Frame;
-        let encode_time = Time::default();
-        let write_time = Time::default();
+        let ipc_opts = ipc_write_options(&codec).unwrap();
 
         // Write with coalescing (batch_size=8192)
         let mut coalesced_output = Vec::new();
         {
-            let mut writer = ShuffleBlockWriter::try_new(schema.as_ref(), codec.clone()).unwrap();
-            let mut buf_writer = BufBatchWriter::new(
-                &mut writer,
-                Cursor::new(&mut coalesced_output),
-                1024 * 1024,
-                8192,
-            );
+            let mut writer =
+                StreamWriter::try_new_with_options(&mut coalesced_output, &schema, ipc_opts.clone())
+                    .unwrap();
+            let mut coalescer = BatchCoalescer::new(Arc::clone(&schema), 8192);
             for batch in &small_batches {
-                buf_writer.write(batch, &encode_time, &write_time).unwrap();
+                coalescer.push_batch(batch.clone()).unwrap();
+                while let Some(batch) = coalescer.next_completed_batch() {
+                    writer.write(&batch).unwrap();
+                }
             }
-            buf_writer.flush(&encode_time, &write_time).unwrap();
+            coalescer.finish_buffered_batch().unwrap();
+            while let Some(batch) = coalescer.next_completed_batch() {
+                writer.write(&batch).unwrap();
+            }
+            writer.finish().unwrap();
         }
 
-        // Write without coalescing (batch_size=1)
+        // Write without coalescing (each batch written directly)
         let mut uncoalesced_output = Vec::new();
         {
-            let mut writer = ShuffleBlockWriter::try_new(schema.as_ref(), codec.clone()).unwrap();
-            let mut buf_writer = BufBatchWriter::new(
-                &mut writer,
-                Cursor::new(&mut uncoalesced_output),
-                1024 * 1024,
-                1,
-            );
+            let mut writer =
+                StreamWriter::try_new_with_options(&mut uncoalesced_output, &schema, ipc_opts)
+                    .unwrap();
             for batch in &small_batches {
-                buf_writer.write(batch, &encode_time, &write_time).unwrap();
+                writer.write(batch).unwrap();
             }
-            buf_writer.flush(&encode_time, &write_time).unwrap();
+            writer.finish().unwrap();
         }
 
-        // Coalesced output should be smaller due to fewer IPC schema blocks
+        // Coalesced output should be smaller due to fewer batches in the stream
         assert!(
             coalesced_output.len() < uncoalesced_output.len(),
             "Coalesced output ({} bytes) should be smaller than uncoalesced ({} bytes)",
@@ -653,9 +652,9 @@ mod test {
             uncoalesced_output.len()
         );
 
-        // Verify both roundtrip correctly by reading all IPC blocks
-        let coalesced_rows = read_all_ipc_blocks(&coalesced_output);
-        let uncoalesced_rows = read_all_ipc_blocks(&uncoalesced_output);
+        // Verify both roundtrip correctly by reading all batches from the IPC stream
+        let coalesced_rows = read_all_ipc_stream_rows(&coalesced_output);
+        let uncoalesced_rows = read_all_ipc_stream_rows(&uncoalesced_output);
         assert_eq!(
             coalesced_rows, 5000,
             "Coalesced should contain all 5000 rows"
@@ -666,24 +665,12 @@ mod test {
         );
     }
 
-    /// Read all IPC blocks from a byte buffer written by BufBatchWriter/ShuffleBlockWriter,
-    /// returning the total number of rows.
-    fn read_all_ipc_blocks(data: &[u8]) -> usize {
-        let mut offset = 0;
+    /// Read all batches from an Arrow IPC stream, returning the total number of rows.
+    fn read_all_ipc_stream_rows(data: &[u8]) -> usize {
+        let reader = StreamReader::try_new(Cursor::new(data), None).unwrap();
         let mut total_rows = 0;
-        while offset < data.len() {
-            // First 8 bytes are the IPC length (little-endian u64)
-            let ipc_length =
-                u64::from_le_bytes(data[offset..offset + 8].try_into().unwrap()) as usize;
-            // Skip the 8-byte length prefix; the next 8 bytes are field_count + codec header
-            let block_start = offset + 8;
-            let block_end = block_start + ipc_length;
-            // read_ipc_compressed expects data starting after the 16-byte header
-            // (i.e., after length + field_count), at the codec tag
-            let ipc_data = &data[block_start + 8..block_end];
-            let batch = read_ipc_compressed(ipc_data).unwrap();
-            total_rows += batch.num_rows();
-            offset = block_end;
+        for batch in reader {
+            total_rows += batch.unwrap().num_rows();
         }
         total_rows
     }

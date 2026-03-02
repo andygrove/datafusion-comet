@@ -21,21 +21,19 @@ use arrow::compute::{interleave_record_batch, take};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::row::{RowConverter, SortField};
 use comet::execution::shuffle::{
-    CometPartitioning, CompressionCodec, ShuffleBlockWriter, ShuffleWriterExec,
+    ipc_write_options, CometPartitioning, CompressionCodec, ShuffleWriterExec,
 };
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use datafusion::datasource::memory::MemorySourceConfig;
 use datafusion::datasource::source::DataSourceExec;
 use datafusion::physical_expr::expressions::{col, Column};
 use datafusion::physical_expr::{LexOrdering, PhysicalSortExpr};
-use datafusion::physical_plan::metrics::Time;
 use datafusion::{
     physical_plan::{common::collect, ExecutionPlan},
     prelude::SessionContext,
 };
 use datafusion_comet_spark_expr::murmur3::create_murmur3_hashes;
 use itertools::Itertools;
-use std::io::Cursor;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
@@ -189,14 +187,19 @@ fn criterion_benchmark(c: &mut Criterion) {
     ] {
         let name = format!("shuffle_writer: write encoded (compression={compression_codec:?})");
         group.bench_function(name, |b| {
-            let mut buffer = vec![];
-            let ipc_time = Time::default();
-            let w =
-                ShuffleBlockWriter::try_new(&batch.schema(), compression_codec.clone()).unwrap();
+            use arrow::ipc::writer::StreamWriter;
+            let ipc_opts = ipc_write_options(compression_codec).unwrap();
             b.iter(|| {
-                buffer.clear();
-                let mut cursor = Cursor::new(&mut buffer);
-                w.write_batch(&batch, &mut cursor, &ipc_time).unwrap();
+                let mut buffer = vec![];
+                let mut writer = StreamWriter::try_new_with_options(
+                    &mut buffer,
+                    &batch.schema(),
+                    ipc_opts.clone(),
+                )
+                .unwrap();
+                writer.write(&batch).unwrap();
+                writer.finish().unwrap();
+                buffer
             });
         });
     }
@@ -313,7 +316,6 @@ fn create_shuffle_writer_exec(
         "/tmp/data.out".to_string(),
         "/tmp/index.out".to_string(),
         false,
-        1024 * 1024,
     )
     .unwrap()
 }

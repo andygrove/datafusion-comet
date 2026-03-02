@@ -18,9 +18,7 @@
 use crate::execution::shuffle::metrics::ShufflePartitionerMetrics;
 use crate::execution::shuffle::partitioners::ShufflePartitioner;
 use crate::execution::shuffle::writers::PartitionWriter;
-use crate::execution::shuffle::{
-    comet_partitioning, CometPartitioning, CompressionCodec, ShuffleBlockWriter,
-};
+use crate::execution::shuffle::{comet_partitioning, ipc_write_options, CometPartitioning, CompressionCodec};
 use crate::execution::tracing::{with_trace, with_trace_async};
 use arrow::array::{ArrayRef, RecordBatch, UInt32Array};
 use arrow::compute::take;
@@ -131,7 +129,6 @@ impl MultiPartitionShuffleRepartitioner {
         batch_size: usize,
         codec: CompressionCodec,
         tracing_enabled: bool,
-        write_buffer_size: usize,
     ) -> datafusion::common::Result<Self> {
         let num_output_partitions = partitioning.partition_count();
         assert_ne!(
@@ -156,14 +153,14 @@ impl MultiPartitionShuffleRepartitioner {
             partition_starts: vec![0; num_output_partitions + 1],
         };
 
-        let shuffle_block_writer = ShuffleBlockWriter::try_new(schema.as_ref(), codec.clone())?;
+        let ipc_opts = ipc_write_options(&codec)?;
 
         let partition_writers = (0..num_output_partitions)
             .map(|_| {
                 PartitionWriter::try_new(
-                    shuffle_block_writer.clone(),
-                    write_buffer_size,
+                    Arc::clone(&schema),
                     batch_size,
+                    ipc_opts.clone(),
                 )
             })
             .collect::<datafusion::common::Result<Vec<_>>>()?;
@@ -458,7 +455,7 @@ impl MultiPartitionShuffleRepartitioner {
 
         with_trace("shuffle_spill", self.tracing_enabled, || {
             for partition_writer in &mut self.partition_writers {
-                partition_writer.flush(&self.metrics)?;
+                partition_writer.flush(&self.runtime, &self.metrics)?;
             }
 
             self.reservation.free();
@@ -509,9 +506,9 @@ impl ShufflePartitioner for MultiPartitionShuffleRepartitioner {
             let data_file = self.output_data_file.clone();
             let index_file = self.output_index_file.clone();
 
-            // Flush all partition writers to ensure all data is written to spill files
+            // Finish all partition writers (flush coalescer + write IPC EOS)
             for partition_writer in &mut self.partition_writers {
-                partition_writer.flush(&self.metrics)?;
+                partition_writer.finish(&self.runtime, &self.metrics)?;
             }
 
             let output_data = OpenOptions::new()

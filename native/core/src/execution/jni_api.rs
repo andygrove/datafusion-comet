@@ -79,7 +79,7 @@ use crate::execution::memory_pools::{
     create_memory_pool, handle_task_shared_pool_release, parse_memory_pool_config, MemoryPoolConfig,
 };
 use crate::execution::operators::ScanExec;
-use crate::execution::shuffle::{read_ipc_compressed, CompressionCodec};
+use crate::execution::shuffle::CompressionCodec;
 use crate::execution::spark_plan::SparkPlan;
 
 use crate::execution::tracing::{log_memory_usage, trace_begin, trace_end, with_trace};
@@ -834,27 +834,116 @@ pub extern "system" fn Java_org_apache_comet_Native_sortRowPartitionsNative(
     })
 }
 
+// ============================================================================
+// Shuffle Stream Reader
+// ============================================================================
+
+use arrow::ipc::reader::StreamReader;
+use std::io::Cursor;
+
+/// Holds a stateful Arrow IPC StreamReader for reading shuffle data.
+struct ShuffleStreamReader {
+    reader: StreamReader<Cursor<Vec<u8>>>,
+    num_columns: usize,
+}
+
 #[no_mangle]
-/// Used by Comet native shuffle reader
+/// Create a ShuffleStreamReader from a DirectByteBuffer containing an Arrow IPC stream.
+/// Returns a handle (pointer) to the reader.
 /// # Safety
 /// This function is inherently unsafe since it deals with raw pointers passed from JNI.
-pub unsafe extern "system" fn Java_org_apache_comet_Native_decodeShuffleBlock(
+pub unsafe extern "system" fn Java_org_apache_comet_Native_createShuffleStreamReader(
     e: JNIEnv,
     _class: JClass,
     byte_buffer: JByteBuffer,
     length: jint,
+    tracing_enabled: jboolean,
+) -> jlong {
+    try_unwrap_or_throw(&e, |env| {
+        with_trace(
+            "createShuffleStreamReader",
+            tracing_enabled != JNI_FALSE,
+            || {
+                let raw_pointer = env.get_direct_buffer_address(&byte_buffer)?;
+                let length = length as usize;
+                let slice: &[u8] = unsafe { std::slice::from_raw_parts(raw_pointer, length) };
+                let data = slice.to_vec();
+                let cursor = Cursor::new(data);
+                let reader =
+                    unsafe { StreamReader::try_new(cursor, None)?.with_skip_validation(true) };
+                let num_columns = reader.schema().fields().len();
+                let boxed = Box::new(ShuffleStreamReader {
+                    reader,
+                    num_columns,
+                });
+                Ok(Box::into_raw(boxed) as jlong)
+            },
+        )
+    })
+}
+
+#[no_mangle]
+/// Get the number of columns from a ShuffleStreamReader.
+/// # Safety
+/// This function is inherently unsafe since it deals with raw pointers passed from JNI.
+pub unsafe extern "system" fn Java_org_apache_comet_Native_getShuffleStreamReaderColumns(
+    e: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) -> jint {
+    try_unwrap_or_throw(&e, |_env| {
+        let reader = (handle as *const ShuffleStreamReader)
+            .as_ref()
+            .ok_or_else(|| CometError::Internal("Null ShuffleStreamReader handle".to_string()))?;
+        Ok(reader.num_columns as jint)
+    })
+}
+
+#[no_mangle]
+/// Read the next batch from a ShuffleStreamReader.
+/// Returns the number of rows, or -1 if EOF.
+/// # Safety
+/// This function is inherently unsafe since it deals with raw pointers passed from JNI.
+pub unsafe extern "system" fn Java_org_apache_comet_Native_nextShuffleBatch(
+    e: JNIEnv,
+    _class: JClass,
+    handle: jlong,
     array_addrs: JLongArray,
     schema_addrs: JLongArray,
     tracing_enabled: jboolean,
 ) -> jlong {
     try_unwrap_or_throw(&e, |mut env| {
-        with_trace("decodeShuffleBlock", tracing_enabled != JNI_FALSE, || {
-            let raw_pointer = env.get_direct_buffer_address(&byte_buffer)?;
-            let length = length as usize;
-            let slice: &[u8] = unsafe { std::slice::from_raw_parts(raw_pointer, length) };
-            let batch = read_ipc_compressed(slice)?;
-            prepare_output(&mut env, array_addrs, schema_addrs, batch, false)
+        with_trace("nextShuffleBatch", tracing_enabled != JNI_FALSE, || {
+            let reader = (handle as *mut ShuffleStreamReader)
+                .as_mut()
+                .ok_or_else(|| {
+                    CometError::Internal("Null ShuffleStreamReader handle".to_string())
+                })?;
+            match reader.reader.next() {
+                Some(Ok(batch)) => prepare_output(&mut env, array_addrs, schema_addrs, batch, false),
+                Some(Err(e)) => Err(CometError::Arrow { source: e }),
+                None => Ok(-1_i64),
+            }
         })
+    })
+}
+
+#[no_mangle]
+/// Close and drop a ShuffleStreamReader.
+/// # Safety
+/// This function is inherently unsafe since it deals with raw pointers passed from JNI.
+pub unsafe extern "system" fn Java_org_apache_comet_Native_closeShuffleStreamReader(
+    e: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) {
+    try_unwrap_or_throw(&e, |_env| {
+        if handle != 0 {
+            let _reader: Box<ShuffleStreamReader> =
+                Box::from_raw(handle as *mut ShuffleStreamReader);
+            // reader is dropped here
+        }
+        Ok(())
     })
 }
 
