@@ -64,8 +64,7 @@ case class NativeBatchDecoderIterator(
       var n = 0
       do {
         if (totalRead == buf.length) {
-          val newBuf = new Array[Byte](
-            Math.min(buf.length.toLong * 2, Integer.MAX_VALUE).toInt)
+          val newBuf = new Array[Byte](Math.min(buf.length.toLong * 2, Integer.MAX_VALUE).toInt)
           System.arraycopy(buf, 0, newBuf, 0, totalRead)
           buf = newBuf
         }
@@ -134,11 +133,7 @@ case class NativeBatchDecoderIterator(
     val result = nativeUtil.getNextBatch(
       fieldCount,
       (arrayAddrs, schemaAddrs) => {
-        native.nextShuffleBatch(
-          readerHandle,
-          arrayAddrs,
-          schemaAddrs,
-          tracingEnabled)
+        native.nextShuffleBatch(readerHandle, arrayAddrs, schemaAddrs, tracingEnabled)
       })
     decodeTime.add(System.nanoTime() - startTime)
 
