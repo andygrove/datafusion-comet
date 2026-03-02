@@ -578,6 +578,101 @@ mod test {
         let _ = fs::remove_file("/tmp/rr_index_1.out");
     }
 
+    /// Test that multi-partition shuffle output can be read back correctly
+    /// by reading each partition's data as an Arrow IPC stream using the index file offsets.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_multi_partition_roundtrip() {
+        use std::fs;
+        use std::io::Read;
+
+        let batch_size = 100;
+        let num_batches = 5;
+        let num_partitions = 4;
+
+        let batch = create_batch(batch_size);
+        let batches = (0..num_batches).map(|_| batch.clone()).collect::<Vec<_>>();
+
+        let data_file = "/tmp/mp_roundtrip_data.out".to_string();
+        let index_file = "/tmp/mp_roundtrip_index.out".to_string();
+
+        let partitions = std::slice::from_ref(&batches);
+        let exec = ShuffleWriterExec::try_new(
+            Arc::new(DataSourceExec::new(Arc::new(
+                MemorySourceConfig::try_new(partitions, batch.schema(), None).unwrap(),
+            ))),
+            CometPartitioning::Hash(vec![Arc::new(Column::new("a", 0))], num_partitions),
+            CompressionCodec::Zstd(1),
+            data_file.clone(),
+            index_file.clone(),
+            false,
+        )
+        .unwrap();
+
+        let config = SessionConfig::new();
+        let runtime_env = Arc::new(
+            RuntimeEnvBuilder::new()
+                .with_memory_limit(10 * 1024 * 1024, 1.0)
+                .build()
+                .unwrap(),
+        );
+        let session_ctx = Arc::new(SessionContext::new_with_config_rt(config, runtime_env));
+        let task_ctx = Arc::new(TaskContext::from(session_ctx.as_ref()));
+
+        futures::executor::block_on(async {
+            let mut stream = exec.execute(0, Arc::clone(&task_ctx)).unwrap();
+            while stream.next().await.is_some() {}
+        });
+
+        // Read back and verify
+        let mut data_bytes = Vec::new();
+        fs::File::open(&data_file)
+            .unwrap()
+            .read_to_end(&mut data_bytes)
+            .unwrap();
+
+        let mut index_bytes = Vec::new();
+        fs::File::open(&index_file)
+            .unwrap()
+            .read_to_end(&mut index_bytes)
+            .unwrap();
+
+        // Parse index file: (num_partitions + 1) i64 offsets
+        let num_offsets = index_bytes.len() / 8;
+        assert_eq!(num_offsets, num_partitions + 1);
+        let offsets: Vec<i64> = (0..num_offsets)
+            .map(|i| {
+                let start = i * 8;
+                i64::from_le_bytes(index_bytes[start..start + 8].try_into().unwrap())
+            })
+            .collect();
+
+        // Read each partition as an IPC stream and count total rows
+        let mut total_rows = 0;
+        for i in 0..num_partitions {
+            let start = offsets[i] as usize;
+            let end = offsets[i + 1] as usize;
+            if start == end {
+                continue; // empty partition
+            }
+            let partition_data = &data_bytes[start..end];
+            let reader =
+                StreamReader::try_new(Cursor::new(partition_data), None).unwrap();
+            for batch in reader {
+                total_rows += batch.unwrap().num_rows();
+            }
+        }
+
+        assert_eq!(
+            total_rows,
+            batch_size * num_batches,
+            "Total rows across all partitions should match input"
+        );
+
+        let _ = fs::remove_file(&data_file);
+        let _ = fs::remove_file(&index_file);
+    }
+
     /// Test that batch coalescing with StreamWriter reduces output size by
     /// writing fewer, larger batches within a single IPC stream instead of many small ones.
     #[test]

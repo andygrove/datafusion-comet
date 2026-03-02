@@ -842,9 +842,32 @@ use arrow::ipc::reader::StreamReader;
 use std::io::Cursor;
 
 /// Holds a stateful Arrow IPC StreamReader for reading shuffle data.
+/// Supports reading concatenated IPC streams (from multiple spills).
 struct ShuffleStreamReader {
     reader: StreamReader<Cursor<Vec<u8>>>,
     num_columns: usize,
+    data_len: usize,
+}
+
+impl ShuffleStreamReader {
+    /// Try to advance to the next IPC stream in concatenated data.
+    /// Returns true if a new stream was found, false if we've consumed all data.
+    fn try_next_stream(&mut self) -> Result<bool, arrow::error::ArrowError> {
+        // Get the current cursor position (after the previous stream's EOS)
+        let cursor = self.reader.get_ref();
+        let pos = cursor.position() as usize;
+        if pos >= self.data_len {
+            return Ok(false);
+        }
+        // There's more data — create a new StreamReader from the remaining bytes
+        let data = cursor.get_ref().clone();
+        let mut new_cursor = Cursor::new(data);
+        new_cursor.set_position(pos as u64);
+        self.reader = unsafe {
+            StreamReader::try_new(new_cursor, None)?.with_skip_validation(true)
+        };
+        Ok(true)
+    }
 }
 
 #[no_mangle]
@@ -875,6 +898,7 @@ pub unsafe extern "system" fn Java_org_apache_comet_Native_createShuffleStreamRe
                 let boxed = Box::new(ShuffleStreamReader {
                     reader,
                     num_columns,
+                    data_len: length,
                 });
                 Ok(Box::into_raw(boxed) as jlong)
             },
@@ -919,10 +943,24 @@ pub unsafe extern "system" fn Java_org_apache_comet_Native_nextShuffleBatch(
                 .ok_or_else(|| {
                     CometError::Internal("Null ShuffleStreamReader handle".to_string())
                 })?;
-            match reader.reader.next() {
-                Some(Ok(batch)) => prepare_output(&mut env, array_addrs, schema_addrs, batch, false),
-                Some(Err(e)) => Err(CometError::Arrow { source: e }),
-                None => Ok(-1_i64),
+            loop {
+                match reader.reader.next() {
+                    Some(Ok(batch)) => {
+                        return prepare_output(
+                            &mut env, array_addrs, schema_addrs, batch, false,
+                        );
+                    }
+                    Some(Err(e)) => return Err(CometError::Arrow { source: e }),
+                    None => {
+                        // Current IPC stream exhausted. Try the next concatenated stream.
+                        if reader.try_next_stream().map_err(|e| CometError::Arrow {
+                            source: e,
+                        })? {
+                            continue;
+                        }
+                        return Ok(-1_i64);
+                    }
+                }
             }
         })
     })

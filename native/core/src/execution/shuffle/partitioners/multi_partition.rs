@@ -507,7 +507,7 @@ impl ShufflePartitioner for MultiPartitionShuffleRepartitioner {
             let index_file = self.output_index_file.clone();
 
             // Finish all partition writers (flush coalescer + write IPC EOS)
-            for partition_writer in &mut self.partition_writers {
+            for partition_writer in self.partition_writers.iter_mut() {
                 partition_writer.finish(&self.runtime, &self.metrics)?;
             }
 

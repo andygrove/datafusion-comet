@@ -831,54 +831,51 @@ pub fn process_sorted_row_partition(
     // Write batches into a Vec<u8> buffer, then write to file with checksum
     let ipc_opts = ipc_write_options(codec)?;
 
-    // Build the Arrow schema from the DataType slice
-    let arrow_schema = Arc::new(Schema::new(
-        schema
-            .iter()
-            .enumerate()
-            .map(|(i, dt)| Field::new(format!("col_{i}"), dt.clone(), true))
-            .collect::<Vec<_>>(),
-    ));
+    // Helper: build one batch from current_row, advancing current_row by n.
+    let build_batch =
+        |data_builders: &mut Vec<Box<dyn ArrayBuilder>>, current_row: usize, n: usize| {
+            for (idx, builder) in data_builders.iter_mut().enumerate() {
+                append_columns(
+                    row_addresses_ptr,
+                    row_sizes_ptr,
+                    current_row,
+                    current_row + n,
+                    schema,
+                    idx,
+                    builder,
+                    prefer_dictionary_ratio,
+                )?;
+            }
+            let array_refs: Result<Vec<ArrayRef>, _> = data_builders
+                .iter_mut()
+                .zip(schema.iter())
+                .map(|(builder, datatype)| {
+                    builder_to_array(builder, datatype, prefer_dictionary_ratio)
+                })
+                .collect();
+            make_batch(array_refs?, n).map_err(CometError::from)
+        };
 
+    // Build the first batch to discover the actual schema (may include dictionary types).
     let mut buf: Vec<u8> = Vec::new();
-    let mut ipc_writer =
-        StreamWriter::try_new_with_options(&mut buf, &arrow_schema, ipc_opts)?;
-
-    while current_row < row_num {
+    if current_row < row_num {
         let n = std::cmp::min(batch_size, row_num - current_row);
+        let first_batch = build_batch(&mut data_builders, current_row, n)?;
+        current_row += n;
 
-        // Appends rows to the array builders.
-        // For each column, iterating over rows and appending values to corresponding array
-        // builder.
-        for (idx, builder) in data_builders.iter_mut().enumerate() {
-            append_columns(
-                row_addresses_ptr,
-                row_sizes_ptr,
-                current_row,
-                current_row + n,
-                schema,
-                idx,
-                builder,
-                prefer_dictionary_ratio,
-            )?;
+        let mut ipc_writer =
+            StreamWriter::try_new_with_options(&mut buf, &first_batch.schema(), ipc_opts)?;
+        ipc_writer.write(&first_batch)?;
+
+        while current_row < row_num {
+            let n = std::cmp::min(batch_size, row_num - current_row);
+            let batch = build_batch(&mut data_builders, current_row, n)?;
+            ipc_writer.write(&batch)?;
+            current_row += n;
         }
 
-        // Writes a record batch generated from the array builders to the IPC writer.
-        // Note: builder_to_array calls finish() which resets the builder, making it reusable for the next batch.
-        let array_refs: Result<Vec<ArrayRef>, _> = data_builders
-            .iter_mut()
-            .zip(schema.iter())
-            .map(|(builder, datatype)| builder_to_array(builder, datatype, prefer_dictionary_ratio))
-            .collect();
-        let batch = make_batch(array_refs?, n)?;
-
-        ipc_writer.write(&batch)?;
-
-        current_row += n;
+        ipc_writer.finish()?;
     }
-
-    ipc_writer.finish()?;
-    drop(ipc_writer);
     let written = buf.len();
 
     // Compute checksum over the serialized bytes if enabled
@@ -887,11 +884,10 @@ pub fn process_sorted_row_partition(
         checksum.update(&mut cursor)?;
     }
 
-    // Write to output file
+    // Append to output file (multiple spills accumulate in the same file)
     let mut output_data = OpenOptions::new()
         .create(true)
-        .write(true)
-        .truncate(true)
+        .append(true)
         .open(&output_path)?;
     output_data.write_all(&buf)?;
 

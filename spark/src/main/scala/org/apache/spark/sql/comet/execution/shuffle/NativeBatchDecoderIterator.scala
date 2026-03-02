@@ -82,7 +82,8 @@ case class NativeBatchDecoderIterator(
         dataBuf.flip()
 
         val handle = native.createShuffleStreamReader(dataBuf, totalRead, tracingEnabled)
-        val cols = native.getShuffleStreamReaderColumns(handle)
+        val cols =
+          native.getShuffleStreamReaderColumns(handle)
         (handle, cols)
       }
     }
