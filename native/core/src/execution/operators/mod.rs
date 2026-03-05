@@ -32,6 +32,8 @@ mod iceberg_scan;
 mod parquet_writer;
 pub use parquet_writer::ParquetWriterExec;
 mod csv_scan;
+#[allow(dead_code)]
+pub(crate) mod grace_hash_join;
 pub mod projection;
 mod scan;
 pub use csv_scan::init_csv_datasource_exec;
