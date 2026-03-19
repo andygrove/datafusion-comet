@@ -516,6 +516,7 @@ impl ShufflePartitioner for MultiPartitionShuffleRepartitioner {
 
             let mut output_data = BufWriter::new(output_data);
 
+            #[allow(clippy::needless_range_loop)]
             for i in 0..num_output_partitions {
                 offsets[i] = output_data.stream_position()?;
 
