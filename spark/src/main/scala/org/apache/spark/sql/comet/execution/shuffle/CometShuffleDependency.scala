@@ -28,6 +28,7 @@ import org.apache.spark.shuffle.ShuffleWriteProcessor
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.comet.CometMetricNode
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.types.StructType
 
@@ -49,7 +50,9 @@ class CometShuffleDependency[K: ClassTag, V: ClassTag, C: ClassTag](
     val outputAttributes: Seq[Attribute] = Seq.empty,
     val shuffleWriteMetrics: Map[String, SQLMetric] = Map.empty,
     val numParts: Int = 0,
-    val rangePartitionBounds: Option[Seq[InternalRow]] = None)
+    val rangePartitionBounds: Option[Seq[InternalRow]] = None,
+    val childNativePlan: Option[Array[Byte]] = None,
+    val childNativeMetrics: Option[CometMetricNode] = None)
     extends ShuffleDependency[K, V, C](
       _rdd,
       partitioner,
