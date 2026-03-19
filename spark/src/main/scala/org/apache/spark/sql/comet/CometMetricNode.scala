@@ -248,7 +248,6 @@ object CometMetricNode {
     Map(
       "elapsed_compute" -> SQLMetrics.createNanoTimingMetric(sc, "native shuffle writer time"),
       "repart_time" -> SQLMetrics.createNanoTimingMetric(sc, "repartition time"),
-      "gather_time" -> SQLMetrics.createNanoTimingMetric(sc, "gather/interleave time"),
       "coalesce_time" -> SQLMetrics.createNanoTimingMetric(sc, "batch coalescing time"),
       "encode_time" -> SQLMetrics.createNanoTimingMetric(sc, "encoding and compression time"),
       "decode_time" -> SQLMetrics.createNanoTimingMetric(sc, "decoding and decompression time"),
