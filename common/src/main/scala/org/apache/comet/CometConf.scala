@@ -343,6 +343,17 @@ object CometConf extends ShimCometConf {
       .booleanConf
       .createWithDefault(true)
 
+  val COMET_EXEC_SHUFFLE_COMBINE_PLANS_ENABLED: ConfigEntry[Boolean] =
+    conf(s"$COMET_EXEC_CONFIG_PREFIX.shuffle.combinePlans.enabled")
+      .category(CATEGORY_SHUFFLE)
+      .doc(
+        "When enabled, folds a native child plan into the shuffle writer's native plan, " +
+          "eliminating an FFI round-trip. Only applies when the child plan has a single " +
+          "non-broadcast input source and does not use RangePartitioning, Iceberg scans, " +
+          "encrypted Parquet, or scalar subqueries.")
+      .booleanConf
+      .createWithDefault(true)
+
   val COMET_SHUFFLE_MODE: ConfigEntry[String] = conf(s"$COMET_EXEC_CONFIG_PREFIX.shuffle.mode")
     .category(CATEGORY_SHUFFLE)
     .doc(
