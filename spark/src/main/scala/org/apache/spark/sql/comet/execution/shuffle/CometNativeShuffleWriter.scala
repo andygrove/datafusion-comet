@@ -53,7 +53,9 @@ class CometNativeShuffleWriter[K, V](
     mapId: Long,
     context: TaskContext,
     metricsReporter: ShuffleWriteMetricsReporter,
-    rangePartitionBounds: Option[Seq[InternalRow]] = None)
+    rangePartitionBounds: Option[Seq[InternalRow]] = None,
+    childNativePlan: Option[Array[Byte]] = None,
+    childNativeMetrics: Option[CometMetricNode] = None)
     extends ShuffleWriter[K, V]
     with Logging {
 
