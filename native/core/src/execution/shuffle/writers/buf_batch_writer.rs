@@ -64,6 +64,13 @@ impl<S: Borrow<ShuffleBlockWriter>, W: Write> BufBatchWriter<S, W> {
         encode_time: &Time,
         write_time: &Time,
     ) -> datafusion::common::Result<usize> {
+        // Fast path: if batch is already at or above target size, write directly
+        // without going through the coalescer. This avoids a clone + coalesce cycle
+        // for batches produced by PartitionedBatchIterator which are already batch_size.
+        if batch.num_rows() >= self.batch_size {
+            return self.write_batch_to_buffer(batch, encode_time, write_time);
+        }
+
         let coalescer = self
             .coalescer
             .get_or_insert_with(|| BatchCoalescer::new(batch.schema(), self.batch_size));

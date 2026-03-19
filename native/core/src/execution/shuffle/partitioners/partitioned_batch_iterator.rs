@@ -24,16 +24,23 @@ use datafusion::common::DataFusionError;
 /// ShuffleRepartitioner, and provides an iterator over the batches in the specified partitions.
 pub(super) struct PartitionedBatchesProducer {
     buffered_batches: Vec<RecordBatch>,
-    partition_indices: Vec<Vec<(u32, u32)>>,
+    partition_indices: Vec<Vec<(usize, usize)>>,
     batch_size: usize,
 }
 
 impl PartitionedBatchesProducer {
     pub(super) fn new(
         buffered_batches: Vec<RecordBatch>,
-        indices: Vec<Vec<(u32, u32)>>,
+        mut indices: Vec<Vec<(usize, usize)>>,
         batch_size: usize,
     ) -> Self {
+        // Sort each partition's indices by (batch_id, row_id) to improve data locality
+        // during the interleave/gather step. Arrow's interleave_record_batch has an
+        // internal optimization that coalesces adjacent rows from the same source batch
+        // into a single extend() call, which is much faster than per-row random access.
+        for partition_indices in &mut indices {
+            partition_indices.sort_unstable();
+        }
         Self {
             partition_indices: indices,
             buffered_batches,
@@ -51,36 +58,23 @@ impl PartitionedBatchesProducer {
 }
 
 pub(crate) struct PartitionedBatchIterator<'a> {
-    record_batches: Vec<&'a RecordBatch>,
+    record_batches: &'a [RecordBatch],
     batch_size: usize,
-    indices: Vec<(usize, usize)>,
+    // Indices are already (usize, usize) — no conversion needed
+    indices: &'a [(usize, usize)],
     pos: usize,
 }
 
 impl<'a> PartitionedBatchIterator<'a> {
     fn new(
-        indices: &'a [(u32, u32)],
+        indices: &'a [(usize, usize)],
         buffered_batches: &'a [RecordBatch],
         batch_size: usize,
     ) -> Self {
-        if indices.is_empty() {
-            // Avoid unnecessary allocations when the partition is empty
-            return Self {
-                record_batches: vec![],
-                batch_size,
-                indices: vec![],
-                pos: 0,
-            };
-        }
-        let record_batches = buffered_batches.iter().collect::<Vec<_>>();
-        let current_indices = indices
-            .iter()
-            .map(|(i_batch, i_row)| (*i_batch as usize, *i_row as usize))
-            .collect::<Vec<_>>();
         Self {
-            record_batches,
+            record_batches: buffered_batches,
             batch_size,
-            indices: current_indices,
+            indices,
             pos: 0,
         }
     }
@@ -96,7 +90,9 @@ impl Iterator for PartitionedBatchIterator<'_> {
 
         let indices_end = std::cmp::min(self.pos + self.batch_size, self.indices.len());
         let indices = &self.indices[self.pos..indices_end];
-        match interleave_record_batch(&self.record_batches, indices) {
+        // interleave_record_batch accepts &[&RecordBatch] — collect refs from slice
+        let batch_refs: Vec<&RecordBatch> = self.record_batches.iter().collect();
+        match interleave_record_batch(&batch_refs, indices) {
             Ok(batch) => {
                 self.pos = indices_end;
                 Some(Ok(batch))
