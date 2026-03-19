@@ -116,15 +116,12 @@ class CometNativeShuffleWriter[K, V](
       nativePlan
     }
 
-    // Getting rid of the fake partitionId
-    val newInputs = inputs.asInstanceOf[Iterator[_ <: Product2[Any, Any]]].map(_._2)
-
-    // When combined with a native child plan that has no JVM input sources (e.g., NativeScan
-    // reads files directly), the input iterator will be empty. Pass empty inputs so native
-    // code doesn't create unnecessary ScanExec nodes.
     val batchInputs = if (childNativePlan.isDefined && planCommonByKey.nonEmpty) {
+      // NativeScan reads files directly in native code — no JVM input needed
       Seq.empty[Iterator[ColumnarBatch]]
     } else {
+      // Getting rid of the fake partitionId
+      val newInputs = inputs.asInstanceOf[Iterator[_ <: Product2[Any, Any]]].map(_._2)
       Seq(newInputs.asInstanceOf[Iterator[ColumnarBatch]])
     }
 
