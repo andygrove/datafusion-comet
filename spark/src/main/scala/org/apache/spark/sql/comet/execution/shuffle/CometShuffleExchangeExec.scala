@@ -34,9 +34,9 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, BoundReference, Uns
 import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical._
-import org.apache.spark.sql.comet.{CometMetricNode, CometNativeExec, CometPlan, CometSinkPlaceHolder}
+import org.apache.spark.sql.comet.{CometBroadcastExchangeExec, CometIcebergNativeScanExec, CometMetricNode, CometNativeExec, CometNativeScanExec, CometPlan, CometSinkPlaceHolder}
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
+import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ShuffleExchangeExec, ShuffleExchangeLike, ShuffleOrigin}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics, SQLShuffleReadMetricsReporter, SQLShuffleWriteMetricsReporter}
 import org.apache.spark.sql.internal.SQLConf
@@ -51,6 +51,7 @@ import com.google.common.base.Objects
 import org.apache.comet.CometConf
 import org.apache.comet.CometConf.{COMET_EXEC_SHUFFLE_ENABLED, COMET_SHUFFLE_MODE}
 import org.apache.comet.CometSparkSessionExtensions.{isCometShuffleManagerEnabled, withInfo}
+import org.apache.comet.parquet.CometParquetUtils
 import org.apache.comet.serde.{Compatible, OperatorOuterClass, QueryPlanSerde, SupportLevel, Unsupported}
 import org.apache.comet.serde.operator.CometSink
 import org.apache.comet.shims.ShimCometShuffleExchangeExec
@@ -90,8 +91,15 @@ case class CometShuffleExchangeExec(
     new UnsafeRowSerializer(child.output.size, longMetric("dataSize"))
 
   @transient lazy val inputRDD: RDD[_] = if (shuffleType == CometNativeShuffle) {
-    // CometNativeShuffle assumes that the input plan is Comet plan.
-    child.executeColumnar()
+    child match {
+      case nativeChild: CometNativeExec
+          if CometShuffleExchangeExec.canCombineWithShuffleWriter(
+            nativeChild,
+            outputPartitioning) =>
+        CometShuffleExchangeExec.collectSingleInput(nativeChild)
+      case _ =>
+        child.executeColumnar()
+    }
   } else if (shuffleType == CometColumnarShuffle) {
     // CometColumnarShuffle uses Spark's row-based execute() API. For Spark row-based plans,
     // rows flow directly. For Comet native plans, their doExecute() wraps with ColumnarToRowExec
@@ -100,6 +108,20 @@ case class CometShuffleExchangeExec(
   } else {
     throw new UnsupportedOperationException(
       s"Unsupported shuffle type: ${shuffleType.getClass.getName}")
+  }
+
+  /** Returns (childNativePlan, childNativeMetrics) if in combined mode, else (None, None). */
+  @transient private lazy val childPlanInfo: (Option[Array[Byte]], Option[CometMetricNode]) = {
+    child match {
+      case nativeChild: CometNativeExec
+          if shuffleType == CometNativeShuffle &&
+            CometShuffleExchangeExec.canCombineWithShuffleWriter(
+              nativeChild,
+              outputPartitioning) =>
+        (nativeChild.serializedPlanOpt.plan, Some(CometMetricNode.fromCometPlan(nativeChild)))
+      case _ =>
+        (None, None)
+    }
   }
 
   // 'mapOutputStatisticsFuture' is only needed when enable AQE.
@@ -137,12 +159,15 @@ case class CometShuffleExchangeExec(
   @transient
   lazy val shuffleDependency: ShuffleDependency[Int, _, _] =
     if (shuffleType == CometNativeShuffle) {
+      val (childPlan, childMetrics) = childPlanInfo
       val dep = CometShuffleExchangeExec.prepareShuffleDependency(
         inputRDD.asInstanceOf[RDD[ColumnarBatch]],
         child.output,
         outputPartitioning,
         serializer,
-        metrics)
+        metrics,
+        childPlan,
+        childMetrics)
       metrics("numPartitions").set(dep.partitioner.numPartitions)
       val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
       SQLMetrics.postDriverMetricUpdates(
@@ -565,7 +590,10 @@ object CometShuffleExchangeExec
       outputAttributes: Seq[Attribute],
       outputPartitioning: Partitioning,
       serializer: Serializer,
-      metrics: Map[String, SQLMetric]): ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
+      metrics: Map[String, SQLMetric],
+      childNativePlan: Option[Array[Byte]] = None,
+      childNativeMetrics: Option[CometMetricNode] = None)
+      : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     val numParts = rdd.getNumPartitions
 
     // The code block below is mostly brought over from
@@ -632,8 +660,96 @@ object CometShuffleExchangeExec
       outputAttributes = outputAttributes,
       shuffleWriteMetrics = metrics,
       numParts = numParts,
-      rangePartitionBounds = rangePartitionBounds)
+      rangePartitionBounds = rangePartitionBounds,
+      childNativePlan = childNativePlan,
+      childNativeMetrics = childNativeMetrics)
     dependency
+  }
+
+  /**
+   * Checks if a native child plan is eligible to be folded into the shuffle writer's native plan,
+   * eliminating an FFI round-trip. See the design spec for full criteria.
+   */
+  private[shuffle] def canCombineWithShuffleWriter(
+      nativeChild: CometNativeExec,
+      outputPartitioning: Partitioning): Boolean = {
+
+    if (!CometConf.COMET_EXEC_SHUFFLE_COMBINE_PLANS_ENABLED.get()) return false
+    if (!nativeChild.serializedPlanOpt.isDefined) return false
+
+    // Exclude RangePartitioning: prepareShuffleDependency samples the inputRDD using
+    // outputAttributes, which won't match the raw input schema.
+    outputPartitioning match {
+      case _: RangePartitioning => return false
+      case _ =>
+    }
+
+    // Count input sources and check for broadcasts
+    val inputSources = scala.collection.mutable.ArrayBuffer.empty[SparkPlan]
+    nativeChild.foreachUntilCometInput(nativeChild)(inputSources += _)
+
+    if (inputSources.size != 1) return false
+
+    // Reject broadcast inputs
+    inputSources.head match {
+      case _: CometBroadcastExchangeExec | _: BroadcastQueryStageExec => return false
+      case _ =>
+    }
+
+    // Reject Iceberg scans with per-partition data
+    var hasIceberg = false
+    nativeChild.foreachUntilCometInput(nativeChild) {
+      case ice: CometIcebergNativeScanExec if ice.perPartitionData.nonEmpty =>
+        hasIceberg = true
+      case _ =>
+    }
+    if (hasIceberg) return false
+
+    // Reject encrypted Parquet scans
+    var hasEncrypted = false
+    nativeChild.foreachUntilCometInput(nativeChild) {
+      case scan: CometNativeScanExec =>
+        val hadoopConf = scan.relation.sparkSession.sessionState
+          .newHadoopConfWithOptions(scan.relation.options)
+        if (CometParquetUtils.encryptionEnabled(hadoopConf)) {
+          hasEncrypted = true
+        }
+      case _ =>
+    }
+    if (hasEncrypted) return false
+
+    // Reject plans with scalar subqueries
+    val hasSubqueries =
+      nativeChild.expressions.exists(_.find(_.isInstanceOf[ScalarSubquery]).isDefined)
+    if (hasSubqueries) return false
+
+    // Also check child plan tree for subqueries (not just the boundary node)
+    var childHasSubqueries = false
+    def checkSubqueries(plan: SparkPlan): Unit = plan match {
+      case _: CometNativeExec =>
+        if (plan.expressions.exists(_.find(_.isInstanceOf[ScalarSubquery]).isDefined)) {
+          childHasSubqueries = true
+        }
+        plan.children.foreach(checkSubqueries)
+      case _ => // stop at non-native nodes
+    }
+    nativeChild.children.foreach(checkSubqueries)
+    if (childHasSubqueries) return false
+
+    true
+  }
+
+  /**
+   * Collects the single input RDD from a native child plan. The caller must have already verified
+   * eligibility via canCombineWithShuffleWriter.
+   */
+  private[shuffle] def collectSingleInput(nativeChild: CometNativeExec): RDD[ColumnarBatch] = {
+    val inputSources = scala.collection.mutable.ArrayBuffer.empty[SparkPlan]
+    nativeChild.foreachUntilCometInput(nativeChild)(inputSources += _)
+    assert(
+      inputSources.size == 1,
+      s"Expected exactly one input source, found ${inputSources.size}")
+    inputSources.head.executeColumnar()
   }
 
   /**
