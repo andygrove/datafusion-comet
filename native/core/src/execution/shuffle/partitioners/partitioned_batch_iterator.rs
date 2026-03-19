@@ -31,16 +31,9 @@ pub(super) struct PartitionedBatchesProducer {
 impl PartitionedBatchesProducer {
     pub(super) fn new(
         buffered_batches: Vec<RecordBatch>,
-        mut indices: Vec<Vec<(usize, usize)>>,
+        indices: Vec<Vec<(usize, usize)>>,
         batch_size: usize,
     ) -> Self {
-        // Sort each partition's indices by (batch_id, row_id) to improve data locality
-        // during the interleave/gather step. Arrow's interleave_record_batch has an
-        // internal optimization that coalesces adjacent rows from the same source batch
-        // into a single extend() call, which is much faster than per-row random access.
-        for partition_indices in &mut indices {
-            partition_indices.sort_unstable();
-        }
         Self {
             partition_indices: indices,
             buffered_batches,
