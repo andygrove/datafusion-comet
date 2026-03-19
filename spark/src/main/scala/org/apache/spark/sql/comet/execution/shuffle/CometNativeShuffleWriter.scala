@@ -32,7 +32,7 @@ import org.apache.spark.shuffle.{IndexShuffleBlockResolver, ShuffleWriteMetricsR
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, Literal}
 import org.apache.spark.sql.catalyst.plans.physical.{HashPartitioning, Partitioning, RangePartitioning, RoundRobinPartitioning, SinglePartition}
-import org.apache.spark.sql.comet.{CometExec, CometMetricNode}
+import org.apache.spark.sql.comet.{CometExec, CometMetricNode, PlanDataInjector}
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -55,7 +55,9 @@ class CometNativeShuffleWriter[K, V](
     metricsReporter: ShuffleWriteMetricsReporter,
     rangePartitionBounds: Option[Seq[InternalRow]] = None,
     childNativePlan: Option[Array[Byte]] = None,
-    childNativeMetrics: Option[CometMetricNode] = None)
+    childNativeMetrics: Option[CometMetricNode] = None,
+    planCommonByKey: Map[String, Array[Byte]] = Map.empty,
+    planPerPartitionByKey: Map[String, Array[Array[Byte]]] = Map.empty)
     extends ShuffleWriter[K, V]
     with Logging {
 
@@ -103,13 +105,33 @@ class CometNativeShuffleWriter[K, V](
         CometMetricNode(nativeSQLMetrics)
     }
 
+    // Inject per-partition plan data (e.g., NativeScan file_partition) if present
+    val actualPlan = if (planCommonByKey.nonEmpty) {
+      val partitionIdx = context.partitionId()
+      val partitionByKey = planPerPartitionByKey.map { case (key, arr) =>
+        key -> arr(partitionIdx)
+      }
+      PlanDataInjector.injectPlanData(nativePlan, planCommonByKey, partitionByKey)
+    } else {
+      nativePlan
+    }
+
     // Getting rid of the fake partitionId
     val newInputs = inputs.asInstanceOf[Iterator[_ <: Product2[Any, Any]]].map(_._2)
 
+    // When combined with a native child plan that has no JVM input sources (e.g., NativeScan
+    // reads files directly), the input iterator will be empty. Pass empty inputs so native
+    // code doesn't create unnecessary ScanExec nodes.
+    val batchInputs = if (childNativePlan.isDefined && planCommonByKey.nonEmpty) {
+      Seq.empty[Iterator[ColumnarBatch]]
+    } else {
+      Seq(newInputs.asInstanceOf[Iterator[ColumnarBatch]])
+    }
+
     val cometIter = CometExec.getCometIterator(
-      Seq(newInputs.asInstanceOf[Iterator[ColumnarBatch]]),
+      batchInputs,
       outputAttributes.length,
-      nativePlan,
+      actualPlan,
       nativeMetrics,
       numParts,
       context.partitionId(),

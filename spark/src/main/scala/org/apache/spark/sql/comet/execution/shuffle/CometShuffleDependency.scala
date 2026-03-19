@@ -52,7 +52,9 @@ class CometShuffleDependency[K: ClassTag, V: ClassTag, C: ClassTag](
     val numParts: Int = 0,
     val rangePartitionBounds: Option[Seq[InternalRow]] = None,
     val childNativePlan: Option[Array[Byte]] = None,
-    val childNativeMetrics: Option[CometMetricNode] = None)
+    val childNativeMetrics: Option[CometMetricNode] = None,
+    val planCommonByKey: Map[String, Array[Byte]] = Map.empty,
+    val planPerPartitionByKey: Map[String, Array[Array[Byte]]] = Map.empty)
     extends ShuffleDependency[K, V, C](
       _rdd,
       partitioner,

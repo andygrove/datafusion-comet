@@ -110,17 +110,32 @@ case class CometShuffleExchangeExec(
       s"Unsupported shuffle type: ${shuffleType.getClass.getName}")
   }
 
-  /** Returns (childNativePlan, childNativeMetrics) if in combined mode, else (None, None). */
-  @transient private lazy val childPlanInfo: (Option[Array[Byte]], Option[CometMetricNode]) = {
+  /**
+   * Returns combined plan info if in combined mode, else defaults. (childNativePlan,
+   * childNativeMetrics, planCommonByKey, planPerPartitionByKey)
+   */
+  private type ChildPlanInfoType = (
+      Option[Array[Byte]],
+      Option[CometMetricNode],
+      Map[String, Array[Byte]],
+      Map[String, Array[Array[Byte]]])
+
+  @transient private lazy val childPlanInfo: ChildPlanInfoType = {
     child match {
       case nativeChild: CometNativeExec
           if shuffleType == CometNativeShuffle &&
             CometShuffleExchangeExec.canCombineWithShuffleWriter(
               nativeChild,
               outputPartitioning) =>
-        (nativeChild.serializedPlanOpt.plan, Some(CometMetricNode.fromCometPlan(nativeChild)))
+        val (commonByKey, perPartitionByKey) =
+          CometShuffleExchangeExec.findPlanDataForCombine(nativeChild)
+        (
+          nativeChild.serializedPlanOpt.plan,
+          Some(CometMetricNode.fromCometPlan(nativeChild)),
+          commonByKey,
+          perPartitionByKey)
       case _ =>
-        (None, None)
+        (None, None, Map.empty, Map.empty)
     }
   }
 
@@ -159,7 +174,7 @@ case class CometShuffleExchangeExec(
   @transient
   lazy val shuffleDependency: ShuffleDependency[Int, _, _] =
     if (shuffleType == CometNativeShuffle) {
-      val (childPlan, childMetrics) = childPlanInfo
+      val (childPlan, childMetrics, planCommon, planPerPartition) = childPlanInfo
       val dep = CometShuffleExchangeExec.prepareShuffleDependency(
         inputRDD.asInstanceOf[RDD[ColumnarBatch]],
         child.output,
@@ -167,7 +182,9 @@ case class CometShuffleExchangeExec(
         serializer,
         metrics,
         childPlan,
-        childMetrics)
+        childMetrics,
+        planCommon,
+        planPerPartition)
       metrics("numPartitions").set(dep.partitioner.numPartitions)
       val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
       SQLMetrics.postDriverMetricUpdates(
@@ -592,7 +609,9 @@ object CometShuffleExchangeExec
       serializer: Serializer,
       metrics: Map[String, SQLMetric],
       childNativePlan: Option[Array[Byte]] = None,
-      childNativeMetrics: Option[CometMetricNode] = None)
+      childNativeMetrics: Option[CometMetricNode] = None,
+      planCommonByKey: Map[String, Array[Byte]] = Map.empty,
+      planPerPartitionByKey: Map[String, Array[Array[Byte]]] = Map.empty)
       : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     val numParts = rdd.getNumPartitions
 
@@ -662,7 +681,9 @@ object CometShuffleExchangeExec
       numParts = numParts,
       rangePartitionBounds = rangePartitionBounds,
       childNativePlan = childNativePlan,
-      childNativeMetrics = childNativeMetrics)
+      childNativeMetrics = childNativeMetrics,
+      planCommonByKey = planCommonByKey,
+      planPerPartitionByKey = planPerPartitionByKey)
     dependency
   }
 
@@ -742,6 +763,10 @@ object CometShuffleExchangeExec
   /**
    * Collects the single input RDD from a native child plan. The caller must have already verified
    * eligibility via canCombineWithShuffleWriter.
+   *
+   * For CometNativeExec leaves (e.g., CometNativeScanExec which reads files directly in native
+   * code), there is no JVM input RDD. In this case, we return an empty RDD with the correct
+   * partition count so the shuffle framework schedules the right number of map tasks.
    */
   private[shuffle] def collectSingleInput(nativeChild: CometNativeExec): RDD[ColumnarBatch] = {
     val inputSources = scala.collection.mutable.ArrayBuffer.empty[SparkPlan]
@@ -749,7 +774,29 @@ object CometShuffleExchangeExec
     assert(
       inputSources.size == 1,
       s"Expected exactly one input source, found ${inputSources.size}")
-    inputSources.head.executeColumnar()
+
+    inputSources.head match {
+      case nativeExec: CometNativeExec =>
+        // Native leaf (e.g., CometNativeScanExec) reads files directly — no JVM input.
+        // Create empty RDD with correct partition count.
+        val numPartitions = nativeExec.outputPartitioning.numPartitions
+        SparkContext
+          .getOrCreate()
+          .parallelize(Seq.empty[Int], numPartitions)
+          .mapPartitions(_ => Iterator.empty)
+      case other =>
+        other.executeColumnar()
+    }
+  }
+
+  /**
+   * Collects plan data (commonByKey, perPartitionByKey) from a child plan for plan data injection
+   * in the combined shuffle write path. This is needed for NativeScan operators which require
+   * per-partition file lists to be injected at runtime.
+   */
+  private[shuffle] def findPlanDataForCombine(nativeChild: CometNativeExec)
+      : (Map[String, Array[Byte]], Map[String, Array[Array[Byte]]]) = {
+    nativeChild.findAllPlanData(nativeChild)
   }
 
   /**

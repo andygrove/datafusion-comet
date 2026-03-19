@@ -620,7 +620,7 @@ abstract class CometNativeExec extends CometExec {
    * @return
    *   (commonByKey, perPartitionByKey) - common data is shared, per-partition varies
    */
-  private def findAllPlanData(
+  private[spark] def findAllPlanData(
       plan: SparkPlan): (Map[String, Array[Byte]], Map[String, Array[Array[Byte]]]) = {
     plan match {
       // Found an Iceberg scan with planning data
