@@ -26,7 +26,10 @@ pub(super) struct ShufflePartitionerMetrics {
     /// Time to perform repartitioning
     pub(super) repart_time: Time,
 
-    /// Time encoding batches to IPC format
+    /// Time spent in take_record_batch (copying data to partition buffers)
+    pub(super) take_time: Time,
+
+    /// Time encoding batches to IPC format (includes compression)
     pub(super) encode_time: Time,
 
     /// Time spent writing to disk. Maps to "shuffleWriteTime" in Spark SQL Metrics.
@@ -50,6 +53,7 @@ impl ShufflePartitionerMetrics {
         Self {
             baseline: BaselineMetrics::new(metrics, partition),
             repart_time: MetricBuilder::new(metrics).subset_time("repart_time", partition),
+            take_time: MetricBuilder::new(metrics).subset_time("take_time", partition),
             encode_time: MetricBuilder::new(metrics).subset_time("encode_time", partition),
             write_time: MetricBuilder::new(metrics).subset_time("write_time", partition),
             input_batches: MetricBuilder::new(metrics).counter("input_batches", partition),

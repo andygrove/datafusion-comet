@@ -77,6 +77,7 @@ class CometNativeShuffleWriter[K, V](
 
     val detailedMetrics = Seq(
       "elapsed_compute",
+      "take_time",
       "encode_time",
       "repart_time",
       "input_batches",

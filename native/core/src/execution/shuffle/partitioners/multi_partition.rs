@@ -393,6 +393,7 @@ impl MultiPartitionShuffleRepartitioner {
         let mut mem_growth: usize = 0;
         let num_output_partitions = self.partition_batches.len();
 
+        let take_start = Instant::now();
         for partition_id in 0..num_output_partitions {
             let start = partition_starts[partition_id] as usize;
             let end = partition_starts[partition_id + 1] as usize;
@@ -407,6 +408,7 @@ impl MultiPartitionShuffleRepartitioner {
             mem_growth += partition_batch.get_array_memory_size();
             self.partition_batches[partition_id].push(partition_batch);
         }
+        self.metrics.take_time.add_duration(take_start.elapsed());
 
         if self.reservation.try_grow(mem_growth).is_err() {
             self.spill()?;
