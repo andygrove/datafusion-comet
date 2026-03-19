@@ -28,7 +28,7 @@ import org.scalatest.Tag
 import org.apache.hadoop.fs.Path
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.{CometTestBase, DataFrame, Dataset, Row}
-import org.apache.spark.sql.comet.execution.shuffle.CometShuffleExchangeExec
+import org.apache.spark.sql.comet.execution.shuffle.{CometShuffleDependency, CometShuffleExchangeExec}
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanHelper
 import org.apache.spark.sql.functions.col
 
@@ -434,6 +434,64 @@ class CometNativeShuffleSuite extends CometTestBase with AdaptiveSparkPlanHelper
         // Just collect and verify - simpler test
         val result = shuffled.collect()
         assert(result.length == 50, s"Expected 50 rows after filter, got ${result.length}")
+      }
+    }
+  }
+
+  test("native shuffle: combined plan eliminates FFI round-trip") {
+    withParquetTable((0 until 100).map(i => (i, (i + 1).toLong)), "tbl") {
+      val df = sql("SELECT _1, _2 FROM tbl WHERE _1 > 10")
+        .repartition(10, col("_1"))
+
+      checkSparkAnswerAndOperator(df)
+      checkCometExchange(df, 1, true)
+
+      val shuffleExchanges = collect(df.queryExecution.executedPlan) {
+        case s: CometShuffleExchangeExec => s
+      }
+      assert(shuffleExchanges.nonEmpty, "Expected at least one CometShuffleExchangeExec")
+      val dep = shuffleExchanges.head.shuffleDependency
+        .asInstanceOf[CometShuffleDependency[_, _, _]]
+      assert(
+        dep.childNativePlan.isDefined,
+        "Expected childNativePlan to be set (combined plan active)")
+    }
+  }
+
+  test("native shuffle: combined plan disabled by config") {
+    withSQLConf(CometConf.COMET_EXEC_SHUFFLE_COMBINE_PLANS_ENABLED.key -> "false") {
+      withParquetTable((0 until 100).map(i => (i, (i + 1).toLong)), "tbl") {
+        val df = sql("SELECT _1, _2 FROM tbl WHERE _1 > 10")
+          .repartition(10, col("_1"))
+
+        checkSparkAnswerAndOperator(df)
+        checkCometExchange(df, 1, true)
+
+        val shuffleExchanges = collect(df.queryExecution.executedPlan) {
+          case s: CometShuffleExchangeExec => s
+        }
+        assert(shuffleExchanges.nonEmpty)
+        val dep = shuffleExchanges.head.shuffleDependency
+          .asInstanceOf[CometShuffleDependency[_, _, _]]
+        assert(
+          dep.childNativePlan.isEmpty,
+          "Expected childNativePlan to be empty (optimization disabled)")
+      }
+    }
+  }
+
+  test("native shuffle: fallback for RangePartitioning") {
+    withParquetTable((0 until 100).map(i => (i, (i + 1).toLong)), "tbl") {
+      val df = sql("SELECT * FROM tbl").orderBy("_1")
+      checkSparkAnswer(df)
+    }
+  }
+
+  test("native shuffle: fallback for multi-input plans (join)") {
+    withParquetTable((0 until 50).map(i => (i, s"a$i")), "tbl1") {
+      withParquetTable((0 until 50).map(i => (i, s"b$i")), "tbl2") {
+        val df = sql("SELECT * FROM tbl1 JOIN tbl2 ON tbl1._1 = tbl2._1")
+        checkSparkAnswer(df)
       }
     }
   }
