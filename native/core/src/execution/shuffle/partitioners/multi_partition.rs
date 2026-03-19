@@ -484,8 +484,7 @@ impl MultiPartitionShuffleRepartitioner {
                 let bool_array = column.as_any().downcast_ref::<BooleanArray>().unwrap();
                 for (row, &p_id) in partition_ids.iter().enumerate().take(num_rows) {
                     let p = p_id as usize;
-                    self.partition_buffers[p].columns[col_idx]
-                        .append_bool(bool_array.value(row));
+                    self.partition_buffers[p].columns[col_idx].append_bool(bool_array.value(row));
                     let is_valid = nulls.is_none_or(|n| n.is_valid(row));
                     self.partition_buffers[p].columns[col_idx].append_null_bit(is_valid);
                 }
@@ -493,8 +492,7 @@ impl MultiPartitionShuffleRepartitioner {
                 // Fallback
                 for (row, &p_id) in partition_ids.iter().enumerate().take(num_rows) {
                     let p = p_id as usize;
-                    self.partition_buffers[p].columns[col_idx]
-                        .append_fallback_index(row as u32);
+                    self.partition_buffers[p].columns[col_idx].append_fallback_index(row as u32);
                 }
             }
         }
@@ -680,9 +678,10 @@ impl ShufflePartitioner for MultiPartitionShuffleRepartitioner {
             offsets[num_output_partitions] = output_data.stream_position()?;
 
             let mut wt = self.metrics.write_time.timer();
-            let mut output_index = BufWriter::new(File::create(index_file).map_err(|e| {
-                DataFusionError::Execution(format!("shuffle write error: {e:?}"))
-            })?);
+            let mut output_index =
+                BufWriter::new(File::create(index_file).map_err(|e| {
+                    DataFusionError::Execution(format!("shuffle write error: {e:?}"))
+                })?);
             for offset in offsets {
                 output_index.write_all(&(offset as i64).to_le_bytes()[..])?;
             }
