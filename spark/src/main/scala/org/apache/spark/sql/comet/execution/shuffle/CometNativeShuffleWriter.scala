@@ -93,7 +93,15 @@ class CometNativeShuffleWriter[K, V](
       "data_size" -> metrics("dataSize"),
       "write_time" -> metricsWriteTime) ++
       metrics.filterKeys(detailedMetrics.contains)
-    val nativeMetrics = CometMetricNode(nativeSQLMetrics)
+    val nativeMetrics = childNativeMetrics match {
+      case Some(childMetrics) =>
+        // Combined metrics tree: shuffle writer metrics as root, child metrics as subtree.
+        // This mirrors the combined native plan structure so native code can walk both
+        // trees in parallel to update per-operator metrics.
+        CometMetricNode(nativeSQLMetrics, Seq(childMetrics))
+      case None =>
+        CometMetricNode(nativeSQLMetrics)
+    }
 
     // Getting rid of the fake partitionId
     val newInputs = inputs.asInstanceOf[Iterator[_ <: Product2[Any, Any]]].map(_._2)
@@ -310,10 +318,19 @@ class CometNativeShuffleWriter[K, V](
       }
 
       val shuffleWriterOpBuilder = OperatorOuterClass.Operator.newBuilder()
-      shuffleWriterOpBuilder
-        .setShuffleWriter(shuffleWriterBuilder)
-        .addChildren(opBuilder.setScan(scanBuilder).build())
-        .build()
+      shuffleWriterOpBuilder.setShuffleWriter(shuffleWriterBuilder)
+
+      if (childNativePlan.isDefined) {
+        // Combined plan: ShuffleWriter -> <child native plan>
+        // The child plan already has Scan leaves that will read from the input iterators.
+        val childOp = OperatorOuterClass.Operator.parseFrom(childNativePlan.get)
+        shuffleWriterOpBuilder.addChildren(childOp).build()
+      } else {
+        // Original behavior: ShuffleWriter -> Scan
+        shuffleWriterOpBuilder
+          .addChildren(opBuilder.setScan(scanBuilder).build())
+          .build()
+      }
     } else {
       // There are unsupported scan type
       throw new UnsupportedOperationException(
