@@ -27,6 +27,7 @@ pub(super) struct ShufflePartitionerMetrics {
     pub(super) repart_time: Time,
 
     /// Time in interleave_record_batch (gathering rows from buffered batches)
+    #[allow(dead_code)]
     pub(super) gather_time: Time,
 
     /// Time in BatchCoalescer (merging small batches before serialization)
