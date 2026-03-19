@@ -16,9 +16,9 @@
 // under the License.
 
 use crate::execution::shuffle::metrics::ShufflePartitionerMetrics;
-use arrow::array::RecordBatch;
 use crate::execution::shuffle::writers::buf_batch_writer::BufBatchWriter;
 use crate::execution::shuffle::ShuffleBlockWriter;
+use arrow::array::RecordBatch;
 use datafusion::common::DataFusionError;
 use datafusion::execution::disk_manager::RefCountedTempFile;
 use datafusion::execution::runtime_env::RuntimeEnv;
@@ -96,11 +96,8 @@ impl PartitionWriter {
             );
             let mut bytes_written = 0;
             for batch in batches {
-                bytes_written += buf_batch_writer.write(
-                    batch,
-                    &metrics.encode_time,
-                    &metrics.write_time,
-                )?;
+                bytes_written +=
+                    buf_batch_writer.write(batch, &metrics.encode_time, &metrics.write_time)?;
             }
             buf_batch_writer.flush(&metrics.encode_time, &metrics.write_time)?;
             bytes_written

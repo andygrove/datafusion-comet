@@ -544,10 +544,7 @@ impl ShufflePartitioner for MultiPartitionShuffleRepartitioner {
                             &self.metrics.write_time,
                         )?;
                     }
-                    buf_batch_writer.flush(
-                        &self.metrics.encode_time,
-                        &self.metrics.write_time,
-                    )?;
+                    buf_batch_writer.flush(&self.metrics.encode_time, &self.metrics.write_time)?;
                 }
             }
 
