@@ -28,7 +28,6 @@ use tokio::time::Instant;
 
 /// A partitioner that writes all shuffle data to a single file and a single index file
 pub(crate) struct SinglePartitionShufflePartitioner {
-    // output_data_file: File,
     output_data_writer: BufBatchWriter<ShuffleBlockWriter, File>,
     output_index_path: String,
     /// Batches that are smaller than the batch size and to be concatenated
@@ -42,6 +41,7 @@ pub(crate) struct SinglePartitionShufflePartitioner {
 }
 
 impl SinglePartitionShufflePartitioner {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn try_new(
         output_data_path: String,
         output_index_path: String,
@@ -50,6 +50,7 @@ impl SinglePartitionShufflePartitioner {
         batch_size: usize,
         codec: CompressionCodec,
         write_buffer_size: usize,
+        shuffle_block_size: usize,
     ) -> datafusion::common::Result<Self> {
         let shuffle_block_writer = ShuffleBlockWriter::try_new(schema.as_ref(), codec.clone())?;
 
@@ -63,7 +64,7 @@ impl SinglePartitionShufflePartitioner {
             shuffle_block_writer,
             output_data_file,
             write_buffer_size,
-            batch_size,
+            shuffle_block_size,
         );
 
         Ok(Self {
@@ -122,9 +123,9 @@ impl ShufflePartitioner for SinglePartitionShufflePartitioner {
                 let concatenated_batch = self.concat_buffered_batches()?;
 
                 // Write the concatenated buffered batch
-                if let Some(batch) = concatenated_batch {
+                if let Some(buffered) = concatenated_batch {
                     self.output_data_writer.write(
-                        &batch,
+                        buffered,
                         &self.metrics.encode_time,
                         &self.metrics.write_time,
                     )?;
@@ -133,7 +134,7 @@ impl ShufflePartitioner for SinglePartitionShufflePartitioner {
                 if num_rows >= self.batch_size {
                     // Write the new batch
                     self.output_data_writer.write(
-                        &batch,
+                        batch,
                         &self.metrics.encode_time,
                         &self.metrics.write_time,
                     )?;
@@ -161,7 +162,7 @@ impl ShufflePartitioner for SinglePartitionShufflePartitioner {
         // Write the concatenated buffered batch
         if let Some(batch) = concatenated_batch {
             self.output_data_writer.write(
-                &batch,
+                batch,
                 &self.metrics.encode_time,
                 &self.metrics.write_time,
             )?;

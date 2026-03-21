@@ -534,6 +534,15 @@ object CometConf extends ShimCometConf {
       .checkValue(v => v > 0, "Write buffer size must be positive")
       .createWithDefault(1)
 
+  val COMET_SHUFFLE_BLOCK_SIZE: ConfigEntry[Long] =
+    conf(s"$COMET_EXEC_CONFIG_PREFIX.shuffle.blockSize")
+      .category(CATEGORY_SHUFFLE)
+      .doc("Target size in bytes for shuffle IPC blocks. Larger blocks reduce per-block " +
+        "overhead and improve compression but use more memory during shuffle.")
+      .bytesConf(ByteUnit.MiB)
+      .checkValue(v => v > 0, "Block size must be positive")
+      .createWithDefault(1)
+
   val COMET_SHUFFLE_PREFER_DICTIONARY_RATIO: ConfigEntry[Double] = conf(
     "spark.comet.shuffle.preferDictionary.ratio")
     .category(CATEGORY_SHUFFLE)

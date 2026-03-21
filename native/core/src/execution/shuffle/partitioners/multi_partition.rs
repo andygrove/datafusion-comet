@@ -126,6 +126,8 @@ pub(crate) struct MultiPartitionShuffleRepartitioner {
     tracing_enabled: bool,
     /// Size of the write buffer in bytes
     write_buffer_size: usize,
+    /// Target size in bytes for shuffle IPC blocks
+    shuffle_block_size: usize,
 }
 
 impl MultiPartitionShuffleRepartitioner {
@@ -142,6 +144,7 @@ impl MultiPartitionShuffleRepartitioner {
         codec: CompressionCodec,
         tracing_enabled: bool,
         write_buffer_size: usize,
+        shuffle_block_size: usize,
     ) -> datafusion::common::Result<Self> {
         let num_output_partitions = partitioning.partition_count();
         assert_ne!(
@@ -191,6 +194,7 @@ impl MultiPartitionShuffleRepartitioner {
             reservation,
             tracing_enabled,
             write_buffer_size,
+            shuffle_block_size,
         })
     }
 
@@ -442,17 +446,16 @@ impl MultiPartitionShuffleRepartitioner {
         encode_time: &Time,
         write_time: &Time,
         write_buffer_size: usize,
-        batch_size: usize,
+        shuffle_block_size: usize,
     ) -> datafusion::common::Result<()> {
         let mut buf_batch_writer = BufBatchWriter::new(
             shuffle_block_writer,
             output_data,
             write_buffer_size,
-            batch_size,
+            shuffle_block_size,
         );
         for batch in partition_iter {
-            let batch = batch?;
-            buf_batch_writer.write(&batch, encode_time, write_time)?;
+            buf_batch_writer.write(batch?, encode_time, write_time)?;
         }
         buf_batch_writer.flush(encode_time, write_time)?;
         Ok(())
@@ -480,7 +483,6 @@ impl MultiPartitionShuffleRepartitioner {
     fn partitioned_batches(&mut self) -> PartitionedBatchesProducer {
         let num_output_partitions = self.partition_indices.len();
         let buffered_batches = std::mem::take(&mut self.buffered_batches);
-        // let indices = std::mem::take(&mut self.partition_indices);
         let indices = std::mem::replace(
             &mut self.partition_indices,
             vec![vec![]; num_output_partitions],
@@ -513,7 +515,7 @@ impl MultiPartitionShuffleRepartitioner {
                     &self.runtime,
                     &self.metrics,
                     self.write_buffer_size,
-                    self.batch_size,
+                    self.shuffle_block_size,
                 )?;
             }
 
@@ -598,7 +600,7 @@ impl ShufflePartitioner for MultiPartitionShuffleRepartitioner {
                     &self.metrics.encode_time,
                     &self.metrics.write_time,
                     self.write_buffer_size,
-                    self.batch_size,
+                    self.shuffle_block_size,
                 )?;
             }
 

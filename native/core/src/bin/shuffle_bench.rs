@@ -153,6 +153,10 @@ struct Args {
     #[arg(long, default_value_t = 1048576)]
     write_buffer_size: usize,
 
+    /// Target size in bytes for shuffle IPC blocks
+    #[arg(long, default_value_t = 1048576)]
+    block_size: usize,
+
     /// Maximum number of rows to use (default: 1,000,000)
     #[arg(long, default_value_t = 1_000_000)]
     limit: usize,
@@ -565,6 +569,7 @@ fn run_shuffle_write(
         index_file.to_string(),
         false,
         args.write_buffer_size,
+        args.block_size,
     )
     .expect("Failed to create ShuffleWriterExec");
 
