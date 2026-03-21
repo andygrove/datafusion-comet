@@ -16,7 +16,6 @@
 // under the License.
 
 mod multi_partition;
-pub(super) mod partition_buffer;
 mod single_partition;
 
 use arrow::record_batch::RecordBatch;

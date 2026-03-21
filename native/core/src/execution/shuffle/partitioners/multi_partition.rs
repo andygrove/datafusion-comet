@@ -16,14 +16,14 @@
 // under the License.
 
 use crate::execution::shuffle::metrics::ShufflePartitionerMetrics;
-use crate::execution::shuffle::partitioners::partition_buffer::{ColumnBuffer, PartitionBuffer};
 use crate::execution::shuffle::partitioners::ShufflePartitioner;
 use crate::execution::shuffle::writers::PartitionWriter;
 use crate::execution::shuffle::{
     comet_partitioning, CometPartitioning, CompressionCodec, ShuffleBlockWriter,
 };
 use crate::execution::tracing::{with_trace, with_trace_async};
-use arrow::array::{Array, ArrayRef, BooleanArray, RecordBatch};
+use arrow::array::{ArrayRef, RecordBatch, UInt32Array};
+use arrow::compute::take;
 use arrow::datatypes::SchemaRef;
 use datafusion::common::DataFusionError;
 use datafusion::execution::memory_pool::{MemoryConsumer, MemoryReservation};
@@ -104,12 +104,9 @@ impl ScratchSpace {
 pub(crate) struct MultiPartitionShuffleRepartitioner {
     output_data_file: String,
     output_index_file: String,
-    partition_buffers: Vec<PartitionBuffer>,
     partition_writers: Vec<PartitionWriter>,
-    shuffle_block_writer: ShuffleBlockWriter,
     /// Partitioning scheme to use
     partitioning: CometPartitioning,
-    runtime: Arc<RuntimeEnv>,
     metrics: ShufflePartitionerMetrics,
     /// Reused scratch space for computing partition indices
     scratch: ScratchSpace,
@@ -133,7 +130,7 @@ impl MultiPartitionShuffleRepartitioner {
         batch_size: usize,
         codec: CompressionCodec,
         tracing_enabled: bool,
-        _write_buffer_size: usize,
+        write_buffer_size: usize,
     ) -> datafusion::common::Result<Self> {
         let num_output_partitions = partitioning.partition_count();
         assert_ne!(
@@ -161,13 +158,15 @@ impl MultiPartitionShuffleRepartitioner {
         let shuffle_block_writer = ShuffleBlockWriter::try_new(schema.as_ref(), codec.clone())?;
 
         let partition_writers = (0..num_output_partitions)
-            .map(|_| PartitionWriter::try_new(shuffle_block_writer.clone()))
+            .map(|_| {
+                PartitionWriter::try_new(
+                    shuffle_block_writer.clone(),
+                    Arc::clone(&runtime),
+                    write_buffer_size,
+                    batch_size,
+                )
+            })
             .collect::<datafusion::common::Result<Vec<_>>>()?;
-
-        let estimated_rows_per_partition = batch_size / num_output_partitions.max(1);
-        let partition_buffers = (0..num_output_partitions)
-            .map(|_| PartitionBuffer::new(Arc::clone(&schema), estimated_rows_per_partition))
-            .collect();
 
         let reservation = MemoryConsumer::new(format!("ShuffleRepartitioner[{partition}]"))
             .with_can_spill(true)
@@ -176,11 +175,8 @@ impl MultiPartitionShuffleRepartitioner {
         Ok(Self {
             output_data_file,
             output_index_file,
-            partition_buffers,
             partition_writers,
-            shuffle_block_writer,
             partitioning,
-            runtime,
             metrics,
             scratch,
             batch_size,
@@ -252,7 +248,7 @@ impl MultiPartitionShuffleRepartitioner {
                     num_rows
                 };
 
-                self.scatter_batch(
+                self.take_batch(
                     &input,
                     &scratch.partition_row_indices[..num_rows],
                     &scratch.partition_starts,
@@ -300,7 +296,7 @@ impl MultiPartitionShuffleRepartitioner {
                     num_rows
                 };
 
-                self.scatter_batch(
+                self.take_batch(
                     &input,
                     &scratch.partition_row_indices[..num_rows],
                     &scratch.partition_starts,
@@ -355,7 +351,7 @@ impl MultiPartitionShuffleRepartitioner {
                     num_rows
                 };
 
-                self.scatter_batch(
+                self.take_batch(
                     &input,
                     &scratch.partition_row_indices[..num_rows],
                     &scratch.partition_starts,
@@ -373,182 +369,44 @@ impl MultiPartitionShuffleRepartitioner {
         Ok(())
     }
 
-    fn scatter_batch(
+    /// For each non-empty partition, use Arrow's `take` kernel to extract the
+    /// partition's rows from the input batch, then push the sub-batch into the
+    /// partition's persistent `BufBatchWriter` for coalescing and serialization.
+    fn take_batch(
         &mut self,
         input: &RecordBatch,
         partition_row_indices: &[u32],
         partition_starts: &[u32],
     ) -> datafusion::common::Result<()> {
-        let num_partitions = self.partition_buffers.len();
-
-        // Track memory before scatter
-        let mem_before: usize = self.partition_buffers.iter().map(|b| b.memory_size()).sum();
-
+        let num_partitions = self.partition_writers.len();
         let scatter_start = Instant::now();
 
-        // Column-oriented scatter: for each column, iterate by partition then by
-        // rows within that partition. This keeps writes to the same partition buffer
-        // sequential for better cache locality.
-        //
-        // The inner loops destructure each partition's ColumnBuffer once per partition
-        // (not per row) to avoid per-row enum dispatch and function call overhead.
-        for (col_idx, column) in input.columns().iter().enumerate() {
-            let col_nulls = column.nulls();
-
-            match &self.partition_buffers[0].columns[col_idx] {
-                ColumnBuffer::Fixed { byte_width, .. } => {
-                    let byte_width = *byte_width;
-                    let arr_data = column.to_data();
-                    let src_values = arr_data.buffers()[0].as_slice();
-                    for p in 0..num_partitions {
-                        let start = partition_starts[p] as usize;
-                        let end = partition_starts[p + 1] as usize;
-                        if start == end {
-                            continue;
-                        }
-                        let row_indices = &partition_row_indices[start..end];
-                        let ColumnBuffer::Fixed { values, nulls, .. } =
-                            &mut self.partition_buffers[p].columns[col_idx]
-                        else {
-                            unreachable!()
-                        };
-                        for &row_idx in row_indices {
-                            let row = row_idx as usize;
-                            let offset = row * byte_width;
-                            values.extend_from_slice(&src_values[offset..offset + byte_width]);
-                            nulls.append(col_nulls.is_none_or(|n| n.is_valid(row)));
-                        }
-                    }
-                }
-                ColumnBuffer::Variable { .. } => {
-                    let arr_data = column.to_data();
-                    let src_offsets = arr_data.buffers()[0].typed_data::<i32>();
-                    let src_values = arr_data.buffers()[1].as_slice();
-                    for p in 0..num_partitions {
-                        let start = partition_starts[p] as usize;
-                        let end = partition_starts[p + 1] as usize;
-                        if start == end {
-                            continue;
-                        }
-                        let row_indices = &partition_row_indices[start..end];
-                        let ColumnBuffer::Variable {
-                            offsets,
-                            data,
-                            nulls,
-                        } = &mut self.partition_buffers[p].columns[col_idx]
-                        else {
-                            unreachable!()
-                        };
-                        for &row_idx in row_indices {
-                            let row = row_idx as usize;
-                            let val_start = src_offsets[row] as usize;
-                            let val_end = src_offsets[row + 1] as usize;
-                            data.extend_from_slice(&src_values[val_start..val_end]);
-                            offsets.push(data.len() as i32);
-                            nulls.append(col_nulls.is_none_or(|n| n.is_valid(row)));
-                        }
-                    }
-                }
-                ColumnBuffer::LargeVariable { .. } => {
-                    let arr_data = column.to_data();
-                    let src_offsets = arr_data.buffers()[0].typed_data::<i64>();
-                    let src_values = arr_data.buffers()[1].as_slice();
-                    for p in 0..num_partitions {
-                        let start = partition_starts[p] as usize;
-                        let end = partition_starts[p + 1] as usize;
-                        if start == end {
-                            continue;
-                        }
-                        let row_indices = &partition_row_indices[start..end];
-                        let ColumnBuffer::LargeVariable {
-                            offsets,
-                            data,
-                            nulls,
-                        } = &mut self.partition_buffers[p].columns[col_idx]
-                        else {
-                            unreachable!()
-                        };
-                        for &row_idx in row_indices {
-                            let row = row_idx as usize;
-                            let val_start = src_offsets[row] as usize;
-                            let val_end = src_offsets[row + 1] as usize;
-                            data.extend_from_slice(&src_values[val_start..val_end]);
-                            offsets.push(data.len() as i64);
-                            nulls.append(col_nulls.is_none_or(|n| n.is_valid(row)));
-                        }
-                    }
-                }
-                ColumnBuffer::Boolean { .. } => {
-                    let bool_array = column.as_any().downcast_ref::<BooleanArray>().unwrap();
-                    for p in 0..num_partitions {
-                        let start = partition_starts[p] as usize;
-                        let end = partition_starts[p + 1] as usize;
-                        if start == end {
-                            continue;
-                        }
-                        let row_indices = &partition_row_indices[start..end];
-                        let ColumnBuffer::Boolean { values, nulls } =
-                            &mut self.partition_buffers[p].columns[col_idx]
-                        else {
-                            unreachable!()
-                        };
-                        for &row_idx in row_indices {
-                            let row = row_idx as usize;
-                            values.append(bool_array.value(row));
-                            nulls.append(col_nulls.is_none_or(|n| n.is_valid(row)));
-                        }
-                    }
-                }
-                ColumnBuffer::Fallback { .. } => {
-                    for p in 0..num_partitions {
-                        let start = partition_starts[p] as usize;
-                        let end = partition_starts[p + 1] as usize;
-                        if start == end {
-                            continue;
-                        }
-                        let row_indices = &partition_row_indices[start..end];
-                        let ColumnBuffer::Fallback { indices } =
-                            &mut self.partition_buffers[p].columns[col_idx]
-                        else {
-                            unreachable!()
-                        };
-                        for &row_idx in row_indices {
-                            indices.push(row_idx);
-                        }
-                    }
-                }
+        for p in 0..num_partitions {
+            let start = partition_starts[p] as usize;
+            let end = partition_starts[p + 1] as usize;
+            if start == end {
+                continue;
             }
+
+            let indices = UInt32Array::from(partition_row_indices[start..end].to_vec());
+
+            let columns: Vec<ArrayRef> = input
+                .columns()
+                .iter()
+                .map(|col| take(col.as_ref(), &indices, None))
+                .collect::<std::result::Result<_, _>>()?;
+
+            let sub_batch = RecordBatch::try_new(input.schema(), columns)?;
+            self.partition_writers[p].write(&sub_batch, &self.metrics)?;
         }
 
         self.metrics
             .scatter_time
             .add_duration(scatter_start.elapsed());
 
-        // O(num_partitions) rather than O(num_rows)
-        for p in 0..num_partitions {
-            let count = (partition_starts[p + 1] - partition_starts[p]) as usize;
-            self.partition_buffers[p].row_count += count;
-        }
-
-        // Flush partitions. When fallback columns exist, flush ALL non-empty
-        // partitions since fallback indices reference the current input batch.
-        // Otherwise, only flush partitions that reached batch_size.
-        let flush_all = self.partition_buffers[0].has_fallback_columns();
-        for p in 0..num_partitions {
-            let should_flush = if flush_all {
-                self.partition_buffers[p].row_count > 0
-            } else {
-                self.partition_buffers[p].row_count >= self.batch_size
-            };
-            if should_flush {
-                let batch = self.partition_buffers[p].flush(Some(input))?;
-                self.partition_writers[p].spill_direct(&batch, &self.runtime, &self.metrics)?;
-            }
-        }
-
-        // Precise memory tracking
-        let mem_after: usize = self.partition_buffers.iter().map(|b| b.memory_size()).sum();
-        let mem_growth = mem_after.saturating_sub(mem_before);
+        // Memory tracking: the take sub-batches are absorbed by the coalescer.
+        // Use the input batch size as a proxy for memory growth.
+        let mem_growth = input.get_array_memory_size();
         if self.reservation.try_grow(mem_growth).is_err() {
             self.spill()?;
         }
@@ -573,26 +431,15 @@ impl MultiPartitionShuffleRepartitioner {
     }
 
     pub(crate) fn spill(&mut self) -> datafusion::common::Result<()> {
-        let has_data = self.partition_buffers.iter().any(|b| b.row_count() > 0);
-        if !has_data {
-            return Ok(());
-        }
         log::info!(
             "ShuffleRepartitioner spilling shuffle data of {} to disk while inserting ({} time(s) so far)",
             self.used(),
             self.spill_count()
         );
         with_trace("shuffle_spill", self.tracing_enabled, || {
-            let mut spilled_bytes = 0;
-            for p in 0..self.partition_buffers.len() {
-                if self.partition_buffers[p].row_count() > 0 {
-                    let batch = self.partition_buffers[p].flush(None)?;
-                    spilled_bytes += self.partition_writers[p].spill_direct(
-                        &batch,
-                        &self.runtime,
-                        &self.metrics,
-                    )?;
-                }
+            let spilled_bytes = self.reservation.size();
+            for writer in &mut self.partition_writers {
+                writer.flush(&self.metrics)?;
             }
             self.reservation.free();
             self.metrics.spill_count.add(1);
@@ -636,7 +483,7 @@ impl ShufflePartitioner for MultiPartitionShuffleRepartitioner {
     fn shuffle_write(&mut self) -> datafusion::common::Result<()> {
         with_trace("shuffle_write", self.tracing_enabled, || {
             let start_time = Instant::now();
-            let num_output_partitions = self.partition_buffers.len();
+            let num_output_partitions = self.partition_writers.len();
             let mut offsets = vec![0; num_output_partitions + 1];
             let data_file = self.output_data_file.clone();
             let index_file = self.output_index_file.clone();
@@ -653,20 +500,15 @@ impl ShufflePartitioner for MultiPartitionShuffleRepartitioner {
             for i in 0..num_output_partitions {
                 offsets[i] = output_data.stream_position()?;
 
+                // Flush remaining coalescer contents to spill file
+                self.partition_writers[i].flush(&self.metrics)?;
+
+                // Copy spill file contents to output
                 if let Some(spill_path) = self.partition_writers[i].path() {
                     let mut spill_file = BufReader::new(File::open(spill_path)?);
                     let mut wt = self.metrics.write_time.timer();
                     std::io::copy(&mut spill_file, &mut output_data)?;
                     wt.stop();
-                }
-
-                if self.partition_buffers[i].row_count() > 0 {
-                    let batch = self.partition_buffers[i].flush(None)?;
-                    self.shuffle_block_writer.write_batch(
-                        &batch,
-                        &mut output_data,
-                        &self.metrics.encode_time,
-                    )?;
                 }
             }
 
