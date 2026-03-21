@@ -52,67 +52,6 @@ pub(crate) enum ColumnBuffer {
 }
 
 impl ColumnBuffer {
-    pub(crate) fn append_fixed(&mut self, bytes: &[u8]) {
-        match self {
-            ColumnBuffer::Fixed { values, .. } => {
-                values.extend_from_slice(bytes);
-            }
-            _ => unreachable!("append_fixed called on non-Fixed variant"),
-        }
-    }
-
-    pub(crate) fn append_variable(&mut self, bytes: &[u8]) {
-        match self {
-            ColumnBuffer::Variable { offsets, data, .. } => {
-                data.extend_from_slice(bytes);
-                offsets.push(data.len() as i32);
-            }
-            _ => unreachable!("append_variable called on non-Variable variant"),
-        }
-    }
-
-    pub(crate) fn append_large_variable(&mut self, bytes: &[u8]) {
-        match self {
-            ColumnBuffer::LargeVariable { offsets, data, .. } => {
-                data.extend_from_slice(bytes);
-                offsets.push(data.len() as i64);
-            }
-            _ => unreachable!("append_large_variable called on non-LargeVariable variant"),
-        }
-    }
-
-    pub(crate) fn append_bool(&mut self, value: bool) {
-        match self {
-            ColumnBuffer::Boolean { values, .. } => {
-                values.append(value);
-            }
-            _ => unreachable!("append_bool called on non-Boolean variant"),
-        }
-    }
-
-    pub(crate) fn append_fallback_index(&mut self, idx: u32) {
-        match self {
-            ColumnBuffer::Fallback { indices } => {
-                indices.push(idx);
-            }
-            _ => unreachable!("append_fallback_index called on non-Fallback variant"),
-        }
-    }
-
-    pub(crate) fn append_null_bit(&mut self, is_valid: bool) {
-        match self {
-            ColumnBuffer::Boolean { nulls, .. }
-            | ColumnBuffer::Fixed { nulls, .. }
-            | ColumnBuffer::Variable { nulls, .. }
-            | ColumnBuffer::LargeVariable { nulls, .. } => {
-                nulls.append(is_valid);
-            }
-            ColumnBuffer::Fallback { .. } => {
-                unreachable!("append_null_bit called on Fallback variant")
-            }
-        }
-    }
-
     pub(crate) fn memory_size(&self) -> usize {
         match self {
             ColumnBuffer::Boolean { values, nulls } => values.capacity() + nulls.capacity(),
@@ -187,30 +126,6 @@ impl PartitionBuffer {
             row_count: 0,
             schema,
         }
-    }
-
-    pub(crate) fn append_fixed(&mut self, col_idx: usize, bytes: &[u8], is_valid: bool) {
-        self.columns[col_idx].append_fixed(bytes);
-        self.columns[col_idx].append_null_bit(is_valid);
-    }
-
-    pub(crate) fn append_variable(&mut self, col_idx: usize, bytes: &[u8], is_valid: bool) {
-        self.columns[col_idx].append_variable(bytes);
-        self.columns[col_idx].append_null_bit(is_valid);
-    }
-
-    pub(crate) fn append_large_variable(&mut self, col_idx: usize, bytes: &[u8], is_valid: bool) {
-        self.columns[col_idx].append_large_variable(bytes);
-        self.columns[col_idx].append_null_bit(is_valid);
-    }
-
-    pub(crate) fn append_bool(&mut self, col_idx: usize, value: bool, is_valid: bool) {
-        self.columns[col_idx].append_bool(value);
-        self.columns[col_idx].append_null_bit(is_valid);
-    }
-
-    pub(crate) fn append_fallback_index(&mut self, col_idx: usize, idx: u32) {
-        self.columns[col_idx].append_fallback_index(idx);
     }
 
     pub(crate) fn row_count(&self) -> usize {
@@ -340,32 +255,77 @@ mod tests {
         ]));
         let mut buf = PartitionBuffer::new(Arc::clone(&schema), 100);
 
-        // Append 3 rows manually
+        // Append 3 rows by destructuring column buffers directly (same as scatter kernel)
         // Row 0: i=1, s="hello", b=true, all valid
-        buf.columns[0].append_fixed(&1i32.to_le_bytes());
-        buf.columns[0].append_null_bit(true);
-        buf.columns[1].append_variable(b"hello");
-        buf.columns[1].append_null_bit(true);
-        buf.columns[2].append_bool(true);
-        buf.columns[2].append_null_bit(true);
+        let ColumnBuffer::Fixed { values, nulls, .. } = &mut buf.columns[0] else {
+            unreachable!()
+        };
+        values.extend_from_slice(&1i32.to_le_bytes());
+        nulls.append(true);
+        let ColumnBuffer::Variable {
+            offsets,
+            data,
+            nulls,
+        } = &mut buf.columns[1]
+        else {
+            unreachable!()
+        };
+        data.extend_from_slice(b"hello");
+        offsets.push(data.len() as i32);
+        nulls.append(true);
+        let ColumnBuffer::Boolean { values, nulls } = &mut buf.columns[2] else {
+            unreachable!()
+        };
+        values.append(true);
+        nulls.append(true);
         buf.row_count += 1;
 
         // Row 1: i=NULL, s="world", b=false
-        buf.columns[0].append_fixed(&0i32.to_le_bytes());
-        buf.columns[0].append_null_bit(false); // null
-        buf.columns[1].append_variable(b"world");
-        buf.columns[1].append_null_bit(true);
-        buf.columns[2].append_bool(false);
-        buf.columns[2].append_null_bit(true);
+        let ColumnBuffer::Fixed { values, nulls, .. } = &mut buf.columns[0] else {
+            unreachable!()
+        };
+        values.extend_from_slice(&0i32.to_le_bytes());
+        nulls.append(false); // null
+        let ColumnBuffer::Variable {
+            offsets,
+            data,
+            nulls,
+        } = &mut buf.columns[1]
+        else {
+            unreachable!()
+        };
+        data.extend_from_slice(b"world");
+        offsets.push(data.len() as i32);
+        nulls.append(true);
+        let ColumnBuffer::Boolean { values, nulls } = &mut buf.columns[2] else {
+            unreachable!()
+        };
+        values.append(false);
+        nulls.append(true);
         buf.row_count += 1;
 
         // Row 2: i=42, s=NULL, b=true
-        buf.columns[0].append_fixed(&42i32.to_le_bytes());
-        buf.columns[0].append_null_bit(true);
-        buf.columns[1].append_variable(b"");
-        buf.columns[1].append_null_bit(false); // null
-        buf.columns[2].append_bool(true);
-        buf.columns[2].append_null_bit(true);
+        let ColumnBuffer::Fixed { values, nulls, .. } = &mut buf.columns[0] else {
+            unreachable!()
+        };
+        values.extend_from_slice(&42i32.to_le_bytes());
+        nulls.append(true);
+        let ColumnBuffer::Variable {
+            offsets,
+            data,
+            nulls,
+        } = &mut buf.columns[1]
+        else {
+            unreachable!()
+        };
+        data.extend_from_slice(b"");
+        offsets.push(data.len() as i32);
+        nulls.append(false); // null
+        let ColumnBuffer::Boolean { values, nulls } = &mut buf.columns[2] else {
+            unreachable!()
+        };
+        values.append(true);
+        nulls.append(true);
         buf.row_count += 1;
 
         let batch = buf.flush(None).unwrap();

@@ -16,7 +16,6 @@
 // under the License.
 
 use crate::execution::shuffle::metrics::ShufflePartitionerMetrics;
-use crate::execution::shuffle::writers::buf_batch_writer::BufBatchWriter;
 use crate::execution::shuffle::ShuffleBlockWriter;
 use arrow::array::RecordBatch;
 use datafusion::common::DataFusionError;
@@ -73,34 +72,22 @@ impl PartitionWriter {
         Ok(())
     }
 
-    pub(crate) fn spill(
+    /// Write a single batch directly to the spill file without coalescing.
+    /// Use this when the caller already produces well-sized batches (e.g. from
+    /// the scatter kernel's PartitionBuffer which flushes at batch_size).
+    pub(crate) fn spill_direct(
         &mut self,
-        batches: &[RecordBatch],
+        batch: &RecordBatch,
         runtime: &RuntimeEnv,
         metrics: &ShufflePartitionerMetrics,
-        write_buffer_size: usize,
-        batch_size: usize,
     ) -> datafusion::common::Result<usize> {
-        if batches.is_empty() {
+        if batch.num_rows() == 0 {
             return Ok(0);
         }
         self.ensure_spill_file_created(runtime)?;
-        let total_bytes_written = {
-            let mut buf_batch_writer = BufBatchWriter::new(
-                &mut self.shuffle_block_writer,
-                &mut self.spill_file.as_mut().unwrap().file,
-                write_buffer_size,
-                batch_size,
-            );
-            let mut bytes_written = 0;
-            for batch in batches {
-                bytes_written +=
-                    buf_batch_writer.write(batch, &metrics.encode_time, &metrics.write_time)?;
-            }
-            buf_batch_writer.flush(&metrics.encode_time, &metrics.write_time)?;
-            bytes_written
-        };
-        Ok(total_bytes_written)
+        let file = &mut self.spill_file.as_mut().unwrap().file;
+        self.shuffle_block_writer
+            .write_batch(batch, file, &metrics.encode_time)
     }
 
     pub(crate) fn path(&self) -> Option<&std::path::Path> {

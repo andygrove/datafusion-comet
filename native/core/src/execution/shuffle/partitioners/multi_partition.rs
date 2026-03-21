@@ -18,7 +18,7 @@
 use crate::execution::shuffle::metrics::ShufflePartitionerMetrics;
 use crate::execution::shuffle::partitioners::partition_buffer::{ColumnBuffer, PartitionBuffer};
 use crate::execution::shuffle::partitioners::ShufflePartitioner;
-use crate::execution::shuffle::writers::{BufBatchWriter, PartitionWriter};
+use crate::execution::shuffle::writers::PartitionWriter;
 use crate::execution::shuffle::{
     comet_partitioning, CometPartitioning, CompressionCodec, ShuffleBlockWriter,
 };
@@ -118,8 +118,6 @@ pub(crate) struct MultiPartitionShuffleRepartitioner {
     /// Reservation for repartitioning
     reservation: MemoryReservation,
     tracing_enabled: bool,
-    /// Size of the write buffer in bytes
-    write_buffer_size: usize,
 }
 
 impl MultiPartitionShuffleRepartitioner {
@@ -135,7 +133,7 @@ impl MultiPartitionShuffleRepartitioner {
         batch_size: usize,
         codec: CompressionCodec,
         tracing_enabled: bool,
-        write_buffer_size: usize,
+        _write_buffer_size: usize,
     ) -> datafusion::common::Result<Self> {
         let num_output_partitions = partitioning.partition_count();
         assert_ne!(
@@ -188,7 +186,6 @@ impl MultiPartitionShuffleRepartitioner {
             batch_size,
             reservation,
             tracing_enabled,
-            write_buffer_size,
         })
     }
 
@@ -392,15 +389,17 @@ impl MultiPartitionShuffleRepartitioner {
         // Column-oriented scatter: for each column, iterate by partition then by
         // rows within that partition. This keeps writes to the same partition buffer
         // sequential for better cache locality.
+        //
+        // The inner loops destructure each partition's ColumnBuffer once per partition
+        // (not per row) to avoid per-row enum dispatch and function call overhead.
         for (col_idx, column) in input.columns().iter().enumerate() {
-            let nulls = column.nulls();
+            let col_nulls = column.nulls();
 
-            // Single match to determine scatter path from first partition's column type
             match &self.partition_buffers[0].columns[col_idx] {
                 ColumnBuffer::Fixed { byte_width, .. } => {
                     let byte_width = *byte_width;
-                    let data = column.to_data();
-                    let values = data.buffers()[0].as_slice();
+                    let arr_data = column.to_data();
+                    let src_values = arr_data.buffers()[0].as_slice();
                     for p in 0..num_partitions {
                         let start = partition_starts[p] as usize;
                         let end = partition_starts[p + 1] as usize;
@@ -408,22 +407,23 @@ impl MultiPartitionShuffleRepartitioner {
                             continue;
                         }
                         let row_indices = &partition_row_indices[start..end];
+                        let ColumnBuffer::Fixed { values, nulls, .. } =
+                            &mut self.partition_buffers[p].columns[col_idx]
+                        else {
+                            unreachable!()
+                        };
                         for &row_idx in row_indices {
                             let row = row_idx as usize;
-                            let src_offset = row * byte_width;
-                            let is_valid = nulls.is_none_or(|n| n.is_valid(row));
-                            self.partition_buffers[p].append_fixed(
-                                col_idx,
-                                &values[src_offset..src_offset + byte_width],
-                                is_valid,
-                            );
+                            let offset = row * byte_width;
+                            values.extend_from_slice(&src_values[offset..offset + byte_width]);
+                            nulls.append(col_nulls.is_none_or(|n| n.is_valid(row)));
                         }
                     }
                 }
                 ColumnBuffer::Variable { .. } => {
-                    let data = column.to_data();
-                    let offsets_slice = data.buffers()[0].typed_data::<i32>();
-                    let values_slice = data.buffers()[1].as_slice();
+                    let arr_data = column.to_data();
+                    let src_offsets = arr_data.buffers()[0].typed_data::<i32>();
+                    let src_values = arr_data.buffers()[1].as_slice();
                     for p in 0..num_partitions {
                         let start = partition_starts[p] as usize;
                         let end = partition_starts[p + 1] as usize;
@@ -431,23 +431,28 @@ impl MultiPartitionShuffleRepartitioner {
                             continue;
                         }
                         let row_indices = &partition_row_indices[start..end];
+                        let ColumnBuffer::Variable {
+                            offsets,
+                            data,
+                            nulls,
+                        } = &mut self.partition_buffers[p].columns[col_idx]
+                        else {
+                            unreachable!()
+                        };
                         for &row_idx in row_indices {
                             let row = row_idx as usize;
-                            let val_start = offsets_slice[row] as usize;
-                            let val_end = offsets_slice[row + 1] as usize;
-                            let is_valid = nulls.is_none_or(|n| n.is_valid(row));
-                            self.partition_buffers[p].append_variable(
-                                col_idx,
-                                &values_slice[val_start..val_end],
-                                is_valid,
-                            );
+                            let val_start = src_offsets[row] as usize;
+                            let val_end = src_offsets[row + 1] as usize;
+                            data.extend_from_slice(&src_values[val_start..val_end]);
+                            offsets.push(data.len() as i32);
+                            nulls.append(col_nulls.is_none_or(|n| n.is_valid(row)));
                         }
                     }
                 }
                 ColumnBuffer::LargeVariable { .. } => {
-                    let data = column.to_data();
-                    let offsets_slice = data.buffers()[0].typed_data::<i64>();
-                    let values_slice = data.buffers()[1].as_slice();
+                    let arr_data = column.to_data();
+                    let src_offsets = arr_data.buffers()[0].typed_data::<i64>();
+                    let src_values = arr_data.buffers()[1].as_slice();
                     for p in 0..num_partitions {
                         let start = partition_starts[p] as usize;
                         let end = partition_starts[p + 1] as usize;
@@ -455,16 +460,21 @@ impl MultiPartitionShuffleRepartitioner {
                             continue;
                         }
                         let row_indices = &partition_row_indices[start..end];
+                        let ColumnBuffer::LargeVariable {
+                            offsets,
+                            data,
+                            nulls,
+                        } = &mut self.partition_buffers[p].columns[col_idx]
+                        else {
+                            unreachable!()
+                        };
                         for &row_idx in row_indices {
                             let row = row_idx as usize;
-                            let val_start = offsets_slice[row] as usize;
-                            let val_end = offsets_slice[row + 1] as usize;
-                            let is_valid = nulls.is_none_or(|n| n.is_valid(row));
-                            self.partition_buffers[p].append_large_variable(
-                                col_idx,
-                                &values_slice[val_start..val_end],
-                                is_valid,
-                            );
+                            let val_start = src_offsets[row] as usize;
+                            let val_end = src_offsets[row + 1] as usize;
+                            data.extend_from_slice(&src_values[val_start..val_end]);
+                            offsets.push(data.len() as i64);
+                            nulls.append(col_nulls.is_none_or(|n| n.is_valid(row)));
                         }
                     }
                 }
@@ -477,14 +487,15 @@ impl MultiPartitionShuffleRepartitioner {
                             continue;
                         }
                         let row_indices = &partition_row_indices[start..end];
+                        let ColumnBuffer::Boolean { values, nulls } =
+                            &mut self.partition_buffers[p].columns[col_idx]
+                        else {
+                            unreachable!()
+                        };
                         for &row_idx in row_indices {
                             let row = row_idx as usize;
-                            let is_valid = nulls.is_none_or(|n| n.is_valid(row));
-                            self.partition_buffers[p].append_bool(
-                                col_idx,
-                                bool_array.value(row),
-                                is_valid,
-                            );
+                            values.append(bool_array.value(row));
+                            nulls.append(col_nulls.is_none_or(|n| n.is_valid(row)));
                         }
                     }
                 }
@@ -496,8 +507,13 @@ impl MultiPartitionShuffleRepartitioner {
                             continue;
                         }
                         let row_indices = &partition_row_indices[start..end];
+                        let ColumnBuffer::Fallback { indices } =
+                            &mut self.partition_buffers[p].columns[col_idx]
+                        else {
+                            unreachable!()
+                        };
                         for &row_idx in row_indices {
-                            self.partition_buffers[p].append_fallback_index(col_idx, row_idx);
+                            indices.push(row_idx);
                         }
                     }
                 }
@@ -526,13 +542,7 @@ impl MultiPartitionShuffleRepartitioner {
             };
             if should_flush {
                 let batch = self.partition_buffers[p].flush(Some(input))?;
-                self.partition_writers[p].spill(
-                    &[batch],
-                    &self.runtime,
-                    &self.metrics,
-                    self.write_buffer_size,
-                    self.batch_size,
-                )?;
+                self.partition_writers[p].spill_direct(&batch, &self.runtime, &self.metrics)?;
             }
         }
 
@@ -577,12 +587,10 @@ impl MultiPartitionShuffleRepartitioner {
             for p in 0..self.partition_buffers.len() {
                 if self.partition_buffers[p].row_count() > 0 {
                     let batch = self.partition_buffers[p].flush(None)?;
-                    spilled_bytes += self.partition_writers[p].spill(
-                        &[batch],
+                    spilled_bytes += self.partition_writers[p].spill_direct(
+                        &batch,
                         &self.runtime,
                         &self.metrics,
-                        self.write_buffer_size,
-                        self.batch_size,
                     )?;
                 }
             }
@@ -654,18 +662,11 @@ impl ShufflePartitioner for MultiPartitionShuffleRepartitioner {
 
                 if self.partition_buffers[i].row_count() > 0 {
                     let batch = self.partition_buffers[i].flush(None)?;
-                    let mut buf_batch_writer = BufBatchWriter::new(
-                        &mut self.shuffle_block_writer,
-                        &mut output_data,
-                        self.write_buffer_size,
-                        self.batch_size,
-                    );
-                    buf_batch_writer.write(
+                    self.shuffle_block_writer.write_batch(
                         &batch,
+                        &mut output_data,
                         &self.metrics.encode_time,
-                        &self.metrics.write_time,
                     )?;
-                    buf_batch_writer.flush(&self.metrics.encode_time, &self.metrics.write_time)?;
                 }
             }
 
