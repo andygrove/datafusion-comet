@@ -16,13 +16,14 @@
 // under the License.
 
 use super::ShuffleBlockWriter;
-use crate::metrics::ShufflePartitionerMetrics;
-use crate::partitioners::PartitionedBatchIterator;
 use crate::writers::buf_batch_writer::BufBatchWriter;
+use arrow::array::RecordBatch;
 use datafusion::common::DataFusionError;
 use datafusion::execution::disk_manager::RefCountedTempFile;
 use datafusion::execution::runtime_env::RuntimeEnv;
+use datafusion::physical_plan::metrics::Time;
 use std::fs::{File, OpenOptions};
+use std::io::Write;
 
 /// A temporary disk file for spilling a partition's intermediate shuffle data.
 struct SpillFile {
@@ -30,24 +31,45 @@ struct SpillFile {
     file: File,
 }
 
-/// Manages encoding and optional disk spilling for a single shuffle partition.
+/// Manages encoding, in-memory buffering, and optional disk spilling for a single shuffle
+/// partition. Batches are serialized to compressed IPC blocks in an in-memory buffer. When
+/// memory pressure triggers a spill, the buffer is written to a temp file on disk.
 pub(crate) struct PartitionWriter {
-    /// Spill file for intermediate shuffle output for this partition. Each spill event
-    /// will append to this file and the contents will be copied to the shuffle file at
-    /// the end of processing.
+    /// Accumulates compressed IPC blocks in memory.
+    buf_writer: BufBatchWriter<ShuffleBlockWriter, std::io::Sink>,
+    /// Spill file for intermediate shuffle output for this partition. Created lazily
+    /// on first spill. Each spill event appends to this file.
     spill_file: Option<SpillFile>,
-    /// Writer that performs encoding and compression
-    shuffle_block_writer: ShuffleBlockWriter,
 }
 
 impl PartitionWriter {
-    pub(crate) fn try_new(
-        shuffle_block_writer: ShuffleBlockWriter,
-    ) -> datafusion::common::Result<Self> {
-        Ok(Self {
+    pub(crate) fn new(shuffle_block_writer: ShuffleBlockWriter, batch_size: usize) -> Self {
+        Self {
+            buf_writer: BufBatchWriter::new(
+                shuffle_block_writer,
+                std::io::sink(),
+                usize::MAX,
+                batch_size,
+            ),
             spill_file: None,
-            shuffle_block_writer,
-        })
+        }
+    }
+
+    /// Write a batch to the in-memory buffer (serialized as compressed IPC).
+    pub(crate) fn write(
+        &mut self,
+        batch: &RecordBatch,
+        encode_time: &Time,
+        write_time: &Time,
+        coalesce_time: &Time,
+    ) -> datafusion::common::Result<usize> {
+        self.buf_writer
+            .write(batch, encode_time, write_time, coalesce_time)
+    }
+
+    /// Returns total estimated memory: serialized IPC buffer + unencoded coalescer batches.
+    pub(crate) fn buffered_bytes(&self) -> usize {
+        self.buf_writer.buffer_len() + self.buf_writer.coalescer_buffered_bytes()
     }
 
     fn ensure_spill_file_created(
@@ -55,7 +77,6 @@ impl PartitionWriter {
         runtime: &RuntimeEnv,
     ) -> datafusion::common::Result<()> {
         if self.spill_file.is_none() {
-            // Spill file is not yet created, create it
             let spill_file = runtime
                 .disk_manager
                 .create_tmp_file("shuffle writer spill")?;
@@ -75,51 +96,37 @@ impl PartitionWriter {
         Ok(())
     }
 
-    pub(crate) fn spill(
+    /// Spill the in-memory buffer to a temp file on disk, returning bytes spilled.
+    pub(crate) fn spill_buffer(
         &mut self,
-        iter: &mut PartitionedBatchIterator,
         runtime: &RuntimeEnv,
-        metrics: &ShufflePartitionerMetrics,
-        write_buffer_size: usize,
-        batch_size: usize,
+        encode_time: &Time,
+        write_time: &Time,
+        coalesce_time: &Time,
     ) -> datafusion::common::Result<usize> {
-        if let Some(batch) = iter.next() {
-            self.ensure_spill_file_created(runtime)?;
-
-            let total_bytes_written = {
-                let mut buf_batch_writer = BufBatchWriter::new(
-                    &mut self.shuffle_block_writer,
-                    &mut self.spill_file.as_mut().unwrap().file,
-                    write_buffer_size,
-                    batch_size,
-                );
-                let mut bytes_written = buf_batch_writer.write(
-                    &batch?,
-                    &metrics.encode_time,
-                    &metrics.write_time,
-                    &metrics.coalesce_time,
-                )?;
-                for batch in iter {
-                    let batch = batch?;
-                    bytes_written += buf_batch_writer.write(
-                        &batch,
-                        &metrics.encode_time,
-                        &metrics.write_time,
-                        &metrics.coalesce_time,
-                    )?;
-                }
-                buf_batch_writer.flush(
-                    &metrics.encode_time,
-                    &metrics.write_time,
-                    &metrics.coalesce_time,
-                )?;
-                bytes_written
-            };
-
-            Ok(total_bytes_written)
-        } else {
-            Ok(0)
+        let buffer = self
+            .buf_writer
+            .drain_buffer(encode_time, write_time, coalesce_time)?;
+        if buffer.is_empty() {
+            return Ok(0);
         }
+        self.ensure_spill_file_created(runtime)?;
+        let mut write_timer = write_time.timer();
+        let file = &mut self.spill_file.as_mut().unwrap().file;
+        file.write_all(&buffer)?;
+        write_timer.stop();
+        Ok(buffer.len())
+    }
+
+    /// Flush the coalescer and return remaining in-memory buffer contents for final write.
+    pub(crate) fn drain_buffer(
+        &mut self,
+        encode_time: &Time,
+        write_time: &Time,
+        coalesce_time: &Time,
+    ) -> datafusion::common::Result<Vec<u8>> {
+        self.buf_writer
+            .drain_buffer(encode_time, write_time, coalesce_time)
     }
 
     pub(crate) fn path(&self) -> Option<&std::path::Path> {

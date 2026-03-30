@@ -89,9 +89,9 @@ struct Args {
     #[arg(long, default_value_t = 1)]
     zstd_level: i32,
 
-    /// Memory limit in bytes (triggers spilling when exceeded)
+    /// Memory limit in GiB (triggers spilling when exceeded)
     #[arg(long)]
-    memory_limit: Option<usize>,
+    memory_limit: Option<f64>,
 
     /// Also benchmark reading back the shuffle output
     #[arg(long, default_value_t = false)]
@@ -149,7 +149,7 @@ fn main() {
     println!("Partitions:     {}", args.partitions);
     println!("Codec:          {:?}", codec);
     println!("Hash columns:   {:?}", hash_col_indices);
-    if let Some(mem_limit) = args.memory_limit {
+    if let Some(mem_limit) = memory_limit_bytes(&args) {
         println!("Memory limit:   {}", format_bytes(mem_limit));
     }
     if args.concurrent_tasks > 1 {
@@ -454,7 +454,7 @@ fn run_shuffle_write(
             codec.clone(),
             partitioning,
             args.batch_size,
-            args.memory_limit,
+            memory_limit_bytes(args),
             args.write_buffer_size,
             args.limit,
             data_file.to_string(),
@@ -584,7 +584,7 @@ fn run_concurrent_shuffle_writes(
                 schema,
             );
             let batch_size = args.batch_size;
-            let memory_limit = args.memory_limit;
+            let memory_limit = memory_limit_bytes(args);
             let write_buffer_size = args.write_buffer_size;
             let limit = args.limit;
 
@@ -753,6 +753,11 @@ fn format_number(n: usize) -> String {
         result.push(c);
     }
     result.chars().rev().collect()
+}
+
+fn memory_limit_bytes(args: &Args) -> Option<usize> {
+    args.memory_limit
+        .map(|gib| (gib * 1024.0 * 1024.0 * 1024.0) as usize)
 }
 
 fn format_bytes(bytes: usize) -> String {

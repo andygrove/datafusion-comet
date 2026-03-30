@@ -39,9 +39,6 @@ pub(crate) struct ShufflePartitionerMetrics {
     /// Time spent coalescing small batches before serialization
     pub(crate) coalesce_time: Time,
 
-    /// Time spent buffering partition indices and memory accounting
-    pub(crate) memcopy_time: Time,
-
     /// Number of input batches
     pub(crate) input_batches: Count,
 
@@ -64,7 +61,6 @@ impl ShufflePartitionerMetrics {
             write_time: MetricBuilder::new(metrics).subset_time("write_time", partition),
             interleave_time: MetricBuilder::new(metrics).subset_time("interleave_time", partition),
             coalesce_time: MetricBuilder::new(metrics).subset_time("coalesce_time", partition),
-            memcopy_time: MetricBuilder::new(metrics).subset_time("memcopy_time", partition),
             input_batches: MetricBuilder::new(metrics).counter("input_batches", partition),
             spill_count: MetricBuilder::new(metrics).spill_count(partition),
             spilled_bytes: MetricBuilder::new(metrics).spilled_bytes(partition),

@@ -39,6 +39,8 @@ pub(crate) struct BufBatchWriter<S: Borrow<ShuffleBlockWriter>, W: Write> {
     coalescer: Option<BatchCoalescer>,
     /// Target batch size for coalescing
     batch_size: usize,
+    /// Estimated memory held by unencoded batches in the coalescer
+    coalescer_buffered_bytes: usize,
 }
 
 impl<S: Borrow<ShuffleBlockWriter>, W: Write> BufBatchWriter<S, W> {
@@ -55,6 +57,7 @@ impl<S: Borrow<ShuffleBlockWriter>, W: Write> BufBatchWriter<S, W> {
             buffer_max_size,
             coalescer: None,
             batch_size,
+            coalescer_buffered_bytes: 0,
         }
     }
 
@@ -65,6 +68,8 @@ impl<S: Borrow<ShuffleBlockWriter>, W: Write> BufBatchWriter<S, W> {
         write_time: &Time,
         coalesce_time: &Time,
     ) -> datafusion::common::Result<usize> {
+        let input_mem = batch.get_array_memory_size();
+
         let mut coalesce_timer = coalesce_time.timer();
         let coalescer = self
             .coalescer
@@ -78,6 +83,14 @@ impl<S: Borrow<ShuffleBlockWriter>, W: Write> BufBatchWriter<S, W> {
             completed.push(batch);
         }
         coalesce_timer.stop();
+
+        // Track coalescer memory: input added, completed batches released
+        self.coalescer_buffered_bytes += input_mem;
+        for batch in &completed {
+            self.coalescer_buffered_bytes = self
+                .coalescer_buffered_bytes
+                .saturating_sub(batch.get_array_memory_size());
+        }
 
         let mut bytes_written = 0;
         for batch in &completed {
@@ -109,13 +122,13 @@ impl<S: Borrow<ShuffleBlockWriter>, W: Write> BufBatchWriter<S, W> {
         Ok(bytes_written)
     }
 
-    pub(crate) fn flush(
+    /// Flush remaining rows from the coalescer into the internal byte buffer.
+    fn flush_coalescer(
         &mut self,
         encode_time: &Time,
         write_time: &Time,
         coalesce_time: &Time,
     ) -> datafusion::common::Result<()> {
-        // Finish any remaining buffered rows in the coalescer
         let mut coalesce_timer = coalesce_time.timer();
         let mut remaining = Vec::new();
         if let Some(coalescer) = &mut self.coalescer {
@@ -128,6 +141,17 @@ impl<S: Borrow<ShuffleBlockWriter>, W: Write> BufBatchWriter<S, W> {
         for batch in &remaining {
             self.write_batch_to_buffer(batch, encode_time, write_time)?;
         }
+        self.coalescer_buffered_bytes = 0;
+        Ok(())
+    }
+
+    pub(crate) fn flush(
+        &mut self,
+        encode_time: &Time,
+        write_time: &Time,
+        coalesce_time: &Time,
+    ) -> datafusion::common::Result<()> {
+        self.flush_coalescer(encode_time, write_time, coalesce_time)?;
 
         // Flush the byte buffer to the underlying writer
         let mut write_timer = write_time.timer();
@@ -138,6 +162,26 @@ impl<S: Borrow<ShuffleBlockWriter>, W: Write> BufBatchWriter<S, W> {
         write_timer.stop();
         self.buffer.clear();
         Ok(())
+    }
+
+    pub(crate) fn buffer_len(&self) -> usize {
+        self.buffer.len()
+    }
+
+    /// Estimated memory held by unencoded batches in the coalescer.
+    pub(crate) fn coalescer_buffered_bytes(&self) -> usize {
+        self.coalescer_buffered_bytes
+    }
+
+    /// Flush the coalescer and return the internal buffer contents.
+    pub(crate) fn drain_buffer(
+        &mut self,
+        encode_time: &Time,
+        write_time: &Time,
+        coalesce_time: &Time,
+    ) -> datafusion::common::Result<Vec<u8>> {
+        self.flush_coalescer(encode_time, write_time, coalesce_time)?;
+        Ok(std::mem::take(&mut self.buffer))
     }
 }
 
