@@ -22,7 +22,7 @@ package org.apache.comet.rules
 import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.expressions.{Divide, DoubleLiteral, EqualNullSafe, EqualTo, Expression, FloatLiteral, GreaterThan, GreaterThanOrEqual, KnownFloatingPointNormalized, LessThan, LessThanOrEqual, NamedExpression, Remainder}
+import org.apache.spark.sql.catalyst.expressions.{Divide, DoubleLiteral, EqualNullSafe, EqualTo, Expression, FloatLiteral, GreaterThan, GreaterThanOrEqual, KnownFloatingPointNormalized, LessThan, LessThanOrEqual, NamedExpression, PlanExpression, Remainder}
 import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.util.sideBySide
@@ -569,7 +569,9 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
           scan.relation.fileFormat match {
             case _: CSVFileFormat => CometConf.COMET_CONVERT_FROM_CSV_ENABLED.get(conf)
             case _: JsonFileFormat => CometConf.COMET_CONVERT_FROM_JSON_ENABLED.get(conf)
-            case _: ParquetFileFormat => CometConf.COMET_CONVERT_FROM_PARQUET_ENABLED.get(conf)
+            case _: ParquetFileFormat =>
+              CometConf.COMET_CONVERT_FROM_PARQUET_ENABLED.get(conf) ||
+              isDppFallbackScan(scan)
             case _ => isSparkToArrowEnabled(conf, op)
           }
         // Convert Spark DS v2 scan to Arrow format
@@ -590,6 +592,17 @@ case class CometExecRule(session: SparkSession) extends Rule[SparkPlan] {
     } else {
       false
     }
+  }
+
+  /**
+   * Returns true if this is a Parquet scan that fell back from CometScan due to Dynamic Partition
+   * Pruning (DPP). Without this conversion, the scan produces columnar batches that go through
+   * ColumnarToRow (for the Spark FilterExec) and then RowToColumnar (for CometColumnarShuffle),
+   * adding unnecessary overhead on large fact tables.
+   */
+  private def isDppFallbackScan(scan: FileSourceScanExec): Boolean = {
+    CometConf.COMET_DPP_FALLBACK_ENABLED.get(conf) &&
+    scan.partitionFilters.exists(_.exists(_.isInstanceOf[PlanExpression[_]]))
   }
 
   private def isSparkToArrowEnabled(conf: SQLConf, op: SparkPlan) = {

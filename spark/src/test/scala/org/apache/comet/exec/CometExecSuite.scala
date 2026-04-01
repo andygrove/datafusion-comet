@@ -141,6 +141,15 @@ class CometExecSuite extends CometTestBase {
           assert(infos.contains("Dynamic Partition Pruning is not supported"))
 
           assert(infos.contains("Comet accelerated"))
+
+          // Verify that the DPP fallback scan is wrapped in CometSparkToColumnarExec
+          // so the stage stays columnar end-to-end without row/columnar transitions
+          val sparkToColumnar = stripAQEPlan(cometPlan).collect {
+            case s: CometSparkToColumnarExec => s
+          }
+          assert(
+            sparkToColumnar.nonEmpty,
+            "DPP fallback scan should be wrapped in CometSparkToColumnarExec")
         }
       }
     }
