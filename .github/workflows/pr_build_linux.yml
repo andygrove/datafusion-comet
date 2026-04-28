@@ -294,6 +294,11 @@ jobs:
             maven_opts: "-Pspark-4.0"
             scan_impl: "auto"
 
+          - name: "Spark 4.1, JDK 17"
+            java_version: "17"
+            maven_opts: "-Pspark-4.1"
+            scan_impl: "auto"
+
           - name: "Spark 4.2, JDK 17"
             java_version: "17"
             maven_opts: "-Pspark-4.2"
