@@ -184,12 +184,8 @@ case class CometScanRule(session: SparkSession)
           return scanExec
         }
 
-        val scanImpl = COMET_NATIVE_SCAN_IMPL.get() match {
-          case SCAN_AUTO => SCAN_NATIVE_DATAFUSION
-          case other => other
-        }
-        scanImpl match {
-          case SCAN_NATIVE_DATAFUSION =>
+        COMET_NATIVE_SCAN_IMPL.get() match {
+          case SCAN_AUTO | SCAN_NATIVE_DATAFUSION =>
             nativeDataFusionScan(plan, session, scanExec, r, hadoopConf).getOrElse(scanExec)
           case SCAN_NATIVE_ICEBERG_COMPAT =>
             nativeIcebergCompatScan(session, scanExec, r, hadoopConf).getOrElse(scanExec)
