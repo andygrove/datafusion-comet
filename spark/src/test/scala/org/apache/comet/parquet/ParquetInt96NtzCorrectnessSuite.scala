@@ -33,8 +33,8 @@ import org.apache.comet.CometConf
  *
  * INT96 Parquet timestamps encode UTC-adjusted instants. Reading them as TimestampNTZ would
  * silently reinterpret UTC instants as wall-clock values, producing incorrect results. Spark
- * itself raises (SPARK-36182) to prevent this, and Comet's native reader now does the same
- * via a guard in the schema adapter.
+ * itself raises (SPARK-36182) to prevent this, and Comet's native reader now does the same via a
+ * guard in the schema adapter.
  */
 class ParquetInt96NtzCorrectnessSuite extends CometTestBase {
   import testImplicits._
