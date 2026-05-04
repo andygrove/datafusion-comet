@@ -74,7 +74,8 @@ pub use comet_scalar_funcs::{
 pub use csv_funcs::*;
 pub use datetime_funcs::{
     SparkDateDiff, SparkDateFromUnixDate, SparkDateTrunc, SparkHour, SparkHoursTransform,
-    SparkMakeDate, SparkMinute, SparkSecond, SparkUnixTimestamp, TimestampTruncExpr,
+    SparkMakeDate, SparkMinute, SparkSecond, SparkSecondsToTimestamp, SparkUnixTimestamp,
+    TimestampTruncExpr,
 };
 pub use error::{decimal_overflow_error, SparkError, SparkErrorWithContext, SparkResult};
 pub use hash_funcs::*;
@@ -122,8 +123,10 @@ pub(crate) fn arithmetic_overflow_error(from_type: &str) -> SparkError {
     }
 }
 
-pub(crate) fn decimal_sum_overflow_error() -> SparkError {
-    SparkError::DecimalSumOverflow
+pub(crate) fn decimal_sum_overflow_error(function_name: &str) -> SparkError {
+    SparkError::DecimalSumOverflow {
+        function_name: function_name.to_string(),
+    }
 }
 
 pub(crate) fn divide_by_zero_error() -> SparkError {
