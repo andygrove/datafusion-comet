@@ -22,8 +22,8 @@ use arrow::compute::can_cast_types;
 use arrow::datatypes::{FieldRef, Fields};
 use arrow::{
     array::{
-        cast::AsArray, new_null_array, types::Int32Type, types::TimestampMicrosecondType, Array,
-        ArrayRef, DictionaryArray, StructArray,
+        cast::AsArray, new_null_array, types::Int32Type, types::TimestampMicrosecondType,
+        types::TimestampNanosecondType, Array, ArrayRef, DictionaryArray, StructArray,
     },
     compute::{cast_with_options, take, CastOptions},
     datatypes::{DataType, TimeUnit},
@@ -199,6 +199,16 @@ fn parquet_convert_array(
                     .reinterpret_cast::<TimestampMicrosecondType>()
                     .with_timezone(Arc::clone(tz)),
             ))
+        }
+        // INT96 timestamps appear as Timestamp(Nanosecond, None) in the physical schema.
+        // Convert to microsecond LTZ by dividing ns→us and adding the timezone label.
+        (Timestamp(TimeUnit::Nanosecond, None), Timestamp(TimeUnit::Microsecond, Some(tz))) => {
+            let ns_array = array.as_primitive::<TimestampNanosecondType>();
+            let us_array: arrow::array::TimestampMicrosecondArray = ns_array
+                .iter()
+                .map(|opt| opt.map(|ns| ns / 1000))
+                .collect();
+            Ok(Arc::new(us_array.with_timezone(Arc::clone(tz))))
         }
         (Map(_, ordered_from), Map(_, ordered_to)) if ordered_from == ordered_to =>
             parquet_convert_map_to_map(array.as_map(), to_type, parquet_options, *ordered_to)

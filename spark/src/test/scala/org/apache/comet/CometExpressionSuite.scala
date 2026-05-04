@@ -575,8 +575,7 @@ class CometExpressionSuite extends CometTestBase with AdaptiveSparkPlanHelper {
   test("cast timestamp and timestamp_ntz") {
     withSQLConf(
       SESSION_LOCAL_TIMEZONE.key -> "Asia/Kathmandu",
-      CometConf.getExprAllowIncompatConfigKey(classOf[Cast]) -> "true",
-      CometConf.COMET_PARQUET_TIMESTAMP_NTZ_FALLBACK_ENABLED.key -> "false") {
+      CometConf.getExprAllowIncompatConfigKey(classOf[Cast]) -> "true") {
       Seq(true, false).foreach { dictionaryEnabled =>
         withTempDir { dir =>
           val path = new Path(dir.toURI.toString, "timestamp_trunc.parquet")
@@ -598,8 +597,7 @@ class CometExpressionSuite extends CometTestBase with AdaptiveSparkPlanHelper {
   test("cast timestamp and timestamp_ntz to string") {
     withSQLConf(
       SESSION_LOCAL_TIMEZONE.key -> "Asia/Kathmandu",
-      CometConf.getExprAllowIncompatConfigKey(classOf[Cast]) -> "true",
-      CometConf.COMET_PARQUET_TIMESTAMP_NTZ_FALLBACK_ENABLED.key -> "false") {
+      CometConf.getExprAllowIncompatConfigKey(classOf[Cast]) -> "true") {
       Seq(true, false).foreach { dictionaryEnabled =>
         withTempDir { dir =>
           val path = new Path(dir.toURI.toString, "timestamp_trunc.parquet")
@@ -621,8 +619,7 @@ class CometExpressionSuite extends CometTestBase with AdaptiveSparkPlanHelper {
   test("cast timestamp and timestamp_ntz to long, date") {
     withSQLConf(
       SESSION_LOCAL_TIMEZONE.key -> "Asia/Kathmandu",
-      CometConf.getExprAllowIncompatConfigKey(classOf[Cast]) -> "true",
-      CometConf.COMET_PARQUET_TIMESTAMP_NTZ_FALLBACK_ENABLED.key -> "false") {
+      CometConf.getExprAllowIncompatConfigKey(classOf[Cast]) -> "true") {
       Seq(true, false).foreach { dictionaryEnabled =>
         withTempDir { dir =>
           val path = new Path(dir.toURI.toString, "timestamp_trunc.parquet")

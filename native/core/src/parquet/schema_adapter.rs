@@ -17,7 +17,7 @@
 
 use crate::parquet::cast_column::CometCastColumnExpr;
 use crate::parquet::parquet_support::{spark_parquet_convert, SparkParquetOptions};
-use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
+use arrow::datatypes::{DataType, Field, Schema, SchemaRef, TimeUnit};
 use datafusion::common::tree_node::{Transformed, TransformedResult, TreeNode};
 use datafusion::common::{DataFusionError, Result as DataFusionResult};
 use datafusion::physical_expr::expressions::Column;
@@ -463,12 +463,10 @@ impl SparkPhysicalExprAdapter {
             // reordering, nested type casting, metadata-only timestamp timezone
             // relabeling, and raw value reinterpretation correctly.
             //
-            // Timestamp mismatches (e.g., Timestamp(us, None) -> Timestamp(us, Some("UTC")))
-            // occur when INT96 Parquet timestamps are coerced to Timestamp(us, None) by
-            // DataFusion but the logical schema expects Timestamp(us, Some("UTC")).
-            // Using Spark's Cast here would incorrectly treat the None-timezone values as
-            // local time (TimestampNTZ) and apply a timezone conversion, but the values are
-            // already in UTC. spark_parquet_convert handles this as a metadata-only change.
+            // Timestamp mismatches (e.g., Timestamp(ns, None) -> Timestamp(us, Some("UTC")))
+            // occur when INT96 Parquet timestamps appear as Timestamp(ns, None) in the
+            // physical schema but the logical schema expects Timestamp(us, Some("UTC")).
+            // spark_parquet_convert handles the ns->us downsampling and timezone relabel.
             //
             // Timestamp→Int64 occurs when Spark's `nanosAsLong` config converts
             // TIMESTAMP(NANOS) to LongType. Spark's Cast would divide by MICROS_PER_SECOND
@@ -487,6 +485,27 @@ impl SparkPhysicalExprAdapter {
                 )
             };
             if is_complex(physical_type) != is_complex(target_type) {
+                return Err(DataFusionError::External(Box::new(
+                    SparkError::ParquetSchemaConvert {
+                        file_path: String::new(),
+                        column: cast.input_field().name().to_string(),
+                        physical_type: physical_type.to_string(),
+                        spark_type: target_type.to_string(),
+                    },
+                )));
+            }
+
+            // Reject reading INT96 timestamps as TimestampNTZ (SPARK-36182).
+            // INT96 columns appear as Timestamp(Nanosecond, None) in the physical
+            // file schema. Reading them as TimestampNTZ (Timestamp(Microsecond, None))
+            // would silently reinterpret UTC instants as wall-clock values.
+            if matches!(
+                (physical_type, target_type),
+                (
+                    DataType::Timestamp(TimeUnit::Nanosecond, None),
+                    DataType::Timestamp(_, None)
+                )
+            ) {
                 return Err(DataFusionError::External(Box::new(
                     SparkError::ParquetSchemaConvert {
                         file_path: String::new(),

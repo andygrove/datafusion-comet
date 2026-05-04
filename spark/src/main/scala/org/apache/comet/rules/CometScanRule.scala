@@ -43,7 +43,7 @@ import org.apache.spark.sql.types._
 
 import org.apache.comet.{CometConf, CometNativeException, DataTypeSupport}
 import org.apache.comet.CometConf._
-import org.apache.comet.CometSparkSessionExtensions.{isCometLoaded, isSpark35Plus, isSpark40Plus, withInfo, withInfos}
+import org.apache.comet.CometSparkSessionExtensions.{isCometLoaded, isSpark35Plus, withInfo, withInfos}
 import org.apache.comet.DataTypeSupport.isComplexType
 import org.apache.comet.iceberg.{CometIcebergNativeScanMetadata, IcebergReflection}
 import org.apache.comet.objectstore.NativeConfig
@@ -187,16 +187,6 @@ case class CometScanRule(session: SparkSession)
         val scanImpl = COMET_NATIVE_SCAN_IMPL.get() match {
           case SCAN_AUTO => SCAN_NATIVE_DATAFUSION
           case other => other
-        }
-        if (CometScanRule.shouldFallBackForTimestampNTZ(
-            scanImpl,
-            scanExec.requiredSchema,
-            r.partitionSchema)) {
-          return withInfo(
-            scanExec,
-            "Parquet scan falls back to Spark when the schema contains TimestampNTZ to " +
-              "avoid the INT96 read correctness issue (issue #3720). Set " +
-              s"${COMET_PARQUET_TIMESTAMP_NTZ_FALLBACK_ENABLED.key}=false to disable.")
         }
         scanImpl match {
           case SCAN_NATIVE_DATAFUSION =>
@@ -762,43 +752,6 @@ case class CometScanTypeChecker(scanImpl: String) extends DataTypeSupport with C
 }
 
 object CometScanRule extends Logging {
-
-  def containsTimestampNTZ(schema: StructType): Boolean = {
-    def check(dt: DataType): Boolean = dt match {
-      case _: TimestampNTZType => true
-      case s: StructType => s.fields.exists(f => check(f.dataType))
-      case a: ArrayType => check(a.elementType)
-      case m: MapType => check(m.keyType) || check(m.valueType)
-      case _ => false
-    }
-    schema.fields.exists(f => check(f.dataType))
-  }
-
-  /**
-   * Whether the configured scan impl is at risk of silently mis-reading INT96 timestamps as
-   * TimestampNTZ (issue #3720), so the scan should fall back to Spark when any required or
-   * partition column is TimestampNTZ.
-   *
-   * `native_datafusion` reinterprets the UTC instant as a wall-clock value on every Spark
-   * version, so the fallback is required there. `native_iceberg_compat` is checked by
-   * `TypeUtil.checkParquetType`, which throws on INT96 -> TimestampNTZ on Spark 3.x but is
-   * bypassed on Spark 4.0+ (where INT96 NTZ reads silently succeed). The fallback is therefore
-   * only required there on 4.0+; on 3.x the existing Java-side throw already prevents silent
-   * corruption.
-   */
-  def shouldFallBackForTimestampNTZ(
-      scanImpl: String,
-      requiredSchema: StructType,
-      partitionSchema: StructType): Boolean = {
-    if (!COMET_PARQUET_TIMESTAMP_NTZ_FALLBACK_ENABLED.get()) return false
-    val scanIsAtRisk = scanImpl match {
-      case SCAN_NATIVE_DATAFUSION => true
-      case SCAN_NATIVE_ICEBERG_COMPAT => isSpark40Plus
-      case _ => false
-    }
-    scanIsAtRisk &&
-    (containsTimestampNTZ(requiredSchema) || containsTimestampNTZ(partitionSchema))
-  }
 
   /**
    * Tag set on a scan (`FileSourceScanExec` or `BatchScanExec`) that should be left as a plain

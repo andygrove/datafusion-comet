@@ -191,7 +191,9 @@ fn get_options(
     let mut table_parquet_options = TableParquetOptions::new();
     table_parquet_options.global.pushdown_filters = true;
     table_parquet_options.global.reorder_filters = true;
-    table_parquet_options.global.coerce_int96 = Some("us".to_string());
+    // Do not set coerce_int96: INT96 columns will appear as Timestamp(Nanosecond, None)
+    // in the physical file schema. The schema adapter detects this and either converts
+    // correctly (for LTZ targets) or errors (for NTZ targets, matching SPARK-36182).
     let mut spark_parquet_options =
         SparkParquetOptions::new(EvalMode::Legacy, session_timezone, false);
     spark_parquet_options.allow_cast_unsigned_ints = true;
