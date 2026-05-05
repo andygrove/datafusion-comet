@@ -20,28 +20,29 @@
 package org.apache.comet.parquet
 
 import java.sql.Timestamp
-import java.time.LocalDateTime
 
 import org.apache.spark.SparkException
 import org.apache.spark.sql.CometTestBase
 import org.apache.spark.sql.internal.SQLConf
 
 import org.apache.comet.CometConf
+import org.apache.comet.CometSparkSessionExtensions.isSpark40Plus
 
 /**
- * Demonstrates the correctness issue tracked in
- * https://github.com/apache/datafusion-comet/issues/3720: when a Parquet file stores timestamps
- * as INT96 (Spark's TimestampType, UTC-adjusted local-time semantics) and the read schema
- * requests TimestampNTZ, the `native_datafusion` scan silently returns wall-clock values that
- * disagree with what was written. Spark itself raises (SPARK-36182) to prevent the silent
- * reinterpretation.
+ * Tests for reading INT96 Parquet timestamps as TimestampNTZ.
+ *
+ * Prior to Spark 4.0, Spark raises an error (SPARK-36182) when asked to read INT96 as
+ * TimestampNTZ. Comet should match this behavior. In Spark 4.0+, this read is permitted and
+ * Comet should produce matching results.
+ *
+ * See https://github.com/apache/datafusion-comet/issues/3720
  */
 class ParquetInt96NtzCorrectnessSuite extends CometTestBase {
   import testImplicits._
 
-  test("INT96 TimestampType read as TimestampNTZ silently returns wrong values") {
+  test("INT96 TimestampType read as TimestampNTZ throws pre-Spark 4") {
+    assume(!isSpark40Plus, "Spark 4.0+ allows reading INT96 as TimestampNTZ")
     val sessionTz = "America/Los_Angeles"
-    val written = "2020-01-01 12:00:00"
 
     withSQLConf(
       SQLConf.SESSION_LOCAL_TIMEZONE.key -> sessionTz,
@@ -49,32 +50,39 @@ class ParquetInt96NtzCorrectnessSuite extends CometTestBase {
       SQLConf.USE_V1_SOURCE_LIST.key -> "parquet") {
       withTempPath { dir =>
         val path = dir.getCanonicalPath
+        Seq(Timestamp.valueOf("2020-01-01 12:00:00")).toDF("ts").write.parquet(path)
 
-        // Write "2020-01-01 12:00:00" America/Los_Angeles as INT96. The bits encode
-        // the UTC instant 2020-01-01 20:00:00; reading back as TimestampType applies
-        // session-TZ adjustment to recover the original local wall-clock value.
-        Seq(Timestamp.valueOf(written)).toDF("ts").write.parquet(path)
-
-        // Reference behavior: Spark refuses to read INT96 as TimestampNTZ
-        // (SPARK-36182) because it cannot safely reinterpret an LTZ instant as NTZ.
+        // Spark refuses to read INT96 as TimestampNTZ (SPARK-36182)
         withSQLConf(CometConf.COMET_ENABLED.key -> "false") {
           intercept[SparkException] {
             spark.read.schema("ts timestamp_ntz").parquet(path).collect()
           }
         }
 
-        // native_datafusion does not refuse; it silently returns a value that
-        // disagrees with the wall-clock value originally written. This is the
-        // correctness issue the safety-check fallback is intended to prevent.
+        // Comet should also refuse
         withSQLConf(CometConf.COMET_NATIVE_SCAN_IMPL.key -> CometConf.SCAN_NATIVE_DATAFUSION) {
-          val rows = spark.read.schema("ts timestamp_ntz").parquet(path).collect()
-          assert(rows.length == 1)
-          val actual = rows.head.getAs[LocalDateTime](0)
-          assert(
-            actual != LocalDateTime.parse("2020-01-01T12:00:00"),
-            s"native_datafusion returned the original wall-clock value $actual; " +
-              "expected a silently-shifted value demonstrating the LTZ->NTZ " +
-              "correctness divergence (issue #3720 / SPARK-36182).")
+          intercept[SparkException] {
+            spark.read.schema("ts timestamp_ntz").parquet(path).collect()
+          }
+        }
+      }
+    }
+  }
+
+  test("INT96 TimestampType read as TimestampNTZ matches Spark") {
+    // assume(isSpark40Plus, "Spark 4.0+ allows reading INT96 as TimestampNTZ")
+    val sessionTz = "America/Los_Angeles"
+
+    withSQLConf(
+      SQLConf.SESSION_LOCAL_TIMEZONE.key -> sessionTz,
+      SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key -> "INT96",
+      SQLConf.USE_V1_SOURCE_LIST.key -> "parquet") {
+      withTempPath { dir =>
+        val path = dir.getCanonicalPath
+        Seq(Timestamp.valueOf("2020-01-01 12:00:00")).toDF("ts").write.parquet(path)
+
+        withSQLConf(CometConf.COMET_NATIVE_SCAN_IMPL.key -> CometConf.SCAN_NATIVE_DATAFUSION) {
+          checkSparkAnswerAndOperator(spark.read.schema("ts timestamp_ntz").parquet(path))
         }
       }
     }
