@@ -196,9 +196,9 @@ mod comet_udf_bridge;
 mod shuffle_block_iterator;
 
 use batch_iterator::CometBatchIterator;
-use comet_udf_bridge::CometUdfBridge;
 pub use comet_metric_node::*;
 pub use comet_task_memory_manager::*;
+use comet_udf_bridge::CometUdfBridge;
 use shuffle_block_iterator::CometShuffleBlockIterator;
 
 /// The JVM classes that are used in the JNI calls.
