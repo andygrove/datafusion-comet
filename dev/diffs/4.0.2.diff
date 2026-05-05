@@ -2729,7 +2729,7 @@ index 4474ec1fd42..05fa0257c82 100644
        checkAnswer(
          // "fruit" column in this file is encoded using DELTA_LENGTH_BYTE_ARRAY.
 diff --git a/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetQuerySuite.scala b/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetQuerySuite.scala
-index bba71f1c48d..35247c13ad9 100644
+index bba71f1c48d..f3a203caa85 100644
 --- a/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetQuerySuite.scala
 +++ b/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetQuerySuite.scala
 @@ -27,6 +27,7 @@ import org.apache.parquet.hadoop.ParquetOutputFormat
@@ -2740,17 +2740,7 @@ index bba71f1c48d..35247c13ad9 100644
  import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
  import org.apache.spark.sql.catalyst.expressions.SpecificInternalRow
  import org.apache.spark.sql.catalyst.util.ArrayData
-@@ -185,7 +186,8 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
-     }
-   }
- 
--  test("SPARK-47447: read TimestampLTZ as TimestampNTZ") {
-+  test("SPARK-47447: read TimestampLTZ as TimestampNTZ",
-+    IgnoreCometNativeDataFusion("https://github.com/apache/datafusion-comet/issues/3720")) {
-     val providedSchema = StructType(Seq(StructField("time", TimestampNTZType, false)))
- 
-     Seq("INT96", "TIMESTAMP_MICROS", "TIMESTAMP_MILLIS").foreach { tsType =>
-@@ -996,7 +998,11 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
+@@ -996,7 +997,11 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
          Seq(Some("A"), Some("A"), None).toDF().repartition(1)
            .write.parquet(path.getAbsolutePath)
          val df = spark.read.parquet(path.getAbsolutePath)
@@ -2763,7 +2753,7 @@ index bba71f1c48d..35247c13ad9 100644
        }
      }
    }
-@@ -1042,7 +1048,8 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
+@@ -1042,7 +1047,8 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
      testMigration(fromTsType = "TIMESTAMP_MICROS", toTsType = "INT96")
    }
  
@@ -2773,7 +2763,7 @@ index bba71f1c48d..35247c13ad9 100644
      def readParquet(schema: String, path: File): DataFrame = {
        spark.read.schema(schema).parquet(path.toString)
      }
-@@ -1060,7 +1067,8 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
+@@ -1060,7 +1066,8 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
          checkAnswer(readParquet(schema2, path), df)
        }
  
@@ -2783,7 +2773,7 @@ index bba71f1c48d..35247c13ad9 100644
          val schema1 = "a DECIMAL(3, 2), b DECIMAL(18, 3), c DECIMAL(37, 3)"
          checkAnswer(readParquet(schema1, path), df)
          val schema2 = "a DECIMAL(3, 0), b DECIMAL(18, 1), c DECIMAL(37, 1)"
-@@ -1084,7 +1092,8 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
+@@ -1084,7 +1091,8 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
        val df = sql(s"SELECT 1 a, 123456 b, ${Int.MaxValue.toLong * 10} c, CAST('1.2' AS BINARY) d")
        df.write.parquet(path.toString)
  
@@ -2793,16 +2783,6 @@ index bba71f1c48d..35247c13ad9 100644
          checkAnswer(readParquet("a DECIMAL(3, 2)", path), sql("SELECT 1.00"))
          checkAnswer(readParquet("a DECIMAL(11, 2)", path), sql("SELECT 1.00"))
          checkAnswer(readParquet("b DECIMAL(3, 2)", path), Row(null))
-@@ -1131,7 +1140,8 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
-     }
-   }
- 
--  test("row group skipping doesn't overflow when reading into larger type") {
-+  test("row group skipping doesn't overflow when reading into larger type",
-+    IgnoreCometNativeDataFusion("https://github.com/apache/datafusion-comet/issues/3720")) {
-     withTempPath { path =>
-       Seq(0).toDF("a").write.parquet(path.toString)
-       withAllParquetReaders {
 diff --git a/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetRebaseDatetimeSuite.scala b/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetRebaseDatetimeSuite.scala
 index 30503af0fab..1491f4bc2d5 100644
 --- a/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetRebaseDatetimeSuite.scala
@@ -2933,7 +2913,7 @@ index 0acb21f3e6f..8d60dfb686d 100644
        val e = testSchemaMismatch(dir.getCanonicalPath, vectorizedReaderEnabled = true)
        assert(e.getCause.isInstanceOf[SchemaColumnConvertNotSupportedException])
 diff --git a/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetTypeWideningSuite.scala b/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetTypeWideningSuite.scala
-index 09ed6955a51..5cd856ff7b6 100644
+index 09ed6955a51..a49e9a6fe41 100644
 --- a/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetTypeWideningSuite.scala
 +++ b/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetTypeWideningSuite.scala
 @@ -24,7 +24,7 @@ import org.apache.parquet.format.converter.ParquetMetadataConverter
@@ -3015,16 +2995,17 @@ index 09ed6955a51..5cd856ff7b6 100644
      checkAllParquetReaders(
        values = Seq("1.23", "10.34"),
        fromType = DecimalType(fromPrecision, 2),
-@@ -322,7 +329,8 @@ class ParquetTypeWideningSuite
+@@ -322,8 +329,8 @@ class ParquetTypeWideningSuite
        Seq((5, 2) -> (6, 4), (10, 4) -> (12, 7), (20, 5) -> (22, 8))
    }
    test(s"parquet decimal precision and scale change Decimal($fromPrecision, $fromScale) -> " +
 -    s"Decimal($toPrecision, $toScale)"
+-  ) {
 +    s"Decimal($toPrecision, $toScale)",
-+    IgnoreCometNativeDataFusion("https://github.com/apache/datafusion-comet/issues/3720")
-   ) {
++    IgnoreCometNativeDataFusion("https://github.com/apache/datafusion-comet/issues/3720")) {
      checkAllParquetReaders(
        values = Seq("1.23", "10.34"),
+       fromType = DecimalType(fromPrecision, fromScale),
 diff --git a/sql/core/src/test/scala/org/apache/spark/sql/execution/debug/DebuggingSuite.scala b/sql/core/src/test/scala/org/apache/spark/sql/execution/debug/DebuggingSuite.scala
 index b8f3ea3c6f3..bbd44221288 100644
 --- a/sql/core/src/test/scala/org/apache/spark/sql/execution/debug/DebuggingSuite.scala
