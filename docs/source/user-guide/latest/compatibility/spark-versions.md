@@ -28,9 +28,31 @@ compatibility guide.
 
 Spark 3.4.3 is supported with Java 11/17 and Scala 2.12/2.13.
 
+### Known Limitations
+
+- **Reading `TimestampLTZ` as `TimestampNTZ`**: Spark 3.4 raises an error for this operation
+  (SPARK-36182), but Comet's `native_datafusion` scan silently returns the raw UTC value instead.
+  See [Parquet Compatibility](scans.md#native_datafusion-limitations) for details.
+
+- **Unsupported Parquet type conversions**: Spark 3.4 raises schema incompatibility errors for
+  certain type mismatches (e.g., reading INT32 as BIGINT, decimal precision changes), but Comet's
+  `native_datafusion` scan may not detect these and could return unexpected values.
+  See [Parquet Compatibility](scans.md#native_datafusion-limitations) for details.
+
 ## Spark 3.5
 
 Spark 3.5.8 is supported with Java 11/17 and Scala 2.12/2.13.
+
+### Known Limitations
+
+- **Reading `TimestampLTZ` as `TimestampNTZ`**: Spark 3.5 raises an error for this operation
+  (SPARK-36182), but Comet's `native_datafusion` scan silently returns the raw UTC value instead.
+  See [Parquet Compatibility](scans.md#native_datafusion-limitations) for details.
+
+- **Unsupported Parquet type conversions**: Spark 3.5 raises schema incompatibility errors for
+  certain type mismatches (e.g., reading INT32 as BIGINT, decimal precision changes), but Comet's
+  `native_datafusion` scan may not detect these and could return unexpected values.
+  See [Parquet Compatibility](scans.md#native_datafusion-limitations) for details.
 
 ## Spark 4.0
 

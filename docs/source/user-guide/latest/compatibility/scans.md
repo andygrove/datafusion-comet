@@ -81,15 +81,21 @@ requires `spark.comet.exec.enabled=true` because the scan node must be wrapped b
   are detected at read time and raise a `SparkRuntimeException` with error class `_LEGACY_ERROR_TEMP_2093`,
   matching Spark's behavior.
 
-The following `native_datafusion` limitation may produce incorrect results on Spark versions prior to 4.0
+The following `native_datafusion` limitations may produce incorrect results on Spark versions prior to 4.0
 without falling back to Spark:
 
-- Reading INT96 timestamps as `TimestampNTZ`. On Spark 3.x, Spark raises an error per
-  [SPARK-36182](https://issues.apache.org/jira/browse/SPARK-36182) because INT96 encodes UTC-adjusted instants
+- Reading `TimestampLTZ` as `TimestampNTZ`. On Spark 3.x, Spark raises an error per
+  [SPARK-36182](https://issues.apache.org/jira/browse/SPARK-36182) because LTZ encodes UTC-adjusted instants
   that cannot be safely reinterpreted as timezone-free values. Comet does not raise this error and instead
-  returns the raw UTC instant as a `TimestampNTZ` value. On Spark 4.0+, this read is permitted
+  returns the raw UTC instant as a `TimestampNTZ` value. This applies to all LTZ physical encodings (INT96,
+  TIMESTAMP_MICROS, TIMESTAMP_MILLIS). On Spark 4.0+, this read is permitted
   ([SPARK-47447](https://issues.apache.org/jira/browse/SPARK-47447)) and Comet matches Spark's behavior.
   See [#4219](https://github.com/apache/datafusion-comet/issues/4219).
+
+- Unsupported Parquet type conversions. Spark raises schema incompatibility errors for certain conversions
+  (e.g., reading INT32 as BIGINT, reading BINARY as TIMESTAMP, unsupported decimal precision changes).
+  The `native_datafusion` scan may not detect these mismatches and could return unexpected values instead
+  of raising an error. See [#3720](https://github.com/apache/datafusion-comet/issues/3720).
 
 ## `native_iceberg_compat` Limitations
 
