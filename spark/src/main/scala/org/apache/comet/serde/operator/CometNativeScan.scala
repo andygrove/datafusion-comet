@@ -200,8 +200,7 @@ object CometNativeScan extends CometOperatorSerde[CometScanExec] with Logging {
       commonBuilder.setReturnNullStructIfAllFieldsMissing(
         scan.conf.getConfString(returnNullStructConfKey, returnNullStructDefault).toBoolean)
 
-      commonBuilder.setAllowTypePromotion(
-        CometConf.COMET_SCHEMA_EVOLUTION_ENABLED.get())
+      commonBuilder.setAllowTypePromotion(CometConf.COMET_SCHEMA_EVOLUTION_ENABLED.get())
 
       // Collect S3/cloud storage configurations
       val hadoopConf = scan.relation.sparkSession.sessionState
