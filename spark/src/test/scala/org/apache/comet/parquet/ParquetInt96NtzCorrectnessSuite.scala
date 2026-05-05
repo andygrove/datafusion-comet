@@ -32,8 +32,8 @@ import org.apache.comet.CometSparkSessionExtensions.isSpark40Plus
  * Tests for reading INT96 Parquet timestamps as TimestampNTZ.
  *
  * Prior to Spark 4.0, Spark raises an error (SPARK-36182) when asked to read INT96 as
- * TimestampNTZ. Comet should match this behavior. In Spark 4.0+, this read is permitted and
- * Comet should produce matching results.
+ * TimestampNTZ. Comet should match this behavior. In Spark 4.0+, this read is permitted and Comet
+ * should produce matching results.
  *
  * See https://github.com/apache/datafusion-comet/issues/3720
  */
@@ -42,6 +42,13 @@ class ParquetInt96NtzCorrectnessSuite extends CometTestBase {
 
   test("INT96 TimestampType read as TimestampNTZ throws pre-Spark 4") {
     assume(!isSpark40Plus, "Spark 4.0+ allows reading INT96 as TimestampNTZ")
+
+    val scanImpl = CometConf.COMET_NATIVE_SCAN_IMPL.get()
+    assume(
+      scanImpl != CometConf.SCAN_AUTO && scanImpl != CometConf.SCAN_NATIVE_DATAFUSION,
+      s"https://github.com/apache/datafusion-comet/issues/4219 ($scanImpl scan does not " +
+        "reject INT96 read as TimestampNTZ)")
+
     val sessionTz = "America/Los_Angeles"
 
     withSQLConf(
@@ -60,17 +67,15 @@ class ParquetInt96NtzCorrectnessSuite extends CometTestBase {
         }
 
         // Comet should also refuse
-        withSQLConf(CometConf.COMET_NATIVE_SCAN_IMPL.key -> CometConf.SCAN_NATIVE_DATAFUSION) {
-          intercept[SparkException] {
-            spark.read.schema("ts timestamp_ntz").parquet(path).collect()
-          }
+        intercept[SparkException] {
+          spark.read.schema("ts timestamp_ntz").parquet(path).collect()
         }
       }
     }
   }
 
   test("INT96 TimestampType read as TimestampNTZ matches Spark") {
-    // assume(isSpark40Plus, "Spark 4.0+ allows reading INT96 as TimestampNTZ")
+    assume(isSpark40Plus, "Spark 4.0+ allows reading INT96 as TimestampNTZ")
     val sessionTz = "America/Los_Angeles"
 
     withSQLConf(
