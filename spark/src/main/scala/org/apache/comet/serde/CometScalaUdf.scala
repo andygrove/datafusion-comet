@@ -19,7 +19,7 @@
 
 package org.apache.comet.serde
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, ScalaUDF}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, KnownNotNull, ScalaUDF}
 
 import org.apache.comet.CometSparkSessionExtensions.withInfo
 import org.apache.comet.serde.QueryPlanSerde.{exprToProtoInternal, serializeDataType}
@@ -45,7 +45,16 @@ object CometScalaUdf {
       return None
     }
 
-    val argProtos = expr.children.map(child => exprToProtoInternal(child, inputs, binding))
+    // Spark wraps UDF arguments in KnownNotNull when the UDF is declared non-nullable.
+    // Unwrap these since the CometUDF handles nullability itself.
+    val unwrappedChildren = expr.children.map {
+      case KnownNotNull(child) => child
+      case other => other
+    }
+
+    val argProtos = unwrappedChildren.map { child =>
+      exprToProtoInternal(child, inputs, binding)
+    }
     if (argProtos.exists(_.isEmpty)) {
       withInfo(expr, s"Failed to serialize one or more arguments for CometUDF '$name'")
       return None
