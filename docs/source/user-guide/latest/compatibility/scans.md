@@ -81,6 +81,16 @@ requires `spark.comet.exec.enabled=true` because the scan node must be wrapped b
   are detected at read time and raise a `SparkRuntimeException` with error class `_LEGACY_ERROR_TEMP_2093`,
   matching Spark's behavior.
 
+The following `native_datafusion` limitation may produce incorrect results on Spark versions prior to 4.0
+without falling back to Spark:
+
+- Reading INT96 timestamps as `TimestampNTZ`. On Spark 3.x, Spark raises an error per
+  [SPARK-36182](https://issues.apache.org/jira/browse/SPARK-36182) because INT96 encodes UTC-adjusted instants
+  that cannot be safely reinterpreted as timezone-free values. Comet does not raise this error and instead
+  returns the raw UTC instant as a `TimestampNTZ` value. On Spark 4.0+, this read is permitted
+  ([SPARK-47447](https://issues.apache.org/jira/browse/SPARK-47447)) and Comet matches Spark's behavior.
+  See [#4219](https://github.com/apache/datafusion-comet/issues/4219).
+
 ## `native_iceberg_compat` Limitations
 
 The `native_iceberg_compat` scan has the following additional limitation that may produce incorrect results
