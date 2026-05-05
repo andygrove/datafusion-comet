@@ -293,10 +293,10 @@ fn parquet_convert_struct_to_struct(
             // preserves the file's parent-row nullness so non-null parents materialize
             // as a struct of all-null fields.
             let nulls =
-                if field_overlap || !parquet_options.return_null_struct_if_all_fields_missing {
-                    array.nulls().cloned()
-                } else {
+                if !field_overlap && parquet_options.return_null_struct_if_all_fields_missing {
                     Some(NullBuffer::new_null(array.len()))
+                } else {
+                    array.nulls().cloned()
                 };
 
             Ok(Arc::new(StructArray::new(
