@@ -457,6 +457,32 @@ impl SparkPhysicalExprAdapter {
                 }
             }
 
+            // Type promotion (widening) check.
+            // When allow_type_promotion is false, reject numeric type widening
+            // (INT32→INT64, FLOAT→DOUBLE) to match Spark 3.x behavior where
+            // reading a column with a promoted type throws
+            // SchemaColumnConvertNotSupportedException. When allow_type_promotion
+            // is true (Spark 4.0+ default), these promotions are allowed.
+            // This mirrors TypeUtil.checkParquetType in the JVM code.
+            if !self.parquet_options.allow_type_promotion {
+                let is_disallowed_promotion = matches!(
+                    (physical_type, target_type),
+                    (DataType::Int32, DataType::Int64)
+                        | (DataType::Float32, DataType::Float64)
+                        | (DataType::Int32, DataType::Float64)
+                );
+                if is_disallowed_promotion {
+                    return Err(DataFusionError::External(Box::new(
+                        SparkError::ParquetSchemaConvert {
+                            file_path: String::new(),
+                            column: cast.input_field().name().to_string(),
+                            physical_type: physical_type.to_string(),
+                            spark_type: target_type.to_string(),
+                        },
+                    )));
+                }
+            }
+
             // For complex nested types (Struct, List, Map), Timestamp timezone
             // mismatches, and Timestamp→Int64 (nanosAsLong), use CometCastColumnExpr
             // with spark_parquet_convert which handles field-name-based selection,

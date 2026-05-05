@@ -1324,6 +1324,7 @@ impl PhysicalPlanner {
                     common.session_timezone.as_str(),
                     common.case_sensitive,
                     common.return_null_struct_if_all_fields_missing,
+                    common.allow_type_promotion,
                     self.session_ctx(),
                     common.encryption_enabled,
                 )?;

@@ -84,6 +84,9 @@ pub struct SparkParquetOptions {
     /// legacy behavior); false preserves the parent struct's nullness from the file
     /// so non-null parents return a struct of all-null fields.
     pub return_null_struct_if_all_fields_missing: bool,
+    /// Whether type promotion (schema evolution) is allowed, e.g. INT32 -> INT64,
+    /// FLOAT -> DOUBLE. Mirrors spark.comet.schemaEvolution.enabled.
+    pub allow_type_promotion: bool,
 }
 
 impl SparkParquetOptions {
@@ -97,6 +100,7 @@ impl SparkParquetOptions {
             use_legacy_date_timestamp_or_ntz: false,
             case_sensitive: false,
             return_null_struct_if_all_fields_missing: true,
+            allow_type_promotion: false,
         }
     }
 
@@ -110,6 +114,7 @@ impl SparkParquetOptions {
             use_legacy_date_timestamp_or_ntz: false,
             case_sensitive: false,
             return_null_struct_if_all_fields_missing: true,
+            allow_type_promotion: false,
         }
     }
 }
