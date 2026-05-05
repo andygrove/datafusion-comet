@@ -37,6 +37,7 @@ Comet $COMET_VERSION User Guide
    Compatibility Guide <compatibility/index>
    Understanding Comet Plans <understanding-comet-plans>
    Tuning Guide <tuning>
+   Custom JVM UDFs <custom-jvm-udfs>
    Metrics Guide <metrics>
    Iceberg Guide <iceberg>
    Kubernetes Guide <kubernetes>
