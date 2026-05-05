@@ -22,5 +22,4 @@ pub mod memory;
 mod buffer;
 pub use buffer::*;
 
-#[cfg(test)]
 pub mod test_common;

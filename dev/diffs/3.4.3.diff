@@ -2111,28 +2111,10 @@ index 104b4e416cd..b8af360fa14 100644
          case _ =>
            throw new AnalysisException("Can not match ParquetTable in the query.")
 diff --git a/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetIOSuite.scala b/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetIOSuite.scala
-index 8670d95c65e..9411af57a26 100644
+index 8670d95c65e..b624c3811dd 100644
 --- a/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetIOSuite.scala
 +++ b/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetIOSuite.scala
-@@ -41,6 +41,7 @@ import org.apache.parquet.schema.{MessageType, MessageTypeParser}
- 
- import org.apache.spark.{SPARK_VERSION_SHORT, SparkException, TestUtils}
- import org.apache.spark.sql._
-+import org.apache.spark.sql.IgnoreCometNativeDataFusion
- import org.apache.spark.sql.catalyst.{InternalRow, ScalaReflection}
- import org.apache.spark.sql.catalyst.expressions.{GenericInternalRow, UnsafeRow}
- import org.apache.spark.sql.catalyst.util.DateTimeUtils
-@@ -1075,7 +1076,8 @@ class ParquetIOSuite extends QueryTest with ParquetTest with SharedSparkSession
-     }
-   }
- 
--  test("SPARK-35640: int as long should throw schema incompatible error") {
-+  test("SPARK-35640: int as long should throw schema incompatible error",
-+    IgnoreCometNativeDataFusion("https://github.com/apache/datafusion-comet/issues/3720")) {
-     val data = (1 to 4).map(i => Tuple1(i))
-     val readSchema = StructType(Seq(StructField("_1", DataTypes.LongType)))
- 
-@@ -1335,7 +1337,8 @@ class ParquetIOSuite extends QueryTest with ParquetTest with SharedSparkSession
+@@ -1335,7 +1335,8 @@ class ParquetIOSuite extends QueryTest with ParquetTest with SharedSparkSession
      }
    }
  
@@ -2143,7 +2125,7 @@ index 8670d95c65e..9411af57a26 100644
        checkAnswer(
          // "fruit" column in this file is encoded using DELTA_LENGTH_BYTE_ARRAY.
 diff --git a/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetQuerySuite.scala b/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetQuerySuite.scala
-index 29cb224c878..ee5a87fa200 100644
+index 29cb224c878..1658c3c9750 100644
 --- a/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetQuerySuite.scala
 +++ b/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetQuerySuite.scala
 @@ -27,6 +27,7 @@ import org.apache.parquet.hadoop.ParquetOutputFormat
@@ -2160,7 +2142,7 @@ index 29cb224c878..ee5a87fa200 100644
  
 -  test("SPARK-36182: can't read TimestampLTZ as TimestampNTZ") {
 +  test("SPARK-36182: can't read TimestampLTZ as TimestampNTZ",
-+    IgnoreCometNativeDataFusion("https://github.com/apache/datafusion-comet/issues/3720")) {
++    IgnoreCometNativeDataFusion("https://github.com/apache/datafusion-comet/issues/4219")) {
      val data = (1 to 1000).map { i =>
        val ts = new java.sql.Timestamp(i)
        Row(ts)
@@ -2204,17 +2186,7 @@ index 29cb224c878..ee5a87fa200 100644
          checkAnswer(readParquet("a DECIMAL(3, 2)", path), sql("SELECT 1.00"))
          checkAnswer(readParquet("b DECIMAL(3, 2)", path), Row(null))
          checkAnswer(readParquet("b DECIMAL(11, 1)", path), sql("SELECT 123456.0"))
-@@ -1113,7 +1119,8 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
-     }
-   }
- 
--  test("row group skipping doesn't overflow when reading into larger type") {
-+  test("row group skipping doesn't overflow when reading into larger type",
-+    IgnoreCometNativeDataFusion("https://github.com/apache/datafusion-comet/issues/3720")) {
-     withTempPath { path =>
-       Seq(0).toDF("a").write.parquet(path.toString)
-       // The vectorized and non-vectorized readers will produce different exceptions, we don't need
-@@ -1128,7 +1135,7 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
+@@ -1128,7 +1134,7 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
              .where(s"a < ${Long.MaxValue}")
              .collect()
          }

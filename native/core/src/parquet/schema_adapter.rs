@@ -94,6 +94,35 @@ fn remap_physical_schema_names(
     Arc::new(Schema::new(remapped_fields))
 }
 
+/// Format an Arrow `DataType` as Spark's catalog string (e.g. `Int64` -> `bigint`).
+/// Used so the SchemaColumnConvertNotSupportedException error message matches
+/// the format produced by Spark's own vectorized Parquet reader.
+fn spark_catalog_name(dt: &DataType) -> &'static str {
+    match dt {
+        DataType::Boolean => "boolean",
+        DataType::Int8 => "tinyint",
+        DataType::Int16 => "smallint",
+        DataType::Int32 => "int",
+        DataType::Int64 => "bigint",
+        DataType::Float32 => "float",
+        DataType::Float64 => "double",
+        _ => "unknown",
+    }
+}
+
+/// Format an Arrow `DataType` as the Parquet primitive type name
+/// (e.g. `Int64` -> `INT64`, matching `PrimitiveTypeName.toString()` in parquet-mr).
+fn parquet_primitive_name(dt: &DataType) -> &'static str {
+    match dt {
+        DataType::Boolean => "BOOLEAN",
+        DataType::Int8 | DataType::Int16 | DataType::Int32 => "INT32",
+        DataType::Int64 => "INT64",
+        DataType::Float32 => "FLOAT",
+        DataType::Float64 => "DOUBLE",
+        _ => "UNKNOWN",
+    }
+}
+
 /// Check if a specific column name has duplicate matches in the physical schema
 /// (case-insensitive). Returns the error info if so.
 fn check_column_duplicate(col_name: &str, physical_schema: &SchemaRef) -> Option<(String, String)> {
@@ -475,9 +504,9 @@ impl SparkPhysicalExprAdapter {
                     return Err(DataFusionError::External(Box::new(
                         SparkError::ParquetSchemaConvert {
                             file_path: String::new(),
-                            column: cast.input_field().name().to_string(),
-                            physical_type: physical_type.to_string(),
-                            spark_type: target_type.to_string(),
+                            column: format!("[{}]", cast.input_field().name()),
+                            physical_type: parquet_primitive_name(physical_type).to_string(),
+                            spark_type: spark_catalog_name(target_type).to_string(),
                         },
                     )));
                 }
