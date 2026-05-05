@@ -3101,7 +3101,7 @@ index 3072657a095..b2293ccab17 100644
        checkAnswer(
          // "fruit" column in this file is encoded using DELTA_LENGTH_BYTE_ARRAY.
 diff --git a/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetQuerySuite.scala b/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetQuerySuite.scala
-index c530dc0d3df..abf36a7ab09 100644
+index c530dc0d3df..bd0b5042a24 100644
 --- a/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetQuerySuite.scala
 +++ b/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetQuerySuite.scala
 @@ -27,6 +27,7 @@ import org.apache.parquet.hadoop.ParquetOutputFormat
@@ -3112,15 +3112,7 @@ index c530dc0d3df..abf36a7ab09 100644
  import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
  import org.apache.spark.sql.catalyst.expressions.SpecificInternalRow
  import org.apache.spark.sql.catalyst.util.ArrayData
-@@ -185,7 +186,8 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
-     }
-   }
-
-   test("SPARK-47447: read TimestampLTZ as TimestampNTZ") {
-     val providedSchema = StructType(Seq(StructField("time", TimestampNTZType, false)))
- 
-     Seq("INT96", "TIMESTAMP_MICROS", "TIMESTAMP_MILLIS").foreach { tsType =>
-@@ -318,7 +320,8 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
+@@ -318,7 +319,8 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
      }
    }
  
@@ -3130,7 +3122,7 @@ index c530dc0d3df..abf36a7ab09 100644
      def testIgnoreCorruptFiles(options: Map[String, String]): Unit = {
        withTempDir { dir =>
          val basePath = dir.getCanonicalPath
-@@ -996,7 +999,11 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
+@@ -996,7 +998,11 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
          Seq(Some("A"), Some("A"), None).toDF().repartition(1)
            .write.parquet(path.getAbsolutePath)
          val df = spark.read.parquet(path.getAbsolutePath)
@@ -3143,7 +3135,7 @@ index c530dc0d3df..abf36a7ab09 100644
        }
      }
    }
-@@ -1042,7 +1049,8 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
+@@ -1042,7 +1048,8 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
      testMigration(fromTsType = "TIMESTAMP_MICROS", toTsType = "INT96")
    }
  
@@ -3153,7 +3145,7 @@ index c530dc0d3df..abf36a7ab09 100644
      def readParquet(schema: String, path: File): DataFrame = {
        spark.read.schema(schema).parquet(path.toString)
      }
-@@ -1060,7 +1068,8 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
+@@ -1060,7 +1067,8 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
          checkAnswer(readParquet(schema2, path), df)
        }
  
@@ -3163,7 +3155,7 @@ index c530dc0d3df..abf36a7ab09 100644
          val schema1 = "a DECIMAL(3, 2), b DECIMAL(18, 3), c DECIMAL(37, 3)"
          checkAnswer(readParquet(schema1, path), df)
          val schema2 = "a DECIMAL(3, 0), b DECIMAL(18, 1), c DECIMAL(37, 1)"
-@@ -1084,7 +1093,8 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
+@@ -1084,7 +1092,8 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
        val df = sql(s"SELECT 1 a, 123456 b, ${Int.MaxValue.toLong * 10} c, CAST('1.2' AS BINARY) d")
        df.write.parquet(path.toString)
  
@@ -3173,7 +3165,7 @@ index c530dc0d3df..abf36a7ab09 100644
          checkAnswer(readParquet("a DECIMAL(3, 2)", path), sql("SELECT 1.00"))
          checkAnswer(readParquet("a DECIMAL(11, 2)", path), sql("SELECT 1.00"))
          checkAnswer(readParquet("b DECIMAL(3, 2)", path), Row(null))
-@@ -1131,7 +1141,8 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
+@@ -1131,7 +1140,8 @@ abstract class ParquetQuerySuite extends QueryTest with ParquetTest with SharedS
      }
    }
  
