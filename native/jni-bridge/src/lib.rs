@@ -192,9 +192,11 @@ pub use comet_exec::*;
 mod batch_iterator;
 mod comet_metric_node;
 mod comet_task_memory_manager;
+mod comet_udf_bridge;
 mod shuffle_block_iterator;
 
 use batch_iterator::CometBatchIterator;
+use comet_udf_bridge::CometUdfBridge;
 pub use comet_metric_node::*;
 pub use comet_task_memory_manager::*;
 use shuffle_block_iterator::CometShuffleBlockIterator;
@@ -228,6 +230,9 @@ pub struct JVMClasses<'a> {
     /// The CometTaskMemoryManager used for interacting with JVM side to
     /// acquire & release native memory.
     pub comet_task_memory_manager: CometTaskMemoryManager<'a>,
+    /// The CometUdfBridge class used to dispatch JVM scalar UDFs.
+    /// `None` if the class is not on the classpath.
+    pub comet_udf_bridge: Option<CometUdfBridge<'a>>,
 }
 
 unsafe impl Send for JVMClasses<'_> {}
@@ -298,6 +303,13 @@ impl JVMClasses<'_> {
                 comet_batch_iterator: CometBatchIterator::new(env).unwrap(),
                 comet_shuffle_block_iterator: CometShuffleBlockIterator::new(env).unwrap(),
                 comet_task_memory_manager: CometTaskMemoryManager::new(env).unwrap(),
+                comet_udf_bridge: {
+                    let bridge = CometUdfBridge::new(env).ok();
+                    if env.exception_check() {
+                        env.exception_clear();
+                    }
+                    bridge
+                },
             }
         });
     }
