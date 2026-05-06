@@ -17,117 +17,165 @@
 # under the License.
 
 """
-Integration test for CometPythonMapInArrowExec.
+Pytest-driven integration tests for Comet's PyArrow UDF acceleration.
 
-This test verifies that Comet's optimized PyArrow UDF execution works correctly
-by checking:
-1. The plan uses CometPythonMapInArrowExec instead of PythonMapInArrow + ColumnarToRow
-2. The UDF produces correct results
-3. Performance improvement by eliminating unnecessary Arrow->Row->Arrow conversions
+Each test runs against two execution paths:
+  - "accelerated": spark.comet.exec.pythonMapInArrow.enabled=true
+                   (plan should contain CometPythonMapInArrow and no ColumnarToRow)
+  - "fallback":    spark.comet.exec.pythonMapInArrow.enabled=false
+                   (plan should contain vanilla PythonMapInArrow)
 
 Usage:
-    # Requires Python 3.11 or 3.12 (PySpark 3.5 does not support 3.13+)
-    # Build Comet first: make release
-    # Then run with PySpark:
-    spark-submit --jars spark/target/comet-spark-spark3.5_2.12-*.jar \
-        --conf spark.plugins=org.apache.spark.CometPlugin \
-        --conf spark.comet.enabled=true \
-        --conf spark.comet.exec.enabled=true \
-        --conf spark.comet.exec.pythonMapInArrow.enabled=true \
-        --conf spark.shuffle.manager=org.apache.spark.sql.comet.execution.shuffle.CometShuffleManager \
-        --conf spark.memory.offHeap.enabled=true \
-        --conf spark.memory.offHeap.size=2g \
-        spark/src/test/resources/pyspark/test_pyarrow_udf.py
+    # Build Comet first:
+    make release
+
+    # Then either let the test discover the jar from spark/target, or pass it
+    # explicitly via COMET_JAR:
+    export COMET_JAR=$PWD/spark/target/comet-spark-spark3.5_2.12-0.16.0-SNAPSHOT.jar
+
+    pip install pyspark==3.5.8 pyarrow pandas pytest
+    pytest -v spark/src/test/resources/pyspark/test_pyarrow_udf.py
 """
 
-import sys
+import glob
+import os
+
 import pyarrow as pa
-from pyspark.sql import SparkSession
-from pyspark.sql import types as T
+import pytest
+from pyspark.sql import SparkSession, types as T
 
 
-def test_map_in_arrow_basic():
-    """Test basic mapInArrow with Comet optimization."""
-    spark = SparkSession.builder.getOrCreate()
+REPO_ROOT = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..")
+)
 
-    # Create test data
+
+def _resolve_comet_jar() -> str:
+    explicit = os.environ.get("COMET_JAR")
+    if explicit:
+        if any(ch in explicit for ch in "*?["):
+            matches = sorted(glob.glob(explicit))
+            if not matches:
+                raise FileNotFoundError(
+                    f"COMET_JAR pattern matched nothing: {explicit}"
+                )
+            return matches[-1]
+        return explicit
+
+    # Pick the jar that matches the installed pyspark major.minor version. The
+    # Comet jars are published per Spark version (e.g., comet-spark-spark3.5_2.12-*.jar);
+    # using the wrong one yields ClassNotFoundException on Scala stdlib classes.
+    import pyspark
+
+    major_minor = ".".join(pyspark.__version__.split(".")[:2])
+    spark_tag = f"spark{major_minor}"
+    scala_tag = "_2.12" if major_minor.startswith("3.") else "_2.13"
+    pattern = os.path.join(
+        REPO_ROOT,
+        f"spark/target/comet-spark-{spark_tag}{scala_tag}-*-SNAPSHOT.jar",
+    )
+    candidates = [
+        m
+        for m in sorted(glob.glob(pattern))
+        if "sources" not in os.path.basename(m) and "tests" not in os.path.basename(m)
+    ]
+    if not candidates:
+        raise FileNotFoundError(
+            "Comet jar not found. Set COMET_JAR or run `make release`. "
+            f"Looked under {pattern}."
+        )
+    return candidates[-1]
+
+
+@pytest.fixture(scope="session")
+def spark():
+    jar = _resolve_comet_jar()
+    # PYSPARK_SUBMIT_ARGS is consumed when pyspark launches its JVM. Setting
+    # --jars puts the Comet jar on both driver and executor classpaths so the
+    # CometPlugin can be loaded.
+    os.environ["PYSPARK_SUBMIT_ARGS"] = (
+        f"--jars {jar} --driver-class-path {jar} pyspark-shell"
+    )
+    session = (
+        SparkSession.builder.master("local[2]")
+        .appName("comet-pyarrow-udf-tests")
+        .config("spark.plugins", "org.apache.spark.CometPlugin")
+        .config("spark.comet.enabled", "true")
+        .config("spark.comet.exec.enabled", "true")
+        .config("spark.memory.offHeap.enabled", "true")
+        .config("spark.memory.offHeap.size", "2g")
+        .getOrCreate()
+    )
+    try:
+        yield session
+    finally:
+        session.stop()
+
+
+@pytest.fixture(params=[True, False], ids=["accelerated", "fallback"])
+def accelerated(request, spark) -> bool:
+    spark.conf.set(
+        "spark.comet.exec.pythonMapInArrow.enabled",
+        "true" if request.param else "false",
+    )
+    return request.param
+
+
+def _executed_plan(df) -> str:
+    return df._jdf.queryExecution().executedPlan().toString()
+
+
+def _assert_plan_matches_mode(plan: str, accelerated: bool) -> None:
+    if accelerated:
+        assert "CometPythonMapInArrow" in plan, (
+            f"expected CometPythonMapInArrow in accelerated plan, got:\n{plan}"
+        )
+        assert "ColumnarToRow" not in plan, (
+            f"unexpected ColumnarToRow in accelerated plan:\n{plan}"
+        )
+    else:
+        assert "CometPythonMapInArrow" not in plan, (
+            f"unexpected CometPythonMapInArrow in fallback plan:\n{plan}"
+        )
+        assert "PythonMapInArrow" in plan, (
+            f"expected PythonMapInArrow in fallback plan, got:\n{plan}"
+        )
+
+
+def test_map_in_arrow_doubles_value(spark, tmp_path, accelerated):
     data = [(i, float(i * 1.5), f"name_{i}") for i in range(100)]
-    df = spark.createDataFrame(data, ["id", "value", "name"])
+    src = str(tmp_path / "src.parquet")
+    spark.createDataFrame(data, ["id", "value", "name"]).write.parquet(src)
 
-    # Write to parquet so CometScan can read it
-    df.write.mode("overwrite").parquet("/tmp/comet_pyarrow_test_data")
-    test_df = spark.read.parquet("/tmp/comet_pyarrow_test_data")
-
-    # Define a PyArrow UDF that doubles the value column.
-    # mapInArrow callbacks receive an iterator of RecordBatches and must yield batches.
     def double_value(iterator):
         for batch in iterator:
             pdf = batch.to_pandas()
             pdf["value"] = pdf["value"] * 2
             yield pa.RecordBatch.from_pandas(pdf)
 
-    output_schema = T.StructType([
-        T.StructField("id", T.LongType()),
-        T.StructField("value", T.DoubleType()),
-        T.StructField("name", T.StringType()),
-    ])
+    schema = T.StructType(
+        [
+            T.StructField("id", T.LongType()),
+            T.StructField("value", T.DoubleType()),
+            T.StructField("name", T.StringType()),
+        ]
+    )
+    result_df = spark.read.parquet(src).mapInArrow(double_value, schema)
 
-    # Apply mapInArrow
-    result_df = test_df.mapInArrow(double_value, output_schema)
+    _assert_plan_matches_mode(_executed_plan(result_df), accelerated)
 
-    # Check the explain plan
-    print("=" * 60)
-    print("PHYSICAL PLAN:")
-    print("=" * 60)
-    result_df.explain(mode="extended")
-    print("=" * 60)
-
-    plan_str = result_df._jdf.queryExecution().executedPlan().toString()
-    print(f"\nPlan string:\n{plan_str}\n")
-
-    # Verify the optimized Comet operator is in the plan. The toString form is
-    # "CometPythonMapInArrow" (no Exec suffix) and the upstream scan prints as
-    # "CometNativeScan".
-    assert "CometPythonMapInArrow" in plan_str, \
-        f"CometPythonMapInArrow missing from plan:\n{plan_str}"
-    assert "ColumnarToRow" not in plan_str, \
-        f"Unexpected ColumnarToRow in optimized plan:\n{plan_str}"
-    print("SUCCESS: CometPythonMapInArrow is in the plan with no ColumnarToRow transition.")
-
-    # Verify correctness
-    result = result_df.orderBy("id").collect()
-    expected_first = data[0]
-    actual_first = result[0]
-
-    assert actual_first["id"] == expected_first[0], \
-        f"ID mismatch: {actual_first['id']} != {expected_first[0]}"
-    assert abs(actual_first["value"] - expected_first[1] * 2) < 0.001, \
-        f"Value mismatch: {actual_first['value']} != {expected_first[1] * 2}"
-    assert actual_first["name"] == expected_first[2], \
-        f"Name mismatch: {actual_first['name']} != {expected_first[2]}"
-
-    print(f"\nFirst row: {actual_first}")
-    print(f"Expected value (doubled): {expected_first[1] * 2}")
-    print("CORRECTNESS: PASSED")
-
-    # Verify all rows
-    for i, row in enumerate(result):
-        expected_val = data[i][1] * 2
-        assert abs(row["value"] - expected_val) < 0.001, \
-            f"Row {i}: expected value {expected_val}, got {row['value']}"
-
-    print(f"All {len(result)} rows verified correctly.")
-    return True
+    rows = result_df.orderBy("id").collect()
+    assert len(rows) == len(data)
+    for row, original in zip(rows, data):
+        assert row["id"] == original[0]
+        assert abs(row["value"] - original[1] * 2) < 1e-6
+        assert row["name"] == original[2]
 
 
-def test_map_in_arrow_type_change():
-    """Test mapInArrow that changes the schema."""
-    spark = SparkSession.builder.getOrCreate()
-
+def test_map_in_arrow_changes_schema(spark, tmp_path, accelerated):
     data = [(i, float(i)) for i in range(50)]
-    df = spark.createDataFrame(data, ["id", "value"])
-    df.write.mode("overwrite").parquet("/tmp/comet_pyarrow_test_data2")
-    test_df = spark.read.parquet("/tmp/comet_pyarrow_test_data2")
+    src = str(tmp_path / "src.parquet")
+    spark.createDataFrame(data, ["id", "value"]).write.parquet(src)
 
     def add_computed_column(iterator):
         for batch in iterator:
@@ -136,51 +184,20 @@ def test_map_in_arrow_type_change():
             pdf["label"] = pdf["id"].apply(lambda x: f"item_{x}")
             yield pa.RecordBatch.from_pandas(pdf)
 
-    output_schema = T.StructType([
-        T.StructField("id", T.LongType()),
-        T.StructField("value", T.DoubleType()),
-        T.StructField("squared", T.DoubleType()),
-        T.StructField("label", T.StringType()),
-    ])
+    schema = T.StructType(
+        [
+            T.StructField("id", T.LongType()),
+            T.StructField("value", T.DoubleType()),
+            T.StructField("squared", T.DoubleType()),
+            T.StructField("label", T.StringType()),
+        ]
+    )
+    result_df = spark.read.parquet(src).mapInArrow(add_computed_column, schema)
 
-    result_df = test_df.mapInArrow(add_computed_column, output_schema)
-    result = result_df.orderBy("id").collect()
+    _assert_plan_matches_mode(_executed_plan(result_df), accelerated)
 
-    assert len(result) == 50
-    for i, row in enumerate(result):
-        assert abs(row["squared"] - float(i) ** 2) < 0.001
+    rows = result_df.orderBy("id").collect()
+    assert len(rows) == 50
+    for i, row in enumerate(rows):
+        assert abs(row["squared"] - float(i) ** 2) < 1e-6
         assert row["label"] == f"item_{i}"
-
-    print("test_map_in_arrow_type_change: PASSED")
-    return True
-
-
-if __name__ == "__main__":
-    print("Running PyArrow UDF integration tests for Comet...")
-    print()
-
-    tests = [
-        ("test_map_in_arrow_basic", test_map_in_arrow_basic),
-        ("test_map_in_arrow_type_change", test_map_in_arrow_type_change),
-    ]
-
-    passed = 0
-    failed = 0
-    for name, test_fn in tests:
-        print(f"\n{'=' * 60}")
-        print(f"Running: {name}")
-        print(f"{'=' * 60}")
-        try:
-            test_fn()
-            passed += 1
-        except Exception as e:
-            print(f"FAILED: {e}")
-            import traceback
-            traceback.print_exc()
-            failed += 1
-
-    print(f"\n{'=' * 60}")
-    print(f"Results: {passed} passed, {failed} failed")
-    print(f"{'=' * 60}")
-
-    sys.exit(0 if failed == 0 else 1)
