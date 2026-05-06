@@ -230,31 +230,67 @@ cd native && cargo test
 
 Alternatively, use `make test-rust` which handles the JVM compilation dependency automatically.
 
-### Avoid Using `-pl` to Select Modules
+### Never Use `-pl` to Select Modules
 
-When running Maven tests, avoid using `-pl spark` to select only the spark module. This can cause
-Maven to pick up the `common` module from your local Maven repository instead of using the current
-codebase, leading to inconsistent test results:
+Do not use `-pl spark` (or any other `-pl <module>`) when running Maven goals. With `-pl`, Maven
+does not rebuild sibling modules in the reactor and instead resolves them from your local Maven
+repository (`~/.m2/repository`). This leads to two failure modes:
+
+- **Stale code.** Tests run against the last `mvn install`ed version of `common` (or
+  `spark-shims`), not against your current edits. You can chase a "failing" test for hours that
+  is actually green in your working tree.
+- **Cross-worktree corruption.** If you have multiple worktrees open and run `mvn install` in one
+  while running `mvn test -pl spark` in another, the second worktree picks up the first
+  worktree's artifacts from the shared `~/.m2/repository`. Builds and tests then mix code from
+  different branches non-deterministically.
+
+Always run Maven from the repo root without `-pl`. Maven's reactor will compile only what is
+needed:
 
 ```sh
-# Avoid this - may use stale common module from local repo
+# Wrong: resolves sibling modules from ~/.m2, breaks under concurrent worktrees
 ./mvnw test -pl spark -Dsuites="..."
 
-# Do this instead - builds and tests with current code
+# Right: reactor build, always uses current source
 ./mvnw test -Dsuites="..."
 ```
 
-### Use `wildcardSuites` for Running Tests
+### Running a Specific ScalaTest Suite
 
-When running specific test suites, use `wildcardSuites` instead of `suites` for more flexible
-matching. The `wildcardSuites` parameter allows partial matching of suite names:
+To run a single suite (and only that suite), use `-Dsuites=` with the **fully qualified class name**
+and `-Dtest=none`:
 
 ```sh
-# Run all suites containing "CometCast"
-./mvnw test -DwildcardSuites="CometCast"
+# Run exactly one suite
+./mvnw test -Dtest=none -Dsuites="org.apache.comet.CometArrayExpressionSuite"
 
-# Run specific suite with filter
-./mvnw test -Dsuites="org.apache.comet.CometCastSuite valid"
+# Run multiple suites (comma-separated, fully qualified)
+./mvnw test -Dtest=none -Dsuites="org.apache.comet.CometCastSuite,org.apache.comet.CometArrayExpressionSuite"
+
+# Run only tests whose name contains "valid" inside one suite
+./mvnw test -Dtest=none -Dsuites="org.apache.comet.CometCastSuite valid"
+```
+
+`-Dtest=none` tells the Surefire (JUnit) plugin to skip its tests; without it, Surefire still
+runs the JUnit `*Test.java` matchers in addition to your selected ScalaTest suite.
+
+#### Pitfall: `-DwildcardSuites=""` runs everything
+
+A common mistake is to combine `-Dsuites=...` with `-DwildcardSuites=""`:
+
+```sh
+# WRONG: runs every suite in the project, takes ~1 hour
+./mvnw test -Dtest=none -Dsuites="org.apache.comet.CometArrayExpressionSuite" -DwildcardSuites=""
+```
+
+`wildcardSuites` does substring matching, and the empty string is a substring of every suite
+name, so it expands to "run all suites" and overrides the narrower `-Dsuites=` selection. If you
+want to run a single suite, omit `-DwildcardSuites` entirely. If you want substring matching,
+pass a non-empty pattern:
+
+```sh
+# Run every suite whose fully qualified name contains "CometCast"
+./mvnw test -Dtest=none -DwildcardSuites="CometCast"
 ```
 
 ## Development Environment
@@ -370,15 +406,18 @@ However if the tests is related to the native side. Please make sure to run `mak
 
 ### Running Tests from command line
 
-It is possible to specify which ScalaTest suites you want to run from the CLI using the `suites`
-argument, for example if you only want to execute the test cases that contains _valid_
-in their name in `org.apache.comet.CometCastSuite` you can use
+Specify which ScalaTest suites to run with the `suites` argument and disable Surefire's JUnit
+discovery with `-Dtest=none`. For example, to run only the test cases containing _valid_ in
+their name from `org.apache.comet.CometCastSuite`:
 
 ```sh
 ./mvnw test -Dtest=none -Dsuites="org.apache.comet.CometCastSuite valid"
 ```
 
-Other options for selecting specific suites are described in the [ScalaTest Maven Plugin documentation](https://www.scalatest.org/user_guide/using_the_scalatest_maven_plugin)
+See [Running a Specific ScalaTest Suite](#running-a-specific-scalatest-suite) above for the full
+list of common patterns and pitfalls (including why `-DwildcardSuites=""` silently runs every
+suite). Other options for selecting specific suites are described in the
+[ScalaTest Maven Plugin documentation](https://www.scalatest.org/user_guide/using_the_scalatest_maven_plugin).
 
 ## Plan Stability Testing
 
