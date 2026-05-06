@@ -20,6 +20,7 @@
 package org.apache.comet.udf.testing
 
 import org.apache.arrow.vector.{BigIntVector, IntVector, ValueVector}
+import org.apache.spark.sql.types.{DataType, IntegerType, LongType}
 
 import org.apache.comet.CometArrowAllocator
 import org.apache.comet.udf.CometUDF
@@ -30,6 +31,12 @@ import org.apache.comet.udf.CometUDF
 // compile against common/target/classes (unshaded) and fail at runtime with
 // AbstractMethodError when dispatched through the shaded interface.
 class DoubleIntUdf extends CometUDF {
+
+  override def name: String = "double_int"
+
+  override def returnType: DataType = LongType
+
+  override def inputTypes: Seq[DataType] = Seq(IntegerType)
 
   override def evaluate(inputs: Array[ValueVector]): ValueVector = {
     val input = inputs(0).asInstanceOf[IntVector]

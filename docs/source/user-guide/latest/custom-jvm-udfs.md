@@ -31,8 +31,9 @@ row-at-a-time execution while keeping the implementation in Java/Scala.
 
 The framework consists of:
 
-- **`CometUDF`** — a trait your UDF class must implement, receiving and returning Arrow `ValueVector` instances
-- **`CometUdfRegistry`** — a registry that maps Spark UDF names to CometUDF implementation classes
+- **`CometUDF`** — a trait your UDF class must implement, declaring its name, return type, optional input types,
+  and the vectorized `evaluate` method
+- **`CometUdfRegistry`** — a registry that introspects your `CometUDF` class to record metadata for the serde layer
 - **`CometUdfBridge`** — the JNI bridge that native execution uses to invoke your UDF (no user interaction needed)
 
 ## Writing a CometUDF
@@ -47,8 +48,27 @@ import org.apache.comet.shaded.arrow.vector.IntVector;
 import org.apache.comet.shaded.arrow.vector.BitVector;
 import org.apache.comet.shaded.arrow.vector.ValueVector;
 import org.apache.comet.udf.CometUDF;
+import org.apache.spark.sql.types.DataType;
+import org.apache.spark.sql.types.DataTypes;
+import scala.collection.JavaConverters;
+import java.util.Arrays;
 
 public class IsPositiveUdf implements CometUDF {
+
+    @Override
+    public String name() { return "is_positive"; }
+
+    @Override
+    public DataType returnType() { return DataTypes.BooleanType; }
+
+    @Override
+    public boolean nullable() { return true; }
+
+    @Override
+    public scala.collection.Seq<DataType> inputTypes() {
+        return JavaConverters.asScalaBuffer(
+            Arrays.<DataType>asList(DataTypes.IntegerType)).toSeq();
+    }
 
     @Override
     public ValueVector evaluate(ValueVector[] inputs) {
@@ -80,47 +100,47 @@ Key requirements:
 - Scalar (literal) arguments arrive as length-1 vectors — read at index 0
 - The returned vector's length **must match** the longest input vector
 - Instances are cached per executor thread, so implementations should be **stateless**
+- `inputTypes` is required only for columnar-only registration (see below)
 
 ## Registering a CometUDF
 
-### Option 1: Register Comet UDF separately from Spark UDF
+### Option 1: Comet UDF only (existing Spark UDF)
 
 If you already have a Spark UDF registered, just tell Comet about the accelerated implementation:
 
 ```scala
 import org.apache.comet.udf.CometUdfRegistry
-import org.apache.spark.sql.types.BooleanType
 
 // Register the Spark UDF (row-at-a-time fallback)
 spark.udf.register("is_positive", (x: Int) => x > 0)
 
-// Register the CometUDF (vectorized Arrow implementation)
-CometUdfRegistry.register(
-  "is_positive",                        // must match the Spark UDF name
-  "com.example.IsPositiveUdf",          // CometUDF implementation class
-  BooleanType,                          // return type
-  nullable = true                       // whether results may contain nulls
-)
+// Tell Comet about the vectorized implementation
+CometUdfRegistry.register(classOf[IsPositiveUdf])
 ```
 
 ### Option 2: Register both in one call
 
 ```scala
 import org.apache.comet.udf.CometUdfRegistry
-import org.apache.spark.sql.functions.udf
-import org.apache.spark.sql.types.BooleanType
 
-val sparkUdf = udf((x: Int) => x > 0)
-
-CometUdfRegistry.register(
-  spark,
-  "is_positive",
-  "com.example.IsPositiveUdf",
-  sparkUdf,
-  BooleanType,
-  nullable = true
-)
+CometUdfRegistry.register(spark, classOf[IsPositiveUdf], (x: Int) => x > 0)
 ```
+
+### Option 3: Columnar-only (no row-based equivalent)
+
+If you do not want to write a row-based fallback, Comet can synthesize a stub Spark UDF that
+throws `UnsupportedOperationException` if invoked row-at-a-time. The CometUDF must declare
+`inputTypes` so the stub has the correct arity.
+
+```scala
+import org.apache.comet.udf.CometUdfRegistry
+
+CometUdfRegistry.registerColumnarOnly(spark, classOf[IsPositiveUdf])
+```
+
+When Comet is enabled and the query is supported, the vectorized implementation runs natively.
+If Comet falls back (e.g. an unsupported expression elsewhere in the plan), the stub is invoked
+and the query fails with a clear error rather than silently slow row-at-a-time execution.
 
 ## How It Works
 
@@ -134,7 +154,7 @@ CometUdfRegistry.register(
    Arrow vectors, and exports the result vector back to native execution.
 
 4. **Fallback**: If Comet is disabled or the UDF is not in the registry, Spark executes the UDF row-at-a-time
-   using the originally registered Scala/Java function.
+   using the originally registered Scala/Java function. Columnar-only UDFs raise an exception in this case.
 
 ## Packaging and Deployment
 
@@ -150,3 +170,4 @@ The CometUDF class is resolved using the executor's context classloader, so user
 - Only scalar UDFs are supported (not aggregate or table UDFs)
 - The UDF must be registered by name — anonymous lambdas without a name cannot be intercepted
 - All input and output types must be representable as Arrow vectors
+- Columnar-only registration currently supports arities 1 through 5

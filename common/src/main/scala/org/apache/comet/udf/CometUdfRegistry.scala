@@ -24,32 +24,23 @@ import java.util.concurrent.ConcurrentHashMap
 import scala.reflect.runtime.universe.TypeTag
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.api.java.{UDF1, UDF2, UDF3, UDF4, UDF5}
 import org.apache.spark.sql.types.DataType
 
 /**
- * Registry for user-defined CometUDF implementations. Users register their UDF class names here
- * so that the Comet serde layer can intercept matching Spark UDFs and route them to native
- * execution via the JVM UDF bridge.
+ * Registry for user-defined CometUDF implementations. Spark UDF metadata (name, return type,
+ * nullability) is read from the [[CometUDF]] class itself, so registration is a single call:
  *
- * Usage:
  * {{{
- * // Register a CometUDF implementation for a Spark UDF
- * CometUdfRegistry.register(
- *   "my_func",                      // Spark UDF name (as used in spark.udf.register)
- *   "com.example.MyUdf",            // CometUDF implementation class
- *   BooleanType,                    // return type
- *   nullable = true                 // whether the result may contain nulls
- * )
+ * // Comet-only (user has already called spark.udf.register elsewhere):
+ * CometUdfRegistry.register(classOf[MyUdf])
  *
- * // Or use the convenience method that also registers the Spark UDF:
- * CometUdfRegistry.register(
- *   spark,
- *   "my_func",
- *   "com.example.MyUdf",
- *   sparkUdf,                       // the Spark UserDefinedFunction
- *   BooleanType,
- *   nullable = true
- * )
+ * // Comet plus a row-based Spark fallback in one call:
+ * CometUdfRegistry.register(spark, classOf[MyUdf], (x: Int) => x > 0)
+ *
+ * // Columnar-only: no row-based equivalent. Calling the UDF row-at-a-time
+ * // (e.g. when Comet falls back) raises UnsupportedOperationException:
+ * CometUdfRegistry.registerColumnarOnly(spark, classOf[MyUdf])
  * }}}
  */
 object CometUdfRegistry {
@@ -59,111 +50,70 @@ object CometUdfRegistry {
   private val registry = new ConcurrentHashMap[String, UdfEntry]()
 
   /**
-   * Register a CometUDF implementation for a named Spark UDF.
-   *
-   * @param name
-   *   The UDF name as registered with Spark (via spark.udf.register)
-   * @param className
-   *   Fully-qualified class name implementing CometUDF
-   * @param returnType
-   *   The return DataType of the UDF
-   * @param nullable
-   *   Whether the result column may contain nulls
+   * Register a CometUDF for use by Comet. The caller is responsible for separately registering a
+   * row-based Spark UDF under the same name (e.g. via `spark.udf.register(name, fn)`); without
+   * one, Spark will fail to bind the function unless it has a stub from [[registerColumnarOnly]].
    */
-  def register(name: String, className: String, returnType: DataType, nullable: Boolean): Unit = {
-    registry.put(name, UdfEntry(className, returnType, nullable))
+  def register(udfClass: Class[_ <: CometUDF]): Unit = {
+    val udf = newInstance(udfClass)
+    registry.put(udf.name, UdfEntry(udfClass.getName, udf.returnType, udf.nullable))
   }
 
-  /**
-   * Convenience method that registers both with Spark and with Comet in one call.
-   *
-   * @param spark
-   *   The SparkSession
-   * @param name
-   *   The UDF name
-   * @param className
-   *   Fully-qualified CometUDF class name
-   * @param sparkUdf
-   *   The Spark UserDefinedFunction (for row-at-a-time fallback)
-   * @param returnType
-   *   The return DataType
-   * @param nullable
-   *   Whether the result may contain nulls
-   */
-  def register(
-      spark: SparkSession,
-      name: String,
-      className: String,
-      sparkUdf: org.apache.spark.sql.expressions.UserDefinedFunction,
-      returnType: DataType,
-      nullable: Boolean): Unit = {
-    spark.udf.register(name, sparkUdf)
-    registry.put(name, UdfEntry(className, returnType, nullable))
-  }
-
-  /**
-   * Convenience method that registers an arity-1 Scala function with Spark and with Comet in one
-   * call.
-   */
+  /** Register an arity-1 Spark UDF and the matching CometUDF in one call. */
   def register[A1: TypeTag, RT: TypeTag](
       spark: SparkSession,
-      name: String,
-      className: String,
-      func: A1 => RT,
-      returnType: DataType,
-      nullable: Boolean): Unit = {
-    spark.udf.register(name, func)
-    registry.put(name, UdfEntry(className, returnType, nullable))
+      udfClass: Class[_ <: CometUDF],
+      func: A1 => RT): Unit = {
+    val udf = newInstance(udfClass)
+    spark.udf.register(udf.name, func)
+    registry.put(udf.name, UdfEntry(udfClass.getName, udf.returnType, udf.nullable))
   }
 
-  /**
-   * Convenience method that registers an arity-2 Scala function with Spark and with Comet in one
-   * call.
-   */
+  /** Register an arity-2 Spark UDF and the matching CometUDF in one call. */
   def register[A1: TypeTag, A2: TypeTag, RT: TypeTag](
       spark: SparkSession,
-      name: String,
-      className: String,
-      func: (A1, A2) => RT,
-      returnType: DataType,
-      nullable: Boolean): Unit = {
-    spark.udf.register(name, func)
-    registry.put(name, UdfEntry(className, returnType, nullable))
+      udfClass: Class[_ <: CometUDF],
+      func: (A1, A2) => RT): Unit = {
+    val udf = newInstance(udfClass)
+    spark.udf.register(udf.name, func)
+    registry.put(udf.name, UdfEntry(udfClass.getName, udf.returnType, udf.nullable))
   }
 
-  /**
-   * Convenience method that registers an arity-3 Scala function with Spark and with Comet in one
-   * call.
-   */
+  /** Register an arity-3 Spark UDF and the matching CometUDF in one call. */
   def register[A1: TypeTag, A2: TypeTag, A3: TypeTag, RT: TypeTag](
       spark: SparkSession,
-      name: String,
-      className: String,
-      func: (A1, A2, A3) => RT,
-      returnType: DataType,
-      nullable: Boolean): Unit = {
-    spark.udf.register(name, func)
-    registry.put(name, UdfEntry(className, returnType, nullable))
+      udfClass: Class[_ <: CometUDF],
+      func: (A1, A2, A3) => RT): Unit = {
+    val udf = newInstance(udfClass)
+    spark.udf.register(udf.name, func)
+    registry.put(udf.name, UdfEntry(udfClass.getName, udf.returnType, udf.nullable))
   }
 
   /**
-   * Look up a registered CometUDF by its Spark UDF name.
+   * Register a CometUDF without a row-based Spark equivalent. A stub Spark UDF is synthesized so
+   * Spark can bind the function name during analysis; calling the stub row-at-a-time (i.e. when
+   * Comet is disabled or falls back) raises [[UnsupportedOperationException]].
    *
-   * @return
-   *   Some(UdfEntry) if registered, None otherwise
+   * The CometUDF must declare [[CometUDF.inputTypes]] so that the synthesized stub has the
+   * correct arity. Arities 1 through 5 are supported; declare more inputs only if you have a
+   * concrete need (and extend the match below).
    */
+  def registerColumnarOnly(spark: SparkSession, udfClass: Class[_ <: CometUDF]): Unit = {
+    val udf = newInstance(udfClass)
+    require(
+      udf.inputTypes.nonEmpty,
+      s"CometUDF '${udf.name}' must override inputTypes for columnar-only registration")
+    registerStub(spark, udf)
+    registry.put(udf.name, UdfEntry(udfClass.getName, udf.returnType, udf.nullable))
+  }
+
+  /** Look up a registered CometUDF by its Spark UDF name. */
   def get(name: String): Option[UdfEntry] = Option(registry.get(name))
 
-  /**
-   * Remove a previously registered UDF.
-   */
-  def remove(name: String): Unit = {
-    registry.remove(name)
-  }
+  /** Remove a previously registered UDF. */
+  def remove(name: String): Unit = registry.remove(name)
 
-  /**
-   * Check whether a UDF name is registered.
-   */
+  /** Check whether a UDF name is registered. */
   def isRegistered(name: String): Boolean = registry.containsKey(name)
 
   // Visible for testing
@@ -171,4 +121,54 @@ object CometUdfRegistry {
 
   // Visible for testing
   def clear(): Unit = registry.clear()
+
+  private def newInstance(cls: Class[_ <: CometUDF]): CometUDF =
+    cls.getDeclaredConstructor().newInstance()
+
+  private def registerStub(spark: SparkSession, udf: CometUDF): Unit = {
+    val name = udf.name
+    val rt = udf.returnType
+    def fail(): Nothing = throw new UnsupportedOperationException(
+      s"CometUDF '$name' is columnar-only and cannot be evaluated row-at-a-time. " +
+        "Ensure Comet is enabled and supports this query.")
+    udf.inputTypes.length match {
+      case 1 =>
+        spark.udf.register(
+          name,
+          new UDF1[AnyRef, AnyRef] { override def call(a: AnyRef): AnyRef = fail() },
+          rt)
+      case 2 =>
+        spark.udf.register(
+          name,
+          new UDF2[AnyRef, AnyRef, AnyRef] {
+            override def call(a: AnyRef, b: AnyRef): AnyRef = fail()
+          },
+          rt)
+      case 3 =>
+        spark.udf.register(
+          name,
+          new UDF3[AnyRef, AnyRef, AnyRef, AnyRef] {
+            override def call(a: AnyRef, b: AnyRef, c: AnyRef): AnyRef = fail()
+          },
+          rt)
+      case 4 =>
+        spark.udf.register(
+          name,
+          new UDF4[AnyRef, AnyRef, AnyRef, AnyRef, AnyRef] {
+            override def call(a: AnyRef, b: AnyRef, c: AnyRef, d: AnyRef): AnyRef = fail()
+          },
+          rt)
+      case 5 =>
+        spark.udf.register(
+          name,
+          new UDF5[AnyRef, AnyRef, AnyRef, AnyRef, AnyRef, AnyRef] {
+            override def call(a: AnyRef, b: AnyRef, c: AnyRef, d: AnyRef, e: AnyRef): AnyRef =
+              fail()
+          },
+          rt)
+      case n =>
+        throw new UnsupportedOperationException(
+          s"Columnar-only registration is not yet supported for arity $n")
+    }
+  }
 }

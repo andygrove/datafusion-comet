@@ -24,6 +24,7 @@ import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanHelper
 import org.apache.spark.sql.types.LongType
 
 import org.apache.comet.udf.CometUdfRegistry
+import org.apache.comet.udf.testing.DoubleIntUdf
 
 class CometUserUdfSuite extends CometTestBase with AdaptiveSparkPlanHelper {
 
@@ -33,13 +34,7 @@ class CometUserUdfSuite extends CometTestBase with AdaptiveSparkPlanHelper {
   }
 
   private def registerDoubleInt(): Unit = {
-    CometUdfRegistry.register(
-      spark,
-      "double_int",
-      "org.apache.comet.udf.testing.DoubleIntUdf",
-      (x: Int) => x.toLong * 2L,
-      LongType,
-      nullable = true)
+    CometUdfRegistry.register(spark, classOf[DoubleIntUdf], (x: Int) => x.toLong * 2L)
   }
 
   test("user CometUDF - basic integer doubling") {
@@ -81,16 +76,44 @@ class CometUserUdfSuite extends CometTestBase with AdaptiveSparkPlanHelper {
     }
   }
 
-  test("CometUdfRegistry - register and lookup") {
-    assert(!CometUdfRegistry.isRegistered("test_func"))
-    CometUdfRegistry.register("test_func", "com.example.TestUdf", LongType, nullable = false)
-    assert(CometUdfRegistry.isRegistered("test_func"))
-    val entry = CometUdfRegistry.get("test_func")
+  test("user CometUDF - columnar-only registration runs natively") {
+    CometUdfRegistry.registerColumnarOnly(spark, classOf[DoubleIntUdf])
+    withTable("t") {
+      sql("CREATE TABLE t (x INT) USING parquet")
+      sql("INSERT INTO t VALUES (1), (2), (3), (NULL), (100)")
+      // No Spark-side comparison: the synthesized stub intentionally throws when invoked
+      // row-at-a-time. With Comet enabled, the query routes to the vectorized implementation.
+      val rows = sql("SELECT double_int(x) FROM t ORDER BY x").collect().toSeq.map(_.get(0))
+      assert(rows == Seq(null, 2L, 4L, 6L, 200L))
+    }
+  }
+
+  test("user CometUDF - columnar-only stub raises when Comet is disabled") {
+    CometUdfRegistry.registerColumnarOnly(spark, classOf[DoubleIntUdf])
+    withTable("t") {
+      sql("CREATE TABLE t (x INT) USING parquet")
+      sql("INSERT INTO t VALUES (1)")
+      withSQLConf(CometConf.COMET_ENABLED.key -> "false") {
+        val ex = intercept[org.apache.spark.SparkException] {
+          sql("SELECT double_int(x) FROM t").collect()
+        }
+        assert(
+          ex.getMessage.contains("columnar-only") ||
+            Option(ex.getCause).exists(_.getMessage.contains("columnar-only")))
+      }
+    }
+  }
+
+  test("CometUdfRegistry - register from class") {
+    assert(!CometUdfRegistry.isRegistered("double_int"))
+    CometUdfRegistry.register(classOf[DoubleIntUdf])
+    assert(CometUdfRegistry.isRegistered("double_int"))
+    val entry = CometUdfRegistry.get("double_int")
     assert(entry.isDefined)
-    assert(entry.get.className == "com.example.TestUdf")
+    assert(entry.get.className == "org.apache.comet.udf.testing.DoubleIntUdf")
     assert(entry.get.returnType == LongType)
-    assert(!entry.get.nullable)
-    CometUdfRegistry.remove("test_func")
-    assert(!CometUdfRegistry.isRegistered("test_func"))
+    assert(entry.get.nullable)
+    CometUdfRegistry.remove("double_int")
+    assert(!CometUdfRegistry.isRegistered("double_int"))
   }
 }
