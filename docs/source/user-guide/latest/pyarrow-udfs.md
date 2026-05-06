@@ -52,13 +52,13 @@ and memory allocations.
 
 ## Configuration
 
-The optimization is controlled by:
+The optimization is experimental and disabled by default. Enable it with:
 
 ```
-spark.comet.exec.pythonMapInArrow.enabled=true  (default)
+spark.comet.exec.pythonMapInArrow.enabled=true
 ```
 
-It is enabled by default when Comet execution is active.
+The default is `false` while the feature stabilizes.
 
 ## Supported APIs
 
