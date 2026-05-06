@@ -525,7 +525,6 @@ class CometCastSuite extends CometTestBase with AdaptiveSparkPlanHelper {
   }
 
   test("cast FloatType to TimestampType") {
-    assume(!isSpark41Plus, "https://github.com/apache/datafusion-comet/issues/4098")
     representativeTimezones.foreach { tz =>
       withSQLConf(SQLConf.SESSION_LOCAL_TIMEZONE.key -> tz) {
         // Use useDFDiff to avoid collect() which fails on extreme timestamp values
@@ -591,7 +590,6 @@ class CometCastSuite extends CometTestBase with AdaptiveSparkPlanHelper {
   }
 
   test("cast DoubleType to TimestampType") {
-    assume(!isSpark41Plus, "https://github.com/apache/datafusion-comet/issues/4098")
     representativeTimezones.foreach { tz =>
       withSQLConf(SQLConf.SESSION_LOCAL_TIMEZONE.key -> tz) {
         // Use useDFDiff to avoid collect() which fails on extreme timestamp values
@@ -1568,7 +1566,6 @@ class CometCastSuite extends CometTestBase with AdaptiveSparkPlanHelper {
   }
 
   test("cast ArrayType to ArrayType") {
-    assume(!isSpark41Plus, "https://github.com/apache/datafusion-comet/issues/4098")
     val types = Seq(
       BooleanType,
       StringType,
