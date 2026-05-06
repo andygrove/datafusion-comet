@@ -1544,22 +1544,39 @@ class CometExpressionSuite extends CometTestBase with AdaptiveSparkPlanHelper {
 
   test("unhex") {
     val table = "unhex_table"
-    withTable(table) {
-      sql(s"create table $table(col string) using parquet")
+    Seq(false, true).foreach { dictionaryEnabled =>
+      withSQLConf("parquet.enable.dictionary" -> dictionaryEnabled.toString) {
+        withTable(table) {
+          sql(s"create table $table(col string) using parquet")
 
-      sql(s"""INSERT INTO $table VALUES
-        |('537061726B2053514C'),
-        |('737472696E67'),
-        |('\\0'),
-        |(''),
-        |('###'),
-        |('G123'),
-        |('hello'),
-        |('A1B'),
-        |('0A1B')""".stripMargin)
+          sql(s"""INSERT INTO $table VALUES
+            |('537061726B2053514C'),
+            |('537061726B2053514C'),
+            |('737472696E67'),
+            |('737472696E67'),
+            |('\\0'),
+            |(''),
+            |('###'),
+            |('G123'),
+            |('hello'),
+            |('A1B'),
+            |('0A1B')""".stripMargin)
 
-      checkSparkAnswerAndOperator(s"SELECT unhex(col) FROM $table")
+          checkSparkAnswerAndOperator(s"SELECT unhex(col) FROM $table")
+        }
+      }
     }
+
+    Seq(false, true).foreach { dictionaryEnabled =>
+      withTempDir { dir =>
+        val path = new Path(dir.toURI.toString, "test.parquet")
+        makeParquetFileAllPrimitiveTypes(path, dictionaryEnabled = dictionaryEnabled, 1000)
+        withParquetTable(path.toString, table) {
+          checkSparkAnswerAndOperator(s"SELECT unhex(_8) FROM $table")
+        }
+      }
+    }
+
   }
 
   test("EqualNullSafe should preserve comet filter") {
