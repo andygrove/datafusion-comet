@@ -26,10 +26,11 @@ by checking:
 3. Performance improvement by eliminating unnecessary Arrow->Row->Arrow conversions
 
 Usage:
+    # Requires Python 3.11 or 3.12 (PySpark 3.5 does not support 3.13+)
     # Build Comet first: make release
     # Then run with PySpark:
     spark-submit --jars spark/target/comet-spark-spark3.5_2.12-*.jar \
-        --conf spark.plugins=org.apache.comet.CometSparkSessionExtensions \
+        --conf spark.plugins=org.apache.spark.CometPlugin \
         --conf spark.comet.enabled=true \
         --conf spark.comet.exec.enabled=true \
         --conf spark.comet.exec.pythonMapInArrow.enabled=true \
