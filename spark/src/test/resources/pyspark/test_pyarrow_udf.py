@@ -475,3 +475,41 @@ def test_map_in_arrow_after_shuffle(spark, tmp_path, accelerated):
 
     out = sorted((r["id"], r["value"]) for r in result_df.collect())
     assert out == sorted(rows)
+
+
+def test_map_in_arrow_barrier_mode(spark, tmp_path, accelerated):
+    """
+    `mapInArrow(..., barrier=True)` runs the stage in barrier execution mode
+    (gang scheduling, all-or-nothing failure semantics, BarrierTaskContext
+    available inside the UDF). The optimization captures isBarrier in the
+    operator constructor and must propagate it through to RDD.barrier();
+    otherwise the runtime context the UDF sees changes when the optimization
+    fires and any code calling BarrierTaskContext APIs breaks.
+    """
+    schema_in = T.StructType(
+        [
+            T.StructField("id", T.LongType()),
+            T.StructField("value", T.DoubleType()),
+        ]
+    )
+    rows = [(i, float(i)) for i in range(20)]
+    src = str(tmp_path / "src.parquet")
+    spark.createDataFrame(rows, schema_in).write.parquet(src)
+
+    def assert_barrier_context(iterator):
+        from pyspark import BarrierTaskContext
+
+        # Will raise if the task is not running inside a barrier stage.
+        BarrierTaskContext.get()
+        for batch in iterator:
+            yield batch
+
+    result_df = (
+        spark.read.parquet(src).mapInArrow(
+            assert_barrier_context, schema_in, barrier=True
+        )
+    )
+    _assert_plan_matches_mode(_executed_plan(result_df), accelerated)
+
+    out = sorted((r["id"], r["value"]) for r in result_df.collect())
+    assert out == sorted(rows)

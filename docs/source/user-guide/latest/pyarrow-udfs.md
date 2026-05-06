@@ -158,6 +158,3 @@ optimization fired.
 - Spark 3.4 lacks several APIs the optimization depends on (`MapInBatchExec.isBarrier`,
   `arrowUseLargeVarTypes`, `JobArtifactSet`, the modern `ArrowPythonRunner` constructor). On
   Spark 3.4 the feature is a no-op even when enabled. Spark 3.5+ is required.
-- The `isBarrier` flag on `mapInArrow` / `mapInPandas` is currently captured but not propagated
-  through to the Python runner. If your job depends on barrier-execution semantics, leave the
-  optimization disabled until this is fixed.

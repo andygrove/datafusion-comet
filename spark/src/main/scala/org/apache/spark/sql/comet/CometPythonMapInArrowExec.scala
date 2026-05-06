@@ -93,12 +93,13 @@ case class CometPythonMapInArrowExec(
 
     val inputRDD = child.executeColumnar()
 
-    inputRDD.mapPartitionsInternal { batches =>
+    // Run on every partition. Identical to what MapInBatchExec does, except the input
+    // is columnar; we intentionally avoid the UnsafeProjection copy that ColumnarToRow
+    // would do.
+    def processPartition(batches: Iterator[ColumnarBatch]): Iterator[ColumnarBatch] = {
       val context = TaskContext.get()
       val argOffsets = Array(Array(0))
 
-      // Convert columnar batches to rows using lightweight rowIterator
-      // (avoids UnsafeProjection copy that ColumnarToRow would do)
       val rowIter = batches.flatMap { batch =>
         numInputRows += batch.numRows()
         batch.rowIterator().asScala
@@ -136,6 +137,14 @@ case class CometPythonMapInArrowExec(
         numOutputBatches += 1
         flattenedBatch
       }
+    }
+
+    // Preserve isBarrier semantics: when set, run inside a barrier stage so all tasks
+    // are gang-scheduled and BarrierTaskContext.barrier() works inside the UDF.
+    if (isBarrier) {
+      inputRDD.barrier().mapPartitions(processPartition)
+    } else {
+      inputRDD.mapPartitionsInternal(processPartition)
     }
   }
 
