@@ -102,7 +102,7 @@ result = df.mapInArrow(transform, output_schema)
 
 ## Verifying the Optimization
 
-Use `explain()` to verify that `CometPythonMapInArrowExec` appears in your plan:
+Use `explain()` to verify that `CometPythonMapInArrow` appears in your plan:
 
 ```python
 result.explain(mode="extended")
@@ -111,7 +111,7 @@ result.explain(mode="extended")
 You should see:
 
 ```
-CometPythonMapInArrowExec ...
+CometPythonMapInArrow ...
 +- CometNativeExec ...
    +- CometScan ...
 ```
@@ -125,10 +125,39 @@ PythonMapInArrow ...
       +- CometScan ...
 ```
 
+When AQE is enabled (the Spark default) and the query contains a shuffle, the
+optimization is applied during stage materialization. Calling `explain()` before
+running an action will show the unoptimized plan:
+
+```
+AdaptiveSparkPlan isFinalPlan=false
++- PythonMapInArrow ...
+   +- CometExchange ...
+```
+
+To see the optimized plan, run an action first (for example `result.collect()` or
+`result.cache(); result.count()`) and then call `explain()`. The post-execution
+plan shows the materialized stages and includes `CometPythonMapInArrow` if the
+optimization fired.
+
 ## Limitations
 
 - The optimization currently applies only to `mapInArrow` and `mapInPandas`. Scalar pandas UDFs
   (`@pandas_udf`) and grouped operations (`applyInPandas`) are not yet supported.
 - The internal row-to-Arrow conversion inside the Python runner is still present in this version.
-  A future optimization will write Arrow batches directly to the Python IPC stream, achieving
-  near zero-copy data transfer.
+  Comet currently routes columnar input through `ColumnarBatch.rowIterator()` so that the existing
+  `ArrowPythonRunner` can re-encode the rows back to Arrow IPC. A future optimization will write
+  Arrow batches directly to the Python IPC stream, eliminating the remaining round-trip and
+  achieving near zero-copy data transfer.
+- The optimization requires Arrow data on the input side. If a shuffle sits between the upstream
+  Comet operator and the Python UDF, you need Comet's native shuffle for the optimization to
+  apply. Set `spark.shuffle.manager` to
+  `org.apache.spark.sql.comet.execution.shuffle.CometShuffleManager` and enable
+  `spark.comet.exec.shuffle.enabled=true` at session startup. With a vanilla Spark `Exchange`
+  in the plan the data leaves the shuffle as rows and the optimization cannot fire.
+- Spark 3.4 lacks several APIs the optimization depends on (`MapInBatchExec.isBarrier`,
+  `arrowUseLargeVarTypes`, `JobArtifactSet`, the modern `ArrowPythonRunner` constructor). On
+  Spark 3.4 the feature is a no-op even when enabled. Spark 3.5+ is required.
+- The `isBarrier` flag on `mapInArrow` / `mapInPandas` is currently captured but not propagated
+  through to the Python runner. If your job depends on barrier-execution semantics, leave the
+  optimization disabled until this is fixed.
