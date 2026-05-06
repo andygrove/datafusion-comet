@@ -103,6 +103,7 @@ pub(crate) fn covariance_retract(
 }
 
 #[inline]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn covariance_merge(
     count_a: f64,
     mean1_a: f64,
