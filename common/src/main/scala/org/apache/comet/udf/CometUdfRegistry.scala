@@ -21,6 +21,8 @@ package org.apache.comet.udf
 
 import java.util.concurrent.ConcurrentHashMap
 
+import scala.reflect.runtime.universe.TypeTag
+
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.types.DataType
 
@@ -96,6 +98,51 @@ object CometUdfRegistry {
       returnType: DataType,
       nullable: Boolean): Unit = {
     spark.udf.register(name, sparkUdf)
+    registry.put(name, UdfEntry(className, returnType, nullable))
+  }
+
+  /**
+   * Convenience method that registers an arity-1 Scala function with Spark and with Comet in one
+   * call.
+   */
+  def register[A1: TypeTag, RT: TypeTag](
+      spark: SparkSession,
+      name: String,
+      className: String,
+      func: A1 => RT,
+      returnType: DataType,
+      nullable: Boolean): Unit = {
+    spark.udf.register(name, func)
+    registry.put(name, UdfEntry(className, returnType, nullable))
+  }
+
+  /**
+   * Convenience method that registers an arity-2 Scala function with Spark and with Comet in one
+   * call.
+   */
+  def register[A1: TypeTag, A2: TypeTag, RT: TypeTag](
+      spark: SparkSession,
+      name: String,
+      className: String,
+      func: (A1, A2) => RT,
+      returnType: DataType,
+      nullable: Boolean): Unit = {
+    spark.udf.register(name, func)
+    registry.put(name, UdfEntry(className, returnType, nullable))
+  }
+
+  /**
+   * Convenience method that registers an arity-3 Scala function with Spark and with Comet in one
+   * call.
+   */
+  def register[A1: TypeTag, A2: TypeTag, A3: TypeTag, RT: TypeTag](
+      spark: SparkSession,
+      name: String,
+      className: String,
+      func: (A1, A2, A3) => RT,
+      returnType: DataType,
+      nullable: Boolean): Unit = {
+    spark.udf.register(name, func)
     registry.put(name, UdfEntry(className, returnType, nullable))
   }
 

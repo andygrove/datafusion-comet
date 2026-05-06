@@ -32,14 +32,18 @@ class CometUserUdfSuite extends CometTestBase with AdaptiveSparkPlanHelper {
     super.afterEach()
   }
 
-  test("user CometUDF - basic integer doubling") {
+  private def registerDoubleInt(): Unit = {
     CometUdfRegistry.register(
+      spark,
       "double_int",
       "org.apache.comet.udf.testing.DoubleIntUdf",
+      (x: Int) => x.toLong * 2L,
       LongType,
       nullable = true)
-    spark.udf.register("double_int", (x: Int) => x.toLong * 2L)
+  }
 
+  test("user CometUDF - basic integer doubling") {
+    registerDoubleInt()
     withTable("t") {
       sql("CREATE TABLE t (x INT) USING parquet")
       sql("INSERT INTO t VALUES (1), (2), (3), (NULL), (100)")
@@ -53,19 +57,14 @@ class CometUserUdfSuite extends CometTestBase with AdaptiveSparkPlanHelper {
     withTable("t") {
       sql("CREATE TABLE t (x INT) USING parquet")
       sql("INSERT INTO t VALUES (1), (2), (3)")
-      // Should still produce correct results via Spark fallback
-      checkSparkAnswer(sql("SELECT triple_int(x) FROM t"))
+      checkSparkAnswerAndFallbackReason(
+        sql("SELECT triple_int(x) FROM t"),
+        "ScalaUDF 'triple_int' is not registered in CometUdfRegistry")
     }
   }
 
   test("user CometUDF - multiple arguments") {
-    CometUdfRegistry.register(
-      "double_int",
-      "org.apache.comet.udf.testing.DoubleIntUdf",
-      LongType,
-      nullable = true)
-    spark.udf.register("double_int", (x: Int) => x.toLong * 2L)
-
+    registerDoubleInt()
     withTable("t") {
       sql("CREATE TABLE t (x INT, y INT) USING parquet")
       sql("INSERT INTO t VALUES (10, 20), (NULL, 5), (3, NULL)")
@@ -74,13 +73,7 @@ class CometUserUdfSuite extends CometTestBase with AdaptiveSparkPlanHelper {
   }
 
   test("user CometUDF - with filter") {
-    CometUdfRegistry.register(
-      "double_int",
-      "org.apache.comet.udf.testing.DoubleIntUdf",
-      LongType,
-      nullable = true)
-    spark.udf.register("double_int", (x: Int) => x.toLong * 2L)
-
+    registerDoubleInt()
     withTable("t") {
       sql("CREATE TABLE t (x INT) USING parquet")
       sql("INSERT INTO t VALUES (1), (2), (3), (4), (5)")
