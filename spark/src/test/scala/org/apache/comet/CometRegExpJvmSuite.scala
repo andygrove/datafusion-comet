@@ -49,6 +49,8 @@ class CometRegExpJvmSuite extends CometTestBase with AdaptiveSparkPlanHelper {
     }
   }
 
+  // ========== rlike tests ==========
+
   test("rlike: projection produces Java regex semantics with null handling") {
     withSubjects("abc123", "no digits", null, "mixed_42_data") {
       val df = sql("SELECT s, s rlike '\\\\d+' AS m FROM t")
@@ -130,16 +132,12 @@ class CometRegExpJvmSuite extends CometTestBase with AdaptiveSparkPlanHelper {
 
   test("rlike: null literal pattern falls back to Spark") {
     withSubjects("a", "b", null) {
-      // Convert path rejects Literal(null) pattern; query must still produce
-      // Spark-compatible all-null output via the Spark fallback.
       checkSparkAnswer(sql("SELECT s rlike CAST(NULL AS STRING) FROM t"))
     }
   }
 
   test("rlike: invalid pattern falls back to Spark") {
     withSubjects("a") {
-      // Convert path catches PatternSyntaxException at planning time; Spark's
-      // own RLike runs and throws its native error.
       val ex = intercept[Throwable](sql("SELECT s rlike '[' FROM t").collect())
       assert(
         ex.getMessage.toLowerCase.contains("regex") ||
@@ -172,6 +170,222 @@ class CometRegExpJvmSuite extends CometTestBase with AdaptiveSparkPlanHelper {
       sql(s"INSERT INTO t VALUES $values")
       checkSparkAnswerAndOperator(sql(s"SELECT s, s rlike '$backreference' FROM t"))
       checkSparkAnswerAndOperator(sql(s"SELECT s FROM t WHERE s rlike '$backreference'"))
+    }
+  }
+
+  // ========== regexp_extract tests ==========
+
+  test("regexp_extract: basic group extraction") {
+    withSubjects("abc123def", "no match", null, "xyz789") {
+      checkSparkAnswerAndOperator(
+        sql("SELECT s, regexp_extract(s, '([a-z]+)(\\\\d+)', 1) FROM t"))
+      checkSparkAnswerAndOperator(
+        sql("SELECT s, regexp_extract(s, '([a-z]+)(\\\\d+)', 2) FROM t"))
+    }
+  }
+
+  test("regexp_extract: group 0 returns entire match") {
+    withSubjects("hello world", "foo123bar", null) {
+      checkSparkAnswerAndOperator(sql("SELECT s, regexp_extract(s, '\\\\d+', 0) FROM t"))
+    }
+  }
+
+  test("regexp_extract: no match returns empty string") {
+    withSubjects("abc", "def", null) {
+      checkSparkAnswerAndOperator(sql("SELECT s, regexp_extract(s, '\\\\d+', 0) FROM t"))
+    }
+  }
+
+  test("regexp_extract: backreference pattern (Java-only)") {
+    withSubjects("aa", "ab", "bb", null) {
+      checkSparkAnswerAndOperator(sql("SELECT s, regexp_extract(s, '(\\\\w)\\\\1', 0) FROM t"))
+    }
+  }
+
+  test("regexp_extract: lookahead pattern (Java-only)") {
+    withSubjects("foobar", "foobaz", null) {
+      checkSparkAnswerAndOperator(sql("SELECT s, regexp_extract(s, 'foo(?=bar)', 0) FROM t"))
+    }
+  }
+
+  test("regexp_extract: embedded flags (Java-only)") {
+    withSubjects("FOO123", "foo456", "bar789") {
+      checkSparkAnswerAndOperator(
+        sql("SELECT s, regexp_extract(s, '(?i)(foo)(\\\\d+)', 2) FROM t"))
+    }
+  }
+
+  test("regexp_extract: all-null column") {
+    withSubjects(null, null, null) {
+      checkSparkAnswerAndOperator(sql("SELECT regexp_extract(s, '(\\\\d+)', 1) FROM t"))
+    }
+  }
+
+  // ========== regexp_extract_all tests ==========
+
+  test("regexp_extract_all: basic extraction of all matches") {
+    withSubjects("abc123def456", "no match", null, "x1y2z3") {
+      checkSparkAnswerAndOperator(sql("SELECT s, regexp_extract_all(s, '(\\\\d+)', 1) FROM t"))
+    }
+  }
+
+  test("regexp_extract_all: group 0 returns full matches") {
+    withSubjects("cat bat hat", "no vowels", null) {
+      checkSparkAnswerAndOperator(sql("SELECT s, regexp_extract_all(s, '[a-z]at', 0) FROM t"))
+    }
+  }
+
+  test("regexp_extract_all: multiple groups") {
+    withSubjects("a1b2c3", "x9y8", null) {
+      checkSparkAnswerAndOperator(
+        sql("SELECT s, regexp_extract_all(s, '([a-z])(\\\\d)', 1) FROM t"))
+      checkSparkAnswerAndOperator(
+        sql("SELECT s, regexp_extract_all(s, '([a-z])(\\\\d)', 2) FROM t"))
+    }
+  }
+
+  test("regexp_extract_all: no matches returns empty array") {
+    withSubjects("abc", "def") {
+      checkSparkAnswerAndOperator(sql("SELECT s, regexp_extract_all(s, '\\\\d+', 0) FROM t"))
+    }
+  }
+
+  test("regexp_extract_all: lookahead pattern (Java-only)") {
+    withSubjects("foobar foobaz fooqux") {
+      checkSparkAnswerAndOperator(
+        sql("SELECT s, regexp_extract_all(s, 'foo(?=ba[rz])', 0) FROM t"))
+    }
+  }
+
+  // ========== regexp_replace tests ==========
+
+  test("regexp_replace: basic replacement") {
+    withSubjects("abc123def456", "no digits", null) {
+      checkSparkAnswerAndOperator(sql("SELECT s, regexp_replace(s, '\\\\d+', 'NUM') FROM t"))
+    }
+  }
+
+  test("regexp_replace: backreference in pattern (Java-only)") {
+    withSubjects("aabbcc", "abcabc", null) {
+      checkSparkAnswerAndOperator(sql("SELECT s, regexp_replace(s, '(\\\\w)\\\\1', 'X') FROM t"))
+    }
+  }
+
+  test("regexp_replace: backreference in replacement") {
+    withSubjects("hello world", "foo bar", null) {
+      checkSparkAnswerAndOperator(
+        sql("SELECT s, regexp_replace(s, '(\\\\w+) (\\\\w+)', '$2 $1') FROM t"))
+    }
+  }
+
+  test("regexp_replace: lookahead pattern (Java-only)") {
+    withSubjects("foobar", "foobaz", null) {
+      checkSparkAnswerAndOperator(sql("SELECT s, regexp_replace(s, 'foo(?=bar)', 'XXX') FROM t"))
+    }
+  }
+
+  test("regexp_replace: empty pattern replaces between characters") {
+    withSubjects("abc", "", null) {
+      checkSparkAnswerAndOperator(sql("SELECT s, regexp_replace(s, '', '-') FROM t"))
+    }
+  }
+
+  test("regexp_replace: all-null column") {
+    withSubjects(null, null, null) {
+      checkSparkAnswerAndOperator(sql("SELECT regexp_replace(s, '\\\\d', 'X') FROM t"))
+    }
+  }
+
+  // ========== regexp_instr tests ==========
+
+  test("regexp_instr: basic position finding") {
+    withSubjects("abc123def", "no match", null, "456xyz") {
+      checkSparkAnswerAndOperator(sql("SELECT s, regexp_instr(s, '\\\\d+', 0) FROM t"))
+    }
+  }
+
+  test("regexp_instr: specific group position") {
+    withSubjects("abc123def456", "xyz", null) {
+      checkSparkAnswerAndOperator(sql("SELECT s, regexp_instr(s, '([a-z]+)(\\\\d+)', 1) FROM t"))
+      checkSparkAnswerAndOperator(sql("SELECT s, regexp_instr(s, '([a-z]+)(\\\\d+)', 2) FROM t"))
+    }
+  }
+
+  test("regexp_instr: no match returns 0") {
+    withSubjects("abc", "def", null) {
+      checkSparkAnswerAndOperator(sql("SELECT s, regexp_instr(s, '\\\\d+', 0) FROM t"))
+    }
+  }
+
+  test("regexp_instr: lookahead (Java-only)") {
+    withSubjects("foobar", "foobaz", null) {
+      checkSparkAnswerAndOperator(sql("SELECT s, regexp_instr(s, 'foo(?=bar)', 0) FROM t"))
+    }
+  }
+
+  // ========== split tests ==========
+
+  test("split: basic regex split") {
+    withSubjects("a,b,c", "x,,y", null, "single") {
+      checkSparkAnswerAndOperator(sql("SELECT s, split(s, ',') FROM t"))
+    }
+  }
+
+  test("split: regex pattern") {
+    withSubjects("abc123def456ghi", "no-digits", null) {
+      checkSparkAnswerAndOperator(sql("SELECT s, split(s, '\\\\d+') FROM t"))
+    }
+  }
+
+  test("split: with limit") {
+    withSubjects("a,b,c,d,e") {
+      checkSparkAnswerAndOperator(sql("SELECT s, split(s, ',', 3) FROM t"))
+    }
+  }
+
+  test("split: limit -1 returns all") {
+    withSubjects("a,,b,,c") {
+      checkSparkAnswerAndOperator(sql("SELECT s, split(s, ',', -1) FROM t"))
+    }
+  }
+
+  test("split: lookahead pattern (Java-only)") {
+    withSubjects("camelCaseString", "anotherOne", null) {
+      checkSparkAnswerAndOperator(sql("SELECT s, split(s, '(?=[A-Z])') FROM t"))
+    }
+  }
+
+  test("split: all-null column") {
+    withSubjects(null, null, null) {
+      checkSparkAnswerAndOperator(sql("SELECT split(s, ',') FROM t"))
+    }
+  }
+
+  // ========== multi-batch and combined tests ==========
+
+  test("regexp_extract: many rows spanning multiple batches") {
+    withTable("t") {
+      sql("CREATE TABLE t (s STRING) USING parquet")
+      val values = (0 until 5000)
+        .map(i => if (i % 7 == 0) "(NULL)" else s"('item_${i}_value')")
+        .mkString(", ")
+      sql(s"INSERT INTO t VALUES $values")
+      checkSparkAnswerAndOperator(
+        sql("SELECT s, regexp_extract(s, 'item_(\\\\d+)_value', 1) FROM t"))
+    }
+  }
+
+  test("all regexp expressions combined in one query") {
+    withSubjects("abc123def456", "hello world", null, "aa") {
+      checkSparkAnswerAndOperator(sql("""
+          |SELECT
+          |  s,
+          |  s rlike '\\d+' AS has_digits,
+          |  regexp_extract(s, '(\\d+)', 1) AS first_num,
+          |  regexp_replace(s, '\\d+', 'N') AS replaced,
+          |  regexp_instr(s, '\\d+', 0) AS num_pos
+          |FROM t
+          |""".stripMargin))
     }
   }
 }

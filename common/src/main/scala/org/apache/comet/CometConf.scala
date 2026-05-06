@@ -393,12 +393,13 @@ object CometConf extends ShimCometConf {
         "Experimental. Selects the engine used to evaluate supported regular-expression " +
           s"expressions. `$REGEXP_ENGINE_RUST` uses the native DataFusion regexp engine. " +
           s"`$REGEXP_ENGINE_JAVA` routes through a JVM-side UDF (java.util.regex.Pattern) for " +
-          "Spark-compatible semantics, at the cost of JNI roundtrips per batch. Only RLike " +
-          "is routed today; additional expressions may opt in over time.")
+          "Spark-compatible semantics, at the cost of JNI roundtrips per batch. Expressions " +
+          "routed when set to java: rlike, regexp_extract, regexp_extract_all, regexp_replace, " +
+          "regexp_instr, and split.")
       .stringConf
       .transform(_.toLowerCase(Locale.ROOT))
       .checkValues(Set(REGEXP_ENGINE_RUST, REGEXP_ENGINE_JAVA))
-      .createWithDefault(REGEXP_ENGINE_RUST)
+      .createWithDefault(REGEXP_ENGINE_JAVA)
 
   val COMET_EXEC_SHUFFLE_WITH_HASH_PARTITIONING_ENABLED: ConfigEntry[Boolean] =
     conf("spark.comet.native.shuffle.partitioning.hash.enabled")
