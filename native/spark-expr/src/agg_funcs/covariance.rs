@@ -540,7 +540,8 @@ mod groups_tests {
         let mut acc = pop();
         let v1: ArrayRef = Arc::new(Float64Array::from(vec![1.0, 2.0, 3.0, 4.0, 5.0]));
         let v2: ArrayRef = Arc::new(Float64Array::from(vec![2.0, 4.0, 6.0, 8.0, 10.0]));
-        acc.update_batch(&[v1, v2], &[0, 0, 0, 0, 0], None, 1).unwrap();
+        acc.update_batch(&[v1, v2], &[0, 0, 0, 0, 0], None, 1)
+            .unwrap();
         // pop covariance of x and 2x for x in [1..5] = 4.0
         assert!((evaluate(&mut acc)[0].unwrap() - 4.0).abs() < 1e-12);
     }
@@ -590,16 +591,17 @@ mod groups_tests {
         let lstate = left.state(EmitTo::All).unwrap();
 
         let mut right = pop();
-        right.update_batch(
-            &[
-                Arc::new(Float64Array::from(vec![4.0, 5.0, 6.0])) as ArrayRef,
-                Arc::new(Float64Array::from(vec![8.0, 10.0, 12.0])) as ArrayRef,
-            ],
-            &[0, 0, 0],
-            None,
-            1,
-        )
-        .unwrap();
+        right
+            .update_batch(
+                &[
+                    Arc::new(Float64Array::from(vec![4.0, 5.0, 6.0])) as ArrayRef,
+                    Arc::new(Float64Array::from(vec![8.0, 10.0, 12.0])) as ArrayRef,
+                ],
+                &[0, 0, 0],
+                None,
+                1,
+            )
+            .unwrap();
         let rstate = right.state(EmitTo::All).unwrap();
 
         let mut merged = pop();

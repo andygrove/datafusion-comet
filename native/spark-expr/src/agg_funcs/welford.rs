@@ -21,12 +21,7 @@
 //! Spark's wire-format state.
 
 #[inline]
-pub(crate) fn variance_update(
-    count: f64,
-    mean: f64,
-    m2: f64,
-    value: f64,
-) -> (f64, f64, f64) {
+pub(crate) fn variance_update(count: f64, mean: f64, m2: f64, value: f64) -> (f64, f64, f64) {
     let new_count = count + 1.0;
     let delta1 = value - mean;
     let new_mean = delta1 / new_count + mean;
@@ -36,12 +31,7 @@ pub(crate) fn variance_update(
 }
 
 #[inline]
-pub(crate) fn variance_retract(
-    count: f64,
-    mean: f64,
-    m2: f64,
-    value: f64,
-) -> (f64, f64, f64) {
+pub(crate) fn variance_retract(count: f64, mean: f64, m2: f64, value: f64) -> (f64, f64, f64) {
     let new_count = count - 1.0;
     let delta1 = mean - value;
     let new_mean = delta1 / new_count + mean;

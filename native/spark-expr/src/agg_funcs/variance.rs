@@ -190,8 +190,7 @@ impl Accumulator for VarianceAccumulator {
         let arr = downcast_value!(&values[0], Float64Array).iter().flatten();
 
         for value in arr {
-            let (c, m, m2) =
-                super::welford::variance_update(self.count, self.mean, self.m2, value);
+            let (c, m, m2) = super::welford::variance_update(self.count, self.mean, self.m2, value);
             self.count = c;
             self.mean = m;
             self.m2 = m2;
@@ -459,7 +458,8 @@ mod groups_tests {
     fn pop_variance_single_group() {
         let mut acc = pop_acc();
         let values: ArrayRef = Arc::new(Float64Array::from(vec![1.0, 2.0, 3.0, 4.0, 5.0]));
-        acc.update_batch(&[values], &[0, 0, 0, 0, 0], None, 1).unwrap();
+        acc.update_batch(&[values], &[0, 0, 0, 0, 0], None, 1)
+            .unwrap();
         // population variance of [1..5] = 2.0
         assert_eq!(evaluate(&mut acc), vec![Some(2.0)]);
     }
@@ -467,9 +467,9 @@ mod groups_tests {
     #[test]
     fn pop_variance_multi_group() {
         let mut acc = pop_acc();
-        let values: ArrayRef =
-            Arc::new(Float64Array::from(vec![1.0, 2.0, 10.0, 20.0, 3.0]));
-        acc.update_batch(&[values], &[0, 0, 1, 1, 0], None, 2).unwrap();
+        let values: ArrayRef = Arc::new(Float64Array::from(vec![1.0, 2.0, 10.0, 20.0, 3.0]));
+        acc.update_batch(&[values], &[0, 0, 1, 1, 0], None, 2)
+            .unwrap();
         let result = evaluate(&mut acc);
         // group 0: pop var of [1,2,3] = 2/3; group 1: pop var of [10,20] = 25
         assert!((result[0].unwrap() - 2.0_f64 / 3.0).abs() < 1e-12);
@@ -486,7 +486,8 @@ mod groups_tests {
             Some(3.0),
             None,
         ]));
-        acc.update_batch(&[values], &[0, 0, 0, 0, 0], None, 1).unwrap();
+        acc.update_batch(&[values], &[0, 0, 0, 0, 0], None, 1)
+            .unwrap();
         // pop var of [1,2,3] = 2/3
         assert!((evaluate(&mut acc)[0].unwrap() - 2.0_f64 / 3.0).abs() < 1e-12);
     }
@@ -551,12 +552,8 @@ mod groups_tests {
         let right_state = right.state(EmitTo::All).unwrap();
 
         let mut merged = pop_acc();
-        merged
-            .merge_batch(&left_state, &[0], None, 1)
-            .unwrap();
-        merged
-            .merge_batch(&right_state, &[0], None, 1)
-            .unwrap();
+        merged.merge_batch(&left_state, &[0], None, 1).unwrap();
+        merged.merge_batch(&right_state, &[0], None, 1).unwrap();
         let merged_result = evaluate(&mut merged)[0].unwrap();
 
         assert!((single_result - merged_result).abs() < 1e-12);

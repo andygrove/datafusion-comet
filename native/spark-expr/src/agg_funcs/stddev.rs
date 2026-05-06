@@ -274,7 +274,8 @@ mod groups_tests {
     fn pop_stddev_single_group() {
         let mut acc = StddevGroupsAccumulator::new(StatsType::Population, false);
         let values: ArrayRef = Arc::new(Float64Array::from(vec![1.0, 2.0, 3.0, 4.0, 5.0]));
-        acc.update_batch(&[values], &[0, 0, 0, 0, 0], None, 1).unwrap();
+        acc.update_batch(&[values], &[0, 0, 0, 0, 0], None, 1)
+            .unwrap();
         // sqrt(2.0)
         let result: Vec<Option<f64>> = acc
             .evaluate(EmitTo::All)

@@ -461,7 +461,8 @@ mod groups_tests {
         let mut a = acc(true);
         let v1: ArrayRef = Arc::new(Float64Array::from(vec![1.0, 2.0, 3.0, 4.0, 5.0]));
         let v2: ArrayRef = Arc::new(Float64Array::from(vec![2.0, 4.0, 6.0, 8.0, 10.0]));
-        a.update_batch(&[v1, v2], &[0, 0, 0, 0, 0], None, 1).unwrap();
+        a.update_batch(&[v1, v2], &[0, 0, 0, 0, 0], None, 1)
+            .unwrap();
         let r = evaluate(&mut a);
         assert!((r[0].unwrap() - 1.0).abs() < 1e-12);
     }
