@@ -293,6 +293,34 @@ pass a non-empty pattern:
 ./mvnw test -Dtest=none -DwildcardSuites="CometCast"
 ```
 
+#### Pitfall: line breaks silently truncate the command
+
+A bare newline ends a shell command. If the command is split across lines without a trailing
+backslash, the shell only runs the first line and treats the rest as separate (failed)
+commands:
+
+```sh
+# WRONG: shell runs only the first line, which omits -Dsuites and runs every suite
+./mvnw test -Dtest=none
+  -Dsuites="org.apache.comet.CometArrayExpressionSuite" -DfailIfNoTests=false
+```
+
+The first line `./mvnw test -Dtest=none` runs every ScalaTest suite in the module (about 1800
+tests). The second line errors out trying to execute `-Dsuites=...` as a program, but by then
+the test run is already in progress. Symptom: you asked for one suite and ScalaTest reports
+"Expected test count is: 1797" starting at an alphabetically earlier suite.
+
+Either keep the command on one line, or use a trailing backslash on every continued line:
+
+```sh
+./mvnw test -Dtest=none \
+  -Dsuites="org.apache.comet.CometArrayExpressionSuite" \
+  -DfailIfNoTests=false
+```
+
+This is a common trap when copy-pasting commands from chat windows or terminals that wrap text
+without inserting the backslash.
+
 ## Development Environment
 
 Comet is a multi-language project with native code written in Rust and JVM code written in Java and Scala.
