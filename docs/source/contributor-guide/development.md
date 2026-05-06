@@ -321,6 +321,29 @@ Either keep the command on one line, or use a trailing backslash on every contin
 This is a common trap when copy-pasting commands from chat windows or terminals that wrap text
 without inserting the backslash.
 
+#### Pitfall: a "successful" run does not mean your suite ran
+
+Maven exits with status `0` whenever the build phases it executed completed without error, even
+when no ScalaTest suite matched your filter or a different suite ran than the one you intended.
+This is especially misleading for automated agents that key off the exit code: an empty or
+mistyped `-Dsuites=` value can produce a green run that tested nothing, or a wrong-but-matching
+suite name can run a much larger set than you wanted.
+
+Always check the output, not just the exit code. ScalaTest prints a summary line near the end:
+
+```text
+Run completed in 12 seconds, 345 milliseconds.
+Total number of tests run: 42
+Suites: completed 1, aborted 0
+Tests: succeeded 42, failed 0, canceled 0, ignored 0, pending 0
+All tests passed.
+```
+
+Confirm both that the **suite count** matches what you asked for (typically `1`) and that the
+**test count** is in the expected range for that suite. A run that reports `Total number of
+tests run: 0` or one that reports thousands of tests when you asked for a single suite is a
+filter problem, not a successful run.
+
 ### Skip Scalastyle When Iterating
 
 The `scalastyle:check` goal runs in every Maven test invocation and re-scans every Scala source
