@@ -58,11 +58,13 @@ def test_map_in_arrow_basic():
     df.write.mode("overwrite").parquet("/tmp/comet_pyarrow_test_data")
     test_df = spark.read.parquet("/tmp/comet_pyarrow_test_data")
 
-    # Define a PyArrow UDF that doubles the value column
-    def double_value(batch: pa.RecordBatch) -> pa.RecordBatch:
-        pdf = batch.to_pandas()
-        pdf["value"] = pdf["value"] * 2
-        return pa.RecordBatch.from_pandas(pdf)
+    # Define a PyArrow UDF that doubles the value column.
+    # mapInArrow callbacks receive an iterator of RecordBatches and must yield batches.
+    def double_value(iterator):
+        for batch in iterator:
+            pdf = batch.to_pandas()
+            pdf["value"] = pdf["value"] * 2
+            yield pa.RecordBatch.from_pandas(pdf)
 
     output_schema = T.StructType([
         T.StructField("id", T.LongType()),
@@ -80,18 +82,17 @@ def test_map_in_arrow_basic():
     result_df.explain(mode="extended")
     print("=" * 60)
 
-    plan_str = result_df.queryExecution.executedPlan.toString()
+    plan_str = result_df._jdf.queryExecution().executedPlan().toString()
     print(f"\nPlan string:\n{plan_str}\n")
 
-    # Verify CometPythonMapInArrowExec is in the plan (if Comet is active)
-    if "CometPythonMapInArrowExec" in plan_str:
-        print("SUCCESS: CometPythonMapInArrowExec is in the plan!")
-    elif "CometScan" in plan_str and "ColumnarToRow" in plan_str:
-        print("WARNING: CometScan present but still using ColumnarToRow before Python UDF")
-    elif "CometScan" not in plan_str:
-        print("INFO: Comet is not active for this query (CometScan not found)")
-    else:
-        print("INFO: Plan does not contain CometPythonMapInArrowExec")
+    # Verify the optimized Comet operator is in the plan. The toString form is
+    # "CometPythonMapInArrow" (no Exec suffix) and the upstream scan prints as
+    # "CometNativeScan".
+    assert "CometPythonMapInArrow" in plan_str, \
+        f"CometPythonMapInArrow missing from plan:\n{plan_str}"
+    assert "ColumnarToRow" not in plan_str, \
+        f"Unexpected ColumnarToRow in optimized plan:\n{plan_str}"
+    print("SUCCESS: CometPythonMapInArrow is in the plan with no ColumnarToRow transition.")
 
     # Verify correctness
     result = result_df.orderBy("id").collect()
@@ -128,11 +129,12 @@ def test_map_in_arrow_type_change():
     df.write.mode("overwrite").parquet("/tmp/comet_pyarrow_test_data2")
     test_df = spark.read.parquet("/tmp/comet_pyarrow_test_data2")
 
-    def add_computed_column(batch: pa.RecordBatch) -> pa.RecordBatch:
-        pdf = batch.to_pandas()
-        pdf["squared"] = pdf["value"] ** 2
-        pdf["label"] = pdf["id"].apply(lambda x: f"item_{x}")
-        return pa.RecordBatch.from_pandas(pdf)
+    def add_computed_column(iterator):
+        for batch in iterator:
+            pdf = batch.to_pandas()
+            pdf["squared"] = pdf["value"] ** 2
+            pdf["label"] = pdf["id"].apply(lambda x: f"item_{x}")
+            yield pa.RecordBatch.from_pandas(pdf)
 
     output_schema = T.StructType([
         T.StructField("id", T.LongType()),
