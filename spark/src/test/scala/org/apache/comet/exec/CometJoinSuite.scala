@@ -171,6 +171,46 @@ class CometJoinSuite extends CometTestBase {
     }
   }
 
+  test("SortMergeJoin with TimestampType key across mixed write-time session timezones") {
+    // TimestampType is an instant (UTC microseconds); only the parsing of literal
+    // strings depends on the session timezone. Writing each side under a different
+    // session zone with wall-clock literals that resolve to the same UTC instant
+    // must still produce a join match.
+    withSQLConf(
+      SQLConf.ADAPTIVE_AUTO_BROADCASTJOIN_THRESHOLD.key -> "-1",
+      SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key -> "-1",
+      SQLConf.PREFER_SORTMERGEJOIN.key -> "true") {
+      withTable("t1", "t2") {
+        // t1 written in America/Los_Angeles. 03:11:11 -0800 == 11:11:11 UTC.
+        withSQLConf(SQLConf.SESSION_LOCAL_TIMEZONE.key -> "America/Los_Angeles") {
+          sql("CREATE TABLE t1(name STRING, time TIMESTAMP) USING PARQUET")
+          sql(
+            "INSERT OVERWRITE t1 VALUES " +
+              "('a', timestamp'2019-01-01 03:11:11'), " +
+              "('b', timestamp'2020-05-04 22:05:05')")
+        }
+
+        // t2 written in Asia/Tokyo. 20:11:11 +0900 == 11:11:11 UTC, so the 'a' and
+        // 'a2' rows share a UTC instant with t1's 'a' row.
+        withSQLConf(SQLConf.SESSION_LOCAL_TIMEZONE.key -> "Asia/Tokyo") {
+          sql("CREATE TABLE t2(name STRING, time TIMESTAMP) USING PARQUET")
+          sql(
+            "INSERT OVERWRITE t2 VALUES " +
+              "('a', timestamp'2019-01-01 20:11:11'), " +
+              "('c', timestamp'2021-07-07 16:07:07')")
+        }
+
+        // Read at a third session timezone to confirm the equality is on the
+        // stored UTC instant rather than the displayed wall-clock value.
+        withSQLConf(SQLConf.SESSION_LOCAL_TIMEZONE.key -> "UTC") {
+          checkSparkAnswerAndOperator(
+            sql("SELECT * FROM t1 JOIN t2 ON t1.time = t2.time"),
+            Seq(classOf[CometSortMergeJoinExec]))
+        }
+      }
+    }
+  }
+
   test("Broadcast HashJoin without join filter") {
     withSQLConf(
       CometConf.COMET_BATCH_SIZE.key -> "100",
