@@ -31,7 +31,6 @@ import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{ColumnarToRowExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.execution.python.{ArrowPythonRunner, BatchIterator, PythonSQLMetrics}
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.vectorized.{ArrowColumnVector, ColumnarBatch}
 
 /**

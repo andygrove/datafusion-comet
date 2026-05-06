@@ -21,8 +21,6 @@ package org.apache.comet.exec
 
 import org.apache.spark.sql.CometTestBase
 import org.apache.spark.sql.comet.CometPythonMapInArrowExec
-import org.apache.spark.sql.execution.ColumnarToRowExec
-import org.apache.spark.sql.execution.python.PythonMapInArrowExec
 
 import org.apache.comet.CometConf
 
