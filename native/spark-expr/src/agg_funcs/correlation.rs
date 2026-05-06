@@ -356,7 +356,14 @@ impl GroupsAccumulator for CorrelationGroupsAccumulator {
     }
 
     fn evaluate(&mut self, emit_to: EmitTo) -> Result<ArrayRef> {
-        // Pull each child's per-group result, then combine with corr = c/(s1*s2).
+        // Snapshot per-group counts BEFORE the children's evaluate() consumes
+        // their state. This lets us apply the count==0 / count==1 branches the
+        // way the per-row CorrelationAccumulator does.
+        let counts: Vec<f64> = match emit_to {
+            EmitTo::All => self.covar.counts().to_vec(),
+            EmitTo::First(n) => self.covar.counts()[..n].to_vec(),
+        };
+
         let covar = self.covar.evaluate(emit_to)?;
         let var1 = self.var1.evaluate(emit_to)?;
         let var2 = self.var2.evaluate(emit_to)?;
@@ -364,17 +371,26 @@ impl GroupsAccumulator for CorrelationGroupsAccumulator {
         let var1 = var1.as_primitive::<Float64Type>();
         let var2 = var2.as_primitive::<Float64Type>();
 
-        // The child accumulators encode count==0 => null in their null buffer.
-        // Children use Population stats so they never trigger the count==1
-        // sample branch. We mirror per-row CorrelationAccumulator semantics:
-        //   count == 0 => null
-        //   else if s1 == 0 || s2 == 0 => null
-        //   else c / (s1 * s2)
-
         let n = covar.len();
         let mut values = Vec::with_capacity(n);
         let mut validity = Vec::with_capacity(n);
         for i in 0..n {
+            let count = counts[i];
+            if count == 0.0 {
+                values.push(0.0);
+                validity.push(false);
+                continue;
+            }
+            if count == 1.0 {
+                if self.null_on_divide_by_zero {
+                    values.push(0.0);
+                    validity.push(false);
+                } else {
+                    values.push(f64::NAN);
+                    validity.push(true);
+                }
+                continue;
+            }
             if covar.is_null(i) || var1.is_null(i) || var2.is_null(i) {
                 values.push(0.0);
                 validity.push(false);
@@ -392,7 +408,6 @@ impl GroupsAccumulator for CorrelationGroupsAccumulator {
             validity.push(true);
         }
 
-        let _ = self.null_on_divide_by_zero;
         Ok(Arc::new(Float64Array::new(
             values.into(),
             Some(arrow::buffer::NullBuffer::from(validity)),
@@ -481,11 +496,21 @@ mod groups_tests {
     }
 
     #[test]
-    fn single_row_yields_null() {
-        // Correlation always uses Population stats internally. With one row the
-        // sub-variances are zero, so s1*s2 == 0 and the per-row impl returns
-        // null. We mirror that here.
-        let mut a = acc(true);
+    fn single_row_legacy_mode_yields_nan() {
+        // Correlation always uses Population stats internally. With one row
+        // the per-row CorrelationAccumulator returns NaN when in legacy
+        // (null_on_divide_by_zero=false) mode and null when the flag is set.
+        let mut a = acc(true); // legacy
+        let v1: ArrayRef = Arc::new(Float64Array::from(vec![42.0]));
+        let v2: ArrayRef = Arc::new(Float64Array::from(vec![7.0]));
+        a.update_batch(&[v1, v2], &[0], None, 1).unwrap();
+        let r = evaluate(&mut a);
+        assert!(r[0].unwrap().is_nan());
+    }
+
+    #[test]
+    fn single_row_ansi_mode_yields_null() {
+        let mut a = acc(false); // null_on_divide_by_zero = true
         let v1: ArrayRef = Arc::new(Float64Array::from(vec![42.0]));
         let v2: ArrayRef = Arc::new(Float64Array::from(vec![7.0]));
         a.update_batch(&[v1, v2], &[0], None, 1).unwrap();

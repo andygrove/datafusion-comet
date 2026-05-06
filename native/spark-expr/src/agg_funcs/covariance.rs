@@ -356,6 +356,13 @@ impl CovarianceGroupsAccumulator {
         }
     }
 
+    /// Returns a slice of the per-group counts. Used by the correlation
+    /// grouped accumulator to apply the count==0 / count==1 branches before
+    /// the children's `evaluate()` consumes their state.
+    pub(crate) fn counts(&self) -> &[f64] {
+        &self.counts
+    }
+
     fn resize(&mut self, total_num_groups: usize) {
         self.counts.resize(total_num_groups, 0.0);
         self.mean1s.resize(total_num_groups, 0.0);
