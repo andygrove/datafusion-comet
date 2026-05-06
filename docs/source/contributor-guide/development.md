@@ -321,6 +321,17 @@ Either keep the command on one line, or use a trailing backslash on every contin
 This is a common trap when copy-pasting commands from chat windows or terminals that wrap text
 without inserting the backslash.
 
+### Skip Scalastyle When Iterating
+
+The `scalastyle:check` goal runs in every Maven test invocation and re-scans every Scala source
+file even when nothing relevant changed. When iterating on a single test, skip it:
+
+```sh
+./mvnw test -Dtest=none -Dsuites="org.apache.comet.CometArrayExpressionSuite" -Dscalastyle.skip=true
+```
+
+CI still enforces scalastyle, so this is purely a local iteration shortcut.
+
 ## Development Environment
 
 Comet is a multi-language project with native code written in Rust and JVM code written in Java and Scala.
