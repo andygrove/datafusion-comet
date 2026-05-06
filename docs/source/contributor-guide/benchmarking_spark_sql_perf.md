@@ -35,7 +35,7 @@ partitioning and writing to Parquet format automatically.
 ## Prerequisites
 
 - Java 17
-- Apache Spark 4.0.x
+- Apache Spark 4.1.x
 - SBT (Scala Build Tool)
 - C compiler toolchain (`gcc`, `make`, `flex`, `bison`, `byacc`)
 
@@ -225,7 +225,7 @@ Build Comet from source and launch `spark-shell` with both the Comet and spark-s
 
 ```shell
 make release
-export COMET_JAR=$(pwd)/spark/target/comet-spark-spark4.0_2.13-*.jar
+export COMET_JAR=$(pwd)/spark/target/comet-spark-spark4.1_2.13-*.jar
 
 $SPARK_HOME/bin/spark-shell \
     --master $SPARK_MASTER \

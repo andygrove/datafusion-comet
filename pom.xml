@@ -65,16 +65,16 @@ under the License.
     <extra-enforcer-rules.version>1.7.0</extra-enforcer-rules.version>
     <scalafmt.version>3.6.1</scalafmt.version>
     <apache-rat-plugin.version>0.16.1</apache-rat-plugin.version>
-    <scala.version>2.13.16</scala.version>
+    <scala.version>2.13.17</scala.version>
     <scala.binary.version>2.13</scala.binary.version>
     <scala.plugin.version>4.9.6</scala.plugin.version>
     <scalatest.version>3.2.16</scalatest.version>
     <scalatest-maven-plugin.version>2.2.0</scalatest-maven-plugin.version>
-    <spark.version>4.0.2</spark.version>
-    <spark.version.short>4.0</spark.version.short>
+    <spark.version>4.1.1</spark.version>
+    <spark.version.short>4.1</spark.version.short>
     <spark.maven.scope>provided</spark.maven.scope>
     <protobuf.version>3.25.5</protobuf.version>
-    <parquet.version>1.15.2</parquet.version>
+    <parquet.version>1.16.0</parquet.version>
     <parquet.maven.scope>provided</parquet.maven.scope>
     <hadoop.version>3.3.4</hadoop.version>
     <arrow.version>18.3.0</arrow.version>
@@ -82,7 +82,7 @@ under the License.
     <spotless.version>2.43.0</spotless.version>
     <jacoco.version>0.8.11</jacoco.version>
     <semanticdb.version>4.13.6</semanticdb.version>
-    <slf4j.version>2.0.16</slf4j.version>
+    <slf4j.version>2.0.17</slf4j.version>
     <guava.version>33.2.1-jre</guava.version>
     <testcontainers.version>1.21.0</testcontainers.version>
     <amazon-awssdk-v2.version>2.31.51</amazon-awssdk-v2.version>
@@ -117,7 +117,7 @@ under the License.
     </extraJavaTestArgs>
     <argLine>-ea -Xmx4g -Xss4m ${extraJavaTestArgs}</argLine>
     <shims.majorVerSrc>spark-4.x</shims.majorVerSrc>
-    <shims.minorVerSrc>spark-4.0</shims.minorVerSrc>
+    <shims.minorVerSrc>spark-4.1</shims.minorVerSrc>
   </properties>
 
   <dependencyManagement>
@@ -686,7 +686,6 @@ under the License.
     </profile>
 
     <profile>
-      <!-- WIP: Spark 4.1 support, with its own shim sources for 4.1-specific APIs -->
       <id>spark-4.1</id>
       <properties>
         <!-- Spark 4.1.1 is compiled against Scala 2.13.17 and emits calls into stdlib methods
@@ -702,7 +701,6 @@ under the License.
         <slf4j.version>2.0.17</slf4j.version>
         <shims.majorVerSrc>spark-4.x</shims.majorVerSrc>
         <shims.minorVerSrc>spark-4.1</shims.minorVerSrc>
-        <!-- Use jdk17 by default -->
         <java.version>17</java.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
