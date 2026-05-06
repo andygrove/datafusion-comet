@@ -22,15 +22,16 @@ package org.apache.spark.sql.comet
 import scala.collection.JavaConverters._
 
 import org.apache.spark.{ContextAwareIterator, TaskContext}
-import org.apache.spark.api.python.ChainedPythonFunctions
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.PythonUDF
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.comet.shims.ShimCometPythonMapInArrow
 import org.apache.spark.sql.execution.{ColumnarToRowExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.execution.python.{ArrowPythonRunner, BatchIterator, PythonSQLMetrics}
+import org.apache.spark.sql.execution.python.{BatchIterator, PythonSQLMetrics}
+import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.vectorized.{ArrowColumnVector, ColumnarBatch}
 
 /**
@@ -55,7 +56,8 @@ case class CometPythonMapInArrowExec(
     isBarrier: Boolean,
     pythonEvalType: Int)
     extends UnaryExecNode
-    with PythonSQLMetrics {
+    with PythonSQLMetrics
+    with ShimCometPythonMapInArrow {
 
   override def supportsColumnar: Boolean = true
 
@@ -78,18 +80,16 @@ case class CometPythonMapInArrowExec(
     val numOutputBatches = longMetric("numOutputBatches")
     val numInputRows = longMetric("numInputRows")
 
-    val pythonRunnerConf = ArrowPythonRunner.getPythonRunnerConfMap(conf)
-    val pythonFunction = func.asInstanceOf[PythonUDF].func
-    val chainedFunc = Seq(ChainedPythonFunctions(Seq(pythonFunction)))
+    val pythonUDF = func.asInstanceOf[PythonUDF]
     val localOutput = output
     val localChildSchema = child.schema
     val batchSize = conf.arrowMaxRecordsPerBatch
     val sessionLocalTimeZone = conf.sessionLocalTimeZone
-    val largeVarTypes = conf.arrowUseLargeVarTypes
+    val useLargeVarTypes = largeVarTypes(conf)
+    val pythonRunnerConf = getPythonRunnerConfMap(conf)
     val localPythonEvalType = pythonEvalType
     val localPythonMetrics = pythonMetrics
-    val jobArtifactUUID =
-      org.apache.spark.JobArtifactSet.getCurrentJobArtifactState.map(_.uuid)
+    val jobArtifactUUID = currentJobArtifactUUID()
 
     val inputRDD = child.executeColumnar()
 
@@ -112,17 +112,19 @@ case class CometPythonMapInArrowExec(
       val batchIter =
         if (batchSize > 0) new BatchIterator(wrappedIter, batchSize) else Iterator(wrappedIter)
 
-      val columnarBatchIter = new ArrowPythonRunner(
-        chainedFunc,
+      val columnarBatchIter = computeArrowPython(
+        pythonUDF,
         localPythonEvalType,
         argOffsets,
-        org.apache.spark.sql.types
-          .StructType(Array(org.apache.spark.sql.types.StructField("struct", localChildSchema))),
+        StructType(Array(StructField("struct", localChildSchema))),
         sessionLocalTimeZone,
-        largeVarTypes,
+        useLargeVarTypes,
         pythonRunnerConf,
         localPythonMetrics,
-        jobArtifactUUID).compute(batchIter, context.partitionId(), context)
+        jobArtifactUUID,
+        batchIter,
+        context.partitionId(),
+        context)
 
       columnarBatchIter.map { batch =>
         // Python returns a StructType column; flatten to individual columns
