@@ -94,12 +94,10 @@ object CometConf extends ShimCometConf {
     .createWithEnvVarOrDefault("ENABLE_COMET", true)
 
   val COMET_NATIVE_SCAN_ENABLED: ConfigEntry[Boolean] = conf("spark.comet.scan.enabled")
-    .category(CATEGORY_SCAN)
+    .category(CATEGORY_TESTING)
     .doc(
-      "Whether to enable native scans. When this is turned on, Spark will use Comet to " +
-        "read supported data sources (currently only Parquet is supported natively). Note " +
-        "that to enable native vectorized execution, both this config and " +
-        "`spark.comet.exec.enabled` need to be enabled.")
+      "Whether to enable native scans. Intended for use in Comet's own test suites to " +
+        "selectively disable native scans; not intended for production use.")
     .booleanConf
     .createWithDefault(true)
 
