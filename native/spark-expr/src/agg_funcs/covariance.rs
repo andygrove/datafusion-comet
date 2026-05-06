@@ -202,17 +202,19 @@ impl Accumulator for CovarianceAccumulator {
 
             let value1 = unwrap_or_internal_err!(value1);
             let value2 = unwrap_or_internal_err!(value2);
-            let new_count = self.count + 1.0;
-            let delta1 = value1 - self.mean1;
-            let new_mean1 = delta1 / new_count + self.mean1;
-            let delta2 = value2 - self.mean2;
-            let new_mean2 = delta2 / new_count + self.mean2;
-            let new_c = delta1 * (value2 - new_mean2) + self.algo_const;
 
-            self.count += 1.0;
-            self.mean1 = new_mean1;
-            self.mean2 = new_mean2;
-            self.algo_const = new_c;
+            let (c, m1, m2, ac) = super::welford::covariance_update(
+                self.count,
+                self.mean1,
+                self.mean2,
+                self.algo_const,
+                value1,
+                value2,
+            );
+            self.count = c;
+            self.mean1 = m1;
+            self.mean2 = m2;
+            self.algo_const = ac;
         }
 
         Ok(())
@@ -243,17 +245,18 @@ impl Accumulator for CovarianceAccumulator {
             let value1 = unwrap_or_internal_err!(value1);
             let value2 = unwrap_or_internal_err!(value2);
 
-            let new_count = self.count - 1.0;
-            let delta1 = self.mean1 - value1;
-            let new_mean1 = delta1 / new_count + self.mean1;
-            let delta2 = self.mean2 - value2;
-            let new_mean2 = delta2 / new_count + self.mean2;
-            let new_c = self.algo_const - delta1 * (new_mean2 - value2);
-
-            self.count -= 1.0;
-            self.mean1 = new_mean1;
-            self.mean2 = new_mean2;
-            self.algo_const = new_c;
+            let (c, m1, m2, ac) = super::welford::covariance_retract(
+                self.count,
+                self.mean1,
+                self.mean2,
+                self.algo_const,
+                value1,
+                value2,
+            );
+            self.count = c;
+            self.mean1 = m1;
+            self.mean2 = m2;
+            self.algo_const = ac;
         }
 
         Ok(())
@@ -270,14 +273,16 @@ impl Accumulator for CovarianceAccumulator {
             if c == 0.0 {
                 continue;
             }
-            let new_count = self.count + c;
-            let new_mean1 = self.mean1 * self.count / new_count + means1.value(i) * c / new_count;
-            let new_mean2 = self.mean2 * self.count / new_count + means2.value(i) * c / new_count;
-            let delta1 = self.mean1 - means1.value(i);
-            let delta2 = self.mean2 - means2.value(i);
-            let new_c =
-                self.algo_const + cs.value(i) + delta1 * delta2 * self.count * c / new_count;
-
+            let (new_count, new_mean1, new_mean2, new_c) = super::welford::covariance_merge(
+                self.count,
+                self.mean1,
+                self.mean2,
+                self.algo_const,
+                c,
+                means1.value(i),
+                means2.value(i),
+                cs.value(i),
+            );
             self.count = new_count;
             self.mean1 = new_mean1;
             self.mean2 = new_mean2;
