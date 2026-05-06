@@ -62,12 +62,12 @@ It is enabled by default when Comet execution is active.
 
 ## Supported APIs
 
-| PySpark API | Spark Plan Node | Supported |
-|-------------|-----------------|-----------|
-| `df.mapInArrow(func, schema)` | `PythonMapInArrowExec` | Yes |
-| `df.mapInPandas(func, schema)` | `MapInPandasExec` | Yes |
-| `@pandas_udf` (scalar) | `ArrowEvalPythonExec` | Not yet |
-| `df.applyInPandas(func, schema)` | `FlatMapGroupsInPandasExec` | Not yet |
+| PySpark API                      | Spark Plan Node             | Supported |
+| -------------------------------- | --------------------------- | --------- |
+| `df.mapInArrow(func, schema)`    | `PythonMapInArrowExec`      | Yes       |
+| `df.mapInPandas(func, schema)`   | `MapInPandasExec`           | Yes       |
+| `@pandas_udf` (scalar)           | `ArrowEvalPythonExec`       | Not yet   |
+| `df.applyInPandas(func, schema)` | `FlatMapGroupsInPandasExec` | Not yet   |
 
 ## Example
 
@@ -109,6 +109,7 @@ result.explain(mode="extended")
 ```
 
 You should see:
+
 ```
 CometPythonMapInArrowExec ...
 +- CometNativeExec ...
@@ -116,6 +117,7 @@ CometPythonMapInArrowExec ...
 ```
 
 Instead of the unoptimized plan:
+
 ```
 PythonMapInArrow ...
 +- ColumnarToRow
