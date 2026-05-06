@@ -37,12 +37,15 @@ The framework consists of:
 
 ## Writing a CometUDF
 
-Implement the `org.apache.comet.udf.CometUDF` trait:
+Implement the `org.apache.comet.udf.CometUDF` trait. Comet relocates Apache Arrow into
+`org.apache.comet.shaded.arrow.*` to avoid version conflicts with Spark's bundled Arrow,
+so your implementation must import Arrow types from the shaded package. This is the
+same package that the published `comet-spark` JAR exposes on your classpath.
 
 ```java
-import org.apache.arrow.vector.IntVector;
-import org.apache.arrow.vector.BitVector;
-import org.apache.arrow.vector.ValueVector;
+import org.apache.comet.shaded.arrow.vector.IntVector;
+import org.apache.comet.shaded.arrow.vector.BitVector;
+import org.apache.comet.shaded.arrow.vector.ValueVector;
 import org.apache.comet.udf.CometUDF;
 
 public class IsPositiveUdf implements CometUDF {
@@ -72,6 +75,7 @@ public class IsPositiveUdf implements CometUDF {
 Key requirements:
 
 - The class must have a **public no-arg constructor**
+- Arrow types must be imported from `org.apache.comet.shaded.arrow.*` (the relocated package)
 - Input vectors arrive at the row count of the current batch
 - Scalar (literal) arguments arrive as length-1 vectors — read at index 0
 - The returned vector's length **must match** the longest input vector

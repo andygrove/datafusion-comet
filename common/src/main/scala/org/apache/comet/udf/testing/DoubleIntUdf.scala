@@ -17,15 +17,18 @@
  * under the License.
  */
 
-package org.apache.comet.udf
+package org.apache.comet.udf.testing
 
 import org.apache.arrow.vector.{BigIntVector, IntVector, ValueVector}
 
 import org.apache.comet.CometArrowAllocator
+import org.apache.comet.udf.CometUDF
 
-/**
- * Test CometUDF that doubles an integer input. Used by CometUserUdfSuite.
- */
+// Test fixture for CometUserUdfSuite. Lives in common's main sources so that the Arrow
+// references in its bytecode are relocated by common's shade plugin to match the shaded
+// CometUDF interface that user code sees at runtime. A test-scope class in spark/ would
+// compile against common/target/classes (unshaded) and fail at runtime with
+// AbstractMethodError when dispatched through the shaded interface.
 class DoubleIntUdf extends CometUDF {
 
   override def evaluate(inputs: Array[ValueVector]): ValueVector = {

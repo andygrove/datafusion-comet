@@ -35,7 +35,7 @@ class CometUserUdfSuite extends CometTestBase with AdaptiveSparkPlanHelper {
   test("user CometUDF - basic integer doubling") {
     CometUdfRegistry.register(
       "double_int",
-      "org.apache.comet.udf.DoubleIntUdf",
+      "org.apache.comet.udf.testing.DoubleIntUdf",
       LongType,
       nullable = true)
     spark.udf.register("double_int", (x: Int) => x.toLong * 2L)
@@ -61,7 +61,7 @@ class CometUserUdfSuite extends CometTestBase with AdaptiveSparkPlanHelper {
   test("user CometUDF - multiple arguments") {
     CometUdfRegistry.register(
       "double_int",
-      "org.apache.comet.udf.DoubleIntUdf",
+      "org.apache.comet.udf.testing.DoubleIntUdf",
       LongType,
       nullable = true)
     spark.udf.register("double_int", (x: Int) => x.toLong * 2L)
@@ -76,7 +76,7 @@ class CometUserUdfSuite extends CometTestBase with AdaptiveSparkPlanHelper {
   test("user CometUDF - with filter") {
     CometUdfRegistry.register(
       "double_int",
-      "org.apache.comet.udf.DoubleIntUdf",
+      "org.apache.comet.udf.testing.DoubleIntUdf",
       LongType,
       nullable = true)
     spark.udf.register("double_int", (x: Int) => x.toLong * 2L)
