@@ -175,15 +175,11 @@ impl Accumulator for VarianceAccumulator {
         let arr = downcast_value!(&values[0], Float64Array).iter().flatten();
 
         for value in arr {
-            let new_count = self.count + 1.0;
-            let delta1 = value - self.mean;
-            let new_mean = delta1 / new_count + self.mean;
-            let delta2 = value - new_mean;
-            let new_m2 = self.m2 + delta1 * delta2;
-
-            self.count += 1.0;
-            self.mean = new_mean;
-            self.m2 = new_m2;
+            let (c, m, m2) =
+                super::welford::variance_update(self.count, self.mean, self.m2, value);
+            self.count = c;
+            self.mean = m;
+            self.m2 = m2;
         }
 
         Ok(())
@@ -193,15 +189,11 @@ impl Accumulator for VarianceAccumulator {
         let arr = downcast_value!(&values[0], Float64Array).iter().flatten();
 
         for value in arr {
-            let new_count = self.count - 1.0;
-            let delta1 = self.mean - value;
-            let new_mean = delta1 / new_count + self.mean;
-            let delta2 = new_mean - value;
-            let new_m2 = self.m2 - delta1 * delta2;
-
-            self.count -= 1.0;
-            self.mean = new_mean;
-            self.m2 = new_m2;
+            let (c, m, m2) =
+                super::welford::variance_retract(self.count, self.mean, self.m2, value);
+            self.count = c;
+            self.mean = m;
+            self.m2 = m2;
         }
 
         Ok(())
@@ -217,11 +209,14 @@ impl Accumulator for VarianceAccumulator {
             if c == 0_f64 {
                 continue;
             }
-            let new_count = self.count + c;
-            let new_mean = self.mean * self.count / new_count + means.value(i) * c / new_count;
-            let delta = self.mean - means.value(i);
-            let new_m2 = self.m2 + m2s.value(i) + delta * delta * self.count * c / new_count;
-
+            let (new_count, new_mean, new_m2) = super::welford::variance_merge(
+                self.count,
+                self.mean,
+                self.m2,
+                c,
+                means.value(i),
+                m2s.value(i),
+            );
             self.count = new_count;
             self.mean = new_mean;
             self.m2 = new_m2;
