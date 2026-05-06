@@ -139,6 +139,8 @@ The following scenarios will fall back to Spark's native Iceberg reader:
 - Scans with residual filters using `truncate`, `bucket`, `year`, `month`, `day`, or `hour`
   transform functions (partition pruning still works, but row-level filtering of these
   transforms falls back)
+- Dynamic Partition Pruning under Adaptive Query Execution (non-AQE DPP is supported);
+  see [#3510](https://github.com/apache/datafusion-comet/issues/3510)
 
 ### Task input metrics
 
