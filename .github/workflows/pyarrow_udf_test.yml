@@ -25,21 +25,27 @@ on:
   push:
     branches:
       - main
-    paths:
-      - "spark/src/main/scala/org/apache/spark/sql/comet/CometPythonMapInArrowExec.scala"
-      - "spark/src/main/scala/org/apache/comet/serde/QueryPlanSerde.scala"
-      - "spark/src/main/scala/org/apache/comet/rules/EliminateRedundantTransitions.scala"
-      - "spark/src/test/resources/pyspark/test_pyarrow_udf.py"
-      - ".github/workflows/pyarrow_udf_test.yml"
-      - "native/**"
+    paths-ignore:
+      - "benchmarks/**"
+      - "doc/**"
+      - "docs/**"
+      - "**.md"
+      - "dev/changelog/*.md"
+      - "native/core/benches/**"
+      - "native/spark-expr/benches/**"
+      - "spark/src/test/scala/org/apache/spark/sql/benchmark/**"
+      - "spark/src/main/scala/org/apache/comet/GenerateDocs.scala"
   pull_request:
-    paths:
-      - "spark/src/main/scala/org/apache/spark/sql/comet/CometPythonMapInArrowExec.scala"
-      - "spark/src/main/scala/org/apache/comet/serde/QueryPlanSerde.scala"
-      - "spark/src/main/scala/org/apache/comet/rules/EliminateRedundantTransitions.scala"
-      - "spark/src/test/resources/pyspark/test_pyarrow_udf.py"
-      - ".github/workflows/pyarrow_udf_test.yml"
-      - "native/**"
+    paths-ignore:
+      - "benchmarks/**"
+      - "doc/**"
+      - "docs/**"
+      - "**.md"
+      - "dev/changelog/*.md"
+      - "native/core/benches/**"
+      - "native/spark-expr/benches/**"
+      - "spark/src/test/scala/org/apache/spark/sql/benchmark/**"
+      - "spark/src/main/scala/org/apache/comet/GenerateDocs.scala"
   workflow_dispatch:
 
 env:
