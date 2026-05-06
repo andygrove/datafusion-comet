@@ -374,8 +374,7 @@ impl GroupsAccumulator for CorrelationGroupsAccumulator {
         let n = covar.len();
         let mut values = Vec::with_capacity(n);
         let mut validity = Vec::with_capacity(n);
-        for i in 0..n {
-            let count = counts[i];
+        for (i, &count) in counts.iter().enumerate().take(n) {
             if count == 0.0 {
                 values.push(0.0);
                 validity.push(false);
