@@ -100,6 +100,13 @@ jobs:
           /tmp/venv/bin/pip install "pyspark==3.5.8" "pyarrow>=14" pandas pytest
 
       - name: Run PyArrow UDF pytest
+        env:
+          # Spark launches Python workers in a fresh subprocess and looks up `python3`
+          # on PATH unless PYSPARK_PYTHON is set. Without this, workers use the system
+          # python which has no pyarrow installed and UDF execution fails with
+          # ModuleNotFoundError.
+          PYSPARK_PYTHON: /tmp/venv/bin/python
+          PYSPARK_DRIVER_PYTHON: /tmp/venv/bin/python
         run: |
           jar=$(ls "$PWD"/spark/target/comet-spark-spark3.5_2.12-*-SNAPSHOT.jar \
                 | grep -v sources | grep -v tests | head -n1)
