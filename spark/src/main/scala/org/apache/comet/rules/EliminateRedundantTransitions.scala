@@ -20,13 +20,15 @@
 package org.apache.comet.rules
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.expressions.PythonUDF
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.util.sideBySide
-import org.apache.spark.sql.comet.{CometCollectLimitExec, CometColumnarToRowExec, CometNativeColumnarToRowExec, CometNativeWriteExec, CometPlan, CometSparkToColumnarExec}
+import org.apache.spark.sql.comet.{CometCollectLimitExec, CometColumnarToRowExec, CometNativeColumnarToRowExec, CometNativeWriteExec, CometPlan, CometPythonMapInArrowExec, CometSparkToColumnarExec}
 import org.apache.spark.sql.comet.execution.shuffle.{CometColumnarShuffle, CometShuffleExchangeExec}
 import org.apache.spark.sql.execution.{ColumnarToRowExec, RowToColumnarExec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.QueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
+import org.apache.spark.sql.execution.python.{MapInPandasExec, PythonMapInArrowExec}
 
 import org.apache.comet.CometConf
 
@@ -98,6 +100,32 @@ case class EliminateRedundantTransitions(session: SparkSession) extends Rule[Spa
       case CometNativeColumnarToRowExec(sparkToColumnar: CometSparkToColumnarExec) =>
         sparkToColumnar.child
       case CometSparkToColumnarExec(child: CometSparkToColumnarExec) => child
+      // Replace MapInBatchExec (PythonMapInArrowExec / MapInPandasExec) that has a
+      // ColumnarToRow child with CometPythonMapInArrowExec to avoid the unnecessary
+      // Arrow->Row->Arrow round-trip.
+      case p: PythonMapInArrowExec if CometConf.COMET_PYTHON_MAP_IN_ARROW_ENABLED.get() =>
+        extractColumnarChild(p.child)
+          .map { columnarChild =>
+            CometPythonMapInArrowExec(
+              p.func,
+              p.output,
+              columnarChild,
+              p.isBarrier,
+              p.func.asInstanceOf[PythonUDF].evalType)
+          }
+          .getOrElse(p)
+      case p: MapInPandasExec if CometConf.COMET_PYTHON_MAP_IN_ARROW_ENABLED.get() =>
+        extractColumnarChild(p.child)
+          .map { columnarChild =>
+            CometPythonMapInArrowExec(
+              p.func,
+              p.output,
+              columnarChild,
+              p.isBarrier,
+              p.func.asInstanceOf[PythonUDF].evalType)
+          }
+          .getOrElse(p)
+
       // Spark adds `RowToColumnar` under Comet columnar shuffle. But it's redundant as the
       // shuffle takes row-based input.
       case s @ CometShuffleExchangeExec(
@@ -128,6 +156,18 @@ case class EliminateRedundantTransitions(session: SparkSession) extends Rule[Spa
       case c: ReusedExchangeExec => hasCometNativeChild(c.child)
       case _ => op.exists(_.isInstanceOf[CometPlan])
     }
+  }
+
+  /**
+   * If the given plan is a ColumnarToRow transition wrapping a columnar child, returns that
+   * columnar child. Used to detect and eliminate unnecessary transitions before Python UDF
+   * operators.
+   */
+  private def extractColumnarChild(plan: SparkPlan): Option[SparkPlan] = plan match {
+    case ColumnarToRowExec(child) if child.supportsColumnar => Some(child)
+    case CometColumnarToRowExec(child) => Some(child)
+    case CometNativeColumnarToRowExec(child) => Some(child)
+    case _ => None
   }
 
   /**
