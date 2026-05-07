@@ -19,23 +19,24 @@ use crate::conversion_funcs::boolean::{
     cast_boolean_to_decimal, cast_boolean_to_timestamp, is_df_cast_from_bool_spark_compatible,
 };
 use crate::conversion_funcs::numeric::{
-    cast_decimal_to_timestamp, cast_float32_to_decimal128, cast_float64_to_decimal128,
-    cast_float_to_timestamp, cast_int_to_decimal128, cast_int_to_timestamp,
-    is_df_cast_from_decimal_spark_compatible, is_df_cast_from_float_spark_compatible,
-    is_df_cast_from_int_spark_compatible, spark_cast_decimal_to_boolean,
-    spark_cast_float32_to_utf8, spark_cast_float64_to_utf8, spark_cast_int_to_int,
-    spark_cast_nonintegral_numeric_to_integral,
+    cast_decimal128_to_utf8, cast_decimal_to_timestamp, cast_float32_to_decimal128,
+    cast_float64_to_decimal128, cast_float_to_timestamp, cast_int_to_decimal128,
+    cast_int_to_timestamp, is_df_cast_from_decimal_spark_compatible,
+    is_df_cast_from_float_spark_compatible, is_df_cast_from_int_spark_compatible,
+    spark_cast_decimal_to_boolean, spark_cast_float32_to_utf8, spark_cast_float64_to_utf8,
+    spark_cast_int_to_int, spark_cast_nonintegral_numeric_to_integral,
 };
 use crate::conversion_funcs::string::{
     cast_string_to_date, cast_string_to_decimal, cast_string_to_float, cast_string_to_int,
-    cast_string_to_timestamp, is_df_cast_from_string_spark_compatible, spark_cast_utf8_to_boolean,
+    cast_string_to_timestamp, cast_string_to_timestamp_ntz,
+    is_df_cast_from_string_spark_compatible, spark_cast_utf8_to_boolean,
 };
 use crate::conversion_funcs::temporal::{
     cast_date_to_timestamp, is_df_cast_from_date_spark_compatible,
     is_df_cast_from_timestamp_spark_compatible,
 };
 use crate::conversion_funcs::utils::spark_cast_postprocess;
-use crate::utils::array_with_timezone;
+use crate::utils::{array_with_timezone, cast_timestamp_to_ntz, timestamp_ntz_to_timestamp};
 use crate::EvalMode::Legacy;
 use crate::{cast_whole_num_to_binary, BinaryOutputStyle};
 use crate::{EvalMode, SparkError};
@@ -316,6 +317,9 @@ pub(crate) fn cast_array(
         (Null, _) => Ok(cast_with_options(&array, to_type, &native_cast_options)?),
         (Utf8, Boolean) => spark_cast_utf8_to_boolean::<i32>(&array, eval_mode),
         (LargeUtf8, Boolean) => spark_cast_utf8_to_boolean::<i64>(&array, eval_mode),
+        (Utf8, Timestamp(_, None)) => {
+            cast_string_to_timestamp_ntz(&array, eval_mode, true, cast_options.is_spark4_plus)
+        }
         (Utf8, Timestamp(_, _)) => cast_string_to_timestamp(
             &array,
             to_type,
@@ -381,6 +385,12 @@ pub(crate) fn cast_array(
             spark_cast_nonintegral_numeric_to_integral(&array, eval_mode, &from_type, to_type)
         }
         (Decimal128(_p, _s), Boolean) => spark_cast_decimal_to_boolean(&array),
+        // Spark LEGACY cast uses Java BigDecimal.toString() which produces scientific notation
+        // when adjusted_exponent < -6 (e.g. "0E-18" for zero with scale=18).
+        // TRY and ANSI use plain notation ("0.000000000000000000") so DataFusion handles those.
+        (Decimal128(_, scale), Utf8) if eval_mode == EvalMode::Legacy => {
+            cast_decimal128_to_utf8(&array, *scale)
+        }
         (Utf8View, Utf8) => Ok(cast_with_options(&array, to_type, &CAST_OPTIONS)?),
         (Struct(_), Utf8) => Ok(casts_struct_to_string(array.as_struct(), cast_options)?),
         (Struct(_), Struct(_)) => Ok(cast_struct_to_struct(
@@ -435,6 +445,21 @@ pub(crate) fn cast_array(
         (Float32 | Float64, Timestamp(_, tz)) => cast_float_to_timestamp(&array, tz, eval_mode),
         (Boolean, Timestamp(_, tz)) => cast_boolean_to_timestamp(&array, tz),
         (Decimal128(_, scale), Timestamp(_, tz)) => cast_decimal_to_timestamp(&array, tz, *scale),
+        // NTZ → TIMESTAMP: interpret NTZ local-epoch value as session-TZ local time, convert to UTC.
+        // Must come before the is_datafusion_spark_compatible fallthrough which would
+        // incorrectly copy raw μs without any timezone conversion.
+        (Timestamp(_, None), Timestamp(_, Some(target_tz))) => Ok(timestamp_ntz_to_timestamp(
+            array,
+            &cast_options.timezone,
+            Some(target_tz.as_ref()),
+        )?),
+        // TIMESTAMP → NTZ: shift UTC epoch to local time in session TZ, store as local epoch.
+        (Timestamp(_, Some(_)), Timestamp(_, None)) => {
+            Ok(cast_timestamp_to_ntz(array, &cast_options.timezone)?)
+        }
+        // NTZ → Date32 and NTZ → Utf8 are handled by the DataFusion fall-through below
+        // (is_df_cast_from_timestamp_spark_compatible returns true for Date32 and Utf8).
+        // These casts are timezone-independent and DataFusion's implementation matches Spark.
         _ if cast_options.is_adapting_schema
             || is_datafusion_spark_compatible(&from_type, to_type) =>
         {
