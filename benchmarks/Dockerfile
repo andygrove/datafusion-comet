@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM apache/datafusion-comet:0.7.0-spark3.5.5-scala2.12-java11
+FROM apache/datafusion-comet:0.7.0-spark4.1.1-scala2.13-java17
 
 RUN apt update \
     && apt install -y git python3 python3-pip \

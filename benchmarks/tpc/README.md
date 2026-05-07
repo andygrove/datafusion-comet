@@ -61,7 +61,7 @@ Available engines: `spark`, `comet`, `comet-iceberg`, `gluten`
 Set Spark environment variables:
 
 ```shell
-export SPARK_HOME=/opt/spark-3.5.3-bin-hadoop3/
+export SPARK_HOME=/opt/spark-4.1.1-bin-hadoop3/
 export SPARK_MASTER=spark://yourhostname:7077
 ```
 
@@ -83,7 +83,7 @@ Run Comet benchmark:
 
 ```shell
 export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-export COMET_JAR=/opt/comet/comet-spark-spark3.5_2.12-0.10.0.jar
+export COMET_JAR=/opt/comet/comet-spark-spark4.1_2.13-0.16.0-SNAPSHOT.jar
 sudo ./drop-caches.sh
 python3 run.py --engine comet --benchmark tpch
 ```
@@ -91,11 +91,15 @@ python3 run.py --engine comet --benchmark tpch
 Run Gluten benchmark:
 
 ```shell
-export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
-export GLUTEN_JAR=/opt/gluten/gluten-velox-bundle-spark3.5_2.12-linux_amd64-1.4.0.jar
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+export GLUTEN_JAR=/opt/gluten/gluten-velox-bundle-spark4.0_2.13-linux_amd64-1.6.0.jar
 sudo ./drop-caches.sh
 python3 run.py --engine gluten --benchmark tpch
 ```
+
+Gluten 1.6.0 ships a Spark 4.0 build that is compatible with Spark 4.1.1. Earlier
+Gluten releases (which only build against Spark 3.x) require Java 8 and a separate
+Spark 3.5 cluster.
 
 Preview a command without running it:
 
@@ -106,7 +110,7 @@ python3 run.py --engine comet --benchmark tpch --dry-run
 Generating charts:
 
 ```shell
-python3 generate-comparison.py --benchmark tpch --labels "Spark 3.5.3" "Comet 0.9.0" "Gluten 1.4.0" --title "TPC-H @ 100 GB (single executor, 8 cores, local Parquet files)" spark-tpch-1752338506381.json comet-tpch-1752337818039.json gluten-tpch-1752337474344.json
+python3 generate-comparison.py --benchmark tpch --labels "Spark 4.1.1" "Comet 0.16.0-SNAPSHOT" "Gluten 1.6.0" --title "TPC-H @ 100 GB (single executor, 8 cores, local Parquet files)" spark-tpch-1752338506381.json comet-tpch-1752337818039.json gluten-tpch-1752337474344.json
 ```
 
 ## Engine Configuration
@@ -172,7 +176,7 @@ $SPARK_HOME/bin/spark-submit \
 
 ```shell
 export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-export COMET_JAR=/opt/comet/comet-spark-spark3.5_2.12-0.10.0.jar
+export COMET_JAR=/opt/comet/comet-spark-spark4.1_2.13-0.16.0-SNAPSHOT.jar
 export ICEBERG_JAR=/path/to/iceberg-spark-runtime-3.5_2.12-1.8.1.jar
 export ICEBERG_WAREHOUSE=/mnt/bigdata/iceberg-warehouse
 sudo ./drop-caches.sh
@@ -227,7 +231,7 @@ mkdir -p output
 docker build -t comet-builder \
     -f benchmarks/tpc/infra/docker/Dockerfile.build-comet .
 docker run --rm -v $(pwd)/output:/output comet-builder
-export COMET_JAR=$(pwd)/output/comet-spark-spark3.5_2.12-*.jar
+export COMET_JAR=$(pwd)/output/comet-spark-spark4.1_2.13-*.jar
 ```
 
 ### Platform notes
@@ -259,7 +263,7 @@ two workers:
 ```shell
 export DATA_DIR=/mnt/bigdata/tpch/sf100
 export RESULTS_DIR=/tmp/bench-results
-export COMET_JAR=/opt/comet/comet-spark-spark3.5_2.12-0.10.0.jar
+export COMET_JAR=/opt/comet/comet-spark-spark4.1_2.13-0.16.0-SNAPSHOT.jar
 
 mkdir -p $RESULTS_DIR/spark-events
 docker compose -f benchmarks/tpc/infra/docker/docker-compose.yml up -d
@@ -302,24 +306,20 @@ The Spark Application UI is only available while a benchmark is running. To insp
 completed runs, uncomment the `history-server` service in `docker-compose.yml` and
 restart the cluster. The History Server reads event logs from `$RESULTS_DIR/spark-events`.
 
-For Gluten (requires Java 8), you must restart the **entire cluster** with `JAVA_HOME`
-set so that all services (master, workers, and bench) use Java 8:
+Gluten 1.6.0 (Spark 4.0 build) runs on Java 17, so the same cluster used for Comet
+and Spark benchmarks works without restart:
 
 ```shell
-export BENCH_JAVA_HOME=/usr/lib/jvm/java-8-openjdk
-docker compose -f benchmarks/tpc/infra/docker/docker-compose.yml down
-docker compose -f benchmarks/tpc/infra/docker/docker-compose.yml up -d
-
 docker compose -f benchmarks/tpc/infra/docker/docker-compose.yml \
     run --rm bench \
     python3 /opt/benchmarks/run.py \
     --engine gluten --benchmark tpch --output /results --no-restart
 ```
 
-> **Important:** Only passing `-e JAVA_HOME=...` to the `bench` container is not
-> sufficient -- the workers also need Java 8 or Gluten will fail at runtime with
-> `sun.misc.Unsafe` errors. Unset `BENCH_JAVA_HOME` (or switch it back to Java 17)
-> and restart the cluster before running Comet or Spark benchmarks.
+> **Note:** Older Gluten releases (1.5.x and earlier, Spark 3.x only) require Java 8.
+> If you are using one of those, set `BENCH_JAVA_HOME=/usr/lib/jvm/java-8-openjdk`,
+> bring the cluster down with `docker compose ... down`, and bring it back up so all
+> services (master, workers, and bench) pick up Java 8.
 
 ### Memory limits
 

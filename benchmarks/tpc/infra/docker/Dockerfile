@@ -19,12 +19,13 @@
 # Build (from repository root):
 #   docker build -t comet-bench -f benchmarks/tpc/infra/docker/Dockerfile .
 
-ARG SPARK_IMAGE=apache/spark:3.5.2-python3
+ARG SPARK_IMAGE=apache/spark:4.1.1-python3
 FROM ${SPARK_IMAGE}
 
 USER root
 
-# Install Java 8 (Gluten) and Java 17 (Comet) plus Python 3.
+# Install Java 17 (Spark 4.x, Comet, Gluten 1.6+) and Java 8 (legacy Gluten on
+# Spark 3.x) plus Python 3.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        openjdk-8-jdk-headless \
@@ -46,7 +47,7 @@ RUN ARCH=$(uname -m) && \
     rm /tmp/async-profiler.tar.gz
 ENV ASYNC_PROFILER_HOME=/opt/async-profiler
 
-# Default to Java 17 (override with JAVA_HOME at runtime for Gluten).
+# Default to Java 17 (override JAVA_HOME at runtime only for legacy Gluten on Spark 3.x).
 # Detect architecture (amd64 or arm64) so the image works on both Linux and macOS.
 ARG TARGETARCH
 RUN ln -s /usr/lib/jvm/java-17-openjdk-${TARGETARCH} /usr/lib/jvm/java-17-openjdk && \
