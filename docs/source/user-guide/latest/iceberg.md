@@ -29,6 +29,10 @@ The example below uses Spark's package downloader to retrieve Comet $COMET_VERSI
 1.8.1, but Comet has been tested with Iceberg 1.5, 1.7, 1.8, 1.9, and 1.10. The native Iceberg
 reader is enabled by default. To disable it, set `spark.comet.scan.icebergNative.enabled=false`.
 
+The example uses the Spark 3.5 / Scala 2.12 build of Comet; substitute the Comet artifact
+matching your Spark and Scala versions (Comet also ships Spark 3.5 / Scala 2.13 and Spark
+4.0/4.1 / Scala 2.13 jars; see the [installation guide](installation.md) for the full list).
+
 ```shell
 $SPARK_HOME/bin/spark-shell \
     --packages org.apache.datafusion:comet-spark-spark3.5_2.12:$COMET_VERSION,org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.8.1,org.apache.iceberg:iceberg-core:1.8.1 \
