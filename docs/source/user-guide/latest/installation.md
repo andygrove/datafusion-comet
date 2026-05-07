@@ -28,11 +28,11 @@ Make sure the following requirements are met and software installed on your mach
 The published Comet jar files in Maven Central bundle native libraries for Linux only (amd64 and arm64). macOS
 users must [build from source](source.md).
 
-| Operating System            | Published Maven Jars | Build from Source |
-| --------------------------- | -------------------- | ----------------- |
-| Linux (amd64)               | Yes                  | Yes               |
-| Linux (arm64)               | Yes                  | Yes               |
-| Apple macOS (Apple Silicon) | No                   | Yes               |
+| Operating System              | Published Maven Jars | Build from Source |
+| ----------------------------- | -------------------- | ----------------- |
+| Linux (amd64)                 | Yes                  | Yes               |
+| Linux (arm64)                 | Yes                  | Yes               |
+| Apple macOS (Apple Silicon)   | No                   | Yes               |
 
 ### Supported Spark Versions
 

@@ -17,6 +17,7 @@
  * under the License.
  */
 
+
 /* Customizing with theme CSS variables */
 
 :root {
@@ -41,9 +42,7 @@
 }
 
 /* --- remove the right (secondary) sidebar entirely --- */
-.bd-sidebar-secondary {
-  display: none !important;
-}
+.bd-sidebar-secondary { display: none !important; }
 
 /* Some versions still reserve the grid column for it — collapse it */
 .bd-main {
@@ -63,10 +62,10 @@
 }
 
 /* --- let the center content use all remaining width --- */
-.bd-content,
-.bd-article-container {
-  max-width: none !important; /* remove internal cap */
+.bd-content, .bd-article-container {
+  max-width: none !important;   /* remove internal cap */
 }
+
 
 code {
   color: rgb(215, 70, 51);
@@ -93,28 +92,30 @@ add ":class: table-striped" */
   background-color: rgba(0, 0, 0, 0.05);
 }
 
+
 /* Limit the max height of the sidebar navigation section. Because in our
 customized template, there is more content above the navigation, i.e.
 larger logo: if we don't decrease the max-height, it will overlap with
 the footer.
 Details: 8rem for search box etc*/
 
-@media (min-width: 720px) {
-  @supports (position: -webkit-sticky) or (position: sticky) {
+@media (min-width:720px) {
+  @supports (position:-webkit-sticky) or (position:sticky) {
     .bd-links {
-      max-height: calc(100vh - 8rem);
+      max-height: calc(100vh - 8rem)
     }
   }
 }
+
 
 /* Fix table text wrapping in RTD theme,
  * see https://rackerlabs.github.io/docs-rackspace/tools/rtd-tables.html
  */
 
 @media screen {
-  table.docutils td {
-    /* !important prevents the common CSS stylesheets from overriding
+    table.docutils td {
+        /* !important prevents the common CSS stylesheets from overriding
           this as on RTD they are loaded after this stylesheet */
-    white-space: normal !important;
-  }
+        white-space: normal !important;
+    }
 }

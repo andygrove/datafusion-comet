@@ -27,17 +27,13 @@ under the License.
 <footer class="footer mt-5 mt-md-0">
   <div class="container">
     {% for footer_item in theme_footer_items %}
-    <div class="footer-item">{% include footer_item %}</div>
+    <div class="footer-item">
+      {% include footer_item %}
+    </div>
     {% endfor %}
     <div class="footer-item">
-      <p>
-        Apache DataFusion, Apache DataFusion Comet, Apache, the Apache feather
-        logo, and the Apache DataFusion project logo
-      </p>
-      <p>
-        are either registered trademarks or trademarks of The Apache Software
-        Foundation in the United States and other countries.
-      </p>
+      <p>Apache DataFusion, Apache DataFusion Comet, Apache, the Apache feather logo, and the Apache DataFusion project logo</p>
+      <p>are either registered trademarks or trademarks of The Apache Software Foundation in the United States and other countries.</p>
     </div>
   </div>
 </footer>
