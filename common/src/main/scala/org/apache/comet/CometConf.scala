@@ -95,9 +95,8 @@ object CometConf extends ShimCometConf {
 
   val COMET_NATIVE_SCAN_ENABLED: ConfigEntry[Boolean] = conf("spark.comet.scan.enabled")
     .category(CATEGORY_TESTING)
-    .doc(
-      "Whether to enable native scans. Intended for use in Comet's own test suites to " +
-        "selectively disable native scans; not intended for production use.")
+    .doc("Whether to enable native scans. Intended for use in Comet's own test suites to " +
+      "selectively disable native scans; not intended for production use.")
     .booleanConf
     .createWithDefault(true)
 
