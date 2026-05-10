@@ -36,6 +36,7 @@ under the License.
 
   <modules>
     <module>common</module>
+    <module>datafusion-java</module>
     <module>spark</module>
     <module>spark-integration</module>
   </modules>
