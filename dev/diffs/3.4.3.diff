@@ -1498,7 +1498,7 @@ index ac710c32296..2854b433dd3 100644
  
    import testImplicits._
 diff --git a/sql/core/src/test/scala/org/apache/spark/sql/execution/adaptive/AdaptiveQueryExecSuite.scala b/sql/core/src/test/scala/org/apache/spark/sql/execution/adaptive/AdaptiveQueryExecSuite.scala
-index 593bd7bb4ba..842dcf5577d 100644
+index 593bd7bb4ba..7f68e3bd8d3 100644
 --- a/sql/core/src/test/scala/org/apache/spark/sql/execution/adaptive/AdaptiveQueryExecSuite.scala
 +++ b/sql/core/src/test/scala/org/apache/spark/sql/execution/adaptive/AdaptiveQueryExecSuite.scala
 @@ -26,9 +26,11 @@ import org.scalatest.time.SpanSugar._
@@ -1772,7 +1772,7 @@ index 593bd7bb4ba..842dcf5577d 100644
  
 -  test("SPARK-35442: Support propagate empty relation through aggregate") {
 +  test("SPARK-35442: Support propagate empty relation through aggregate",
-+      IgnoreComet("Comet aggregate is not matched by PropagateEmptyRelationAfterAQE")) {
++      IgnoreComet("https://github.com/apache/datafusion-comet/issues/4412")) {
      withSQLConf(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key -> "true") {
        val (plan1, adaptivePlan1) = runAdaptiveAndVerifyResult(
          "SELECT key, count(*) FROM testData WHERE value = 'no_match' GROUP BY key")
@@ -1782,7 +1782,7 @@ index 593bd7bb4ba..842dcf5577d 100644
  
 -  test("SPARK-35442: Support propagate empty relation through union") {
 +  test("SPARK-35442: Support propagate empty relation through union",
-+      IgnoreComet("Comet aggregate is not matched by PropagateEmptyRelationAfterAQE")) {
++      IgnoreComet("https://github.com/apache/datafusion-comet/issues/4412")) {
      def checkNumUnion(plan: SparkPlan, numUnion: Int): Unit = {
        assert(
          collect(plan) {
@@ -1825,16 +1825,14 @@ index 593bd7bb4ba..842dcf5577d 100644
        }.size == 1)
        checkAnswer(ds, testData)
      }
-@@ -1892,7 +1930,8 @@ class AdaptiveQueryExecSuite
-     }
-   }
- 
--  test("SPARK-34980: Support coalesce partition through union") {
-+  test("SPARK-34980: Support coalesce partition through union",
-+      IgnoreComet("Comet changes the plan structure asserted by this test")) {
-     def checkResultPartition(
-         df: Dataset[Row],
-         numUnion: Int,
+@@ -1901,6 +1939,7 @@ class AdaptiveQueryExecSuite
+       df.collect()
+       assert(collect(df.queryExecution.executedPlan) {
+         case u: UnionExec => u
++        case u: CometUnionExec => u.originalPlan.asInstanceOf[UnionExec]
+       }.size == numUnion)
+       assert(collect(df.queryExecution.executedPlan) {
+         case r: AQEShuffleReadExec => r
 @@ -2028,7 +2067,8 @@ class AdaptiveQueryExecSuite
      }
    }

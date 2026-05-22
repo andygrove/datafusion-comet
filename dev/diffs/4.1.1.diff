@@ -2164,7 +2164,7 @@ index a3cfdc5a240..3793b6191bf 100644
        })
        checkAnswer(distinctWithId, Seq(Row(1, 0), Row(1, 0)))
 diff --git a/sql/core/src/test/scala/org/apache/spark/sql/execution/adaptive/AdaptiveQueryExecSuite.scala b/sql/core/src/test/scala/org/apache/spark/sql/execution/adaptive/AdaptiveQueryExecSuite.scala
-index 3e7d26f74bd..a6c0ddfba2d 100644
+index 3e7d26f74bd..6354c9a62e9 100644
 --- a/sql/core/src/test/scala/org/apache/spark/sql/execution/adaptive/AdaptiveQueryExecSuite.scala
 +++ b/sql/core/src/test/scala/org/apache/spark/sql/execution/adaptive/AdaptiveQueryExecSuite.scala
 @@ -27,12 +27,14 @@ import org.apache.spark.SparkException
@@ -2448,7 +2448,7 @@ index 3e7d26f74bd..a6c0ddfba2d 100644
  
 -  test("SPARK-35442: Support propagate empty relation through aggregate") {
 +  test("SPARK-35442: Support propagate empty relation through aggregate",
-+      IgnoreComet("Comet aggregate is not matched by PropagateEmptyRelationAfterAQE")) {
++      IgnoreComet("https://github.com/apache/datafusion-comet/issues/4412")) {
      withSQLConf(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key -> "true") {
        val (plan1, adaptivePlan1) = runAdaptiveAndVerifyResult(
          "SELECT key, count(*) FROM testData WHERE value = 'no_match' GROUP BY key")
@@ -2458,7 +2458,7 @@ index 3e7d26f74bd..a6c0ddfba2d 100644
  
 -  test("SPARK-35442: Support propagate empty relation through union") {
 +  test("SPARK-35442: Support propagate empty relation through union",
-+      IgnoreComet("Comet aggregate is not matched by PropagateEmptyRelationAfterAQE")) {
++      IgnoreComet("https://github.com/apache/datafusion-comet/issues/4412")) {
      def checkNumUnion(plan: SparkPlan, numUnion: Int): Unit = {
        assert(
          collect(plan) {
@@ -2501,16 +2501,14 @@ index 3e7d26f74bd..a6c0ddfba2d 100644
        }.size == 1)
        checkAnswer(ds, testData)
      }
-@@ -2187,7 +2226,8 @@ class AdaptiveQueryExecSuite
-     }
-   }
- 
--  test("SPARK-34980: Support coalesce partition through union") {
-+  test("SPARK-34980: Support coalesce partition through union",
-+      IgnoreComet("Comet changes the plan structure asserted by this test")) {
-     def checkResultPartition(
-         df: Dataset[Row],
-         numUnion: Int,
+@@ -2196,6 +2235,7 @@ class AdaptiveQueryExecSuite
+       df.collect()
+       assert(collect(df.queryExecution.executedPlan) {
+         case u: UnionExec => u
++        case u: CometUnionExec => u.originalPlan.asInstanceOf[UnionExec]
+       }.size == numUnion)
+       assert(collect(df.queryExecution.executedPlan) {
+         case r: AQEShuffleReadExec => r
 @@ -2331,7 +2371,8 @@ class AdaptiveQueryExecSuite
      }
    }
@@ -2611,16 +2609,14 @@ index 3e7d26f74bd..a6c0ddfba2d 100644
          }.isEmpty)
          assert(collect(initialExecutedPlan) {
            case i: InMemoryTableScanLike => i
-@@ -3372,7 +3419,8 @@ class AdaptiveQueryExecSuite
-     }
-   }
- 
--  test("SPARK-52921: Specify outputPartitioning for UnionExec for same output partitoning") {
-+  test("SPARK-52921: Specify outputPartitioning for UnionExec for same output partitoning",
-+      IgnoreComet("Comet changes the plan structure asserted by this test")) {
-     def checkResultPartition(
-         df: Dataset[Row],
-         numUnion: Int,
+@@ -3381,6 +3428,7 @@ class AdaptiveQueryExecSuite
+       df.collect()
+       assert(collect(df.queryExecution.executedPlan) {
+         case u: UnionExec => u
++        case u: CometUnionExec => u.originalPlan.asInstanceOf[UnionExec]
+       }.size == numUnion)
+       assert(collect(df.queryExecution.executedPlan) {
+         case r: AQEShuffleReadExec => r
 diff --git a/sql/core/src/test/scala/org/apache/spark/sql/execution/columnar/CachedBatchSerializerSuite.scala b/sql/core/src/test/scala/org/apache/spark/sql/execution/columnar/CachedBatchSerializerSuite.scala
 index 47b935a2880..3e9b87f5c32 100644
 --- a/sql/core/src/test/scala/org/apache/spark/sql/execution/columnar/CachedBatchSerializerSuite.scala
