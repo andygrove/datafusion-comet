@@ -24,32 +24,21 @@ use datafusion::common::Result;
 use datafusion::logical_expr::ColumnarValue;
 use datafusion::physical_expr::PhysicalExpr;
 use std::fmt::{Display, Formatter};
-use std::hash::Hash;
 use std::sync::Arc;
 
 /// to_csv spark function
-#[derive(Debug, Eq)]
+#[derive(Debug)]
 pub struct ToCsv {
     expr: Arc<dyn PhysicalExpr>,
     timezone: String,
     csv_write_options: CsvWriteOptions,
 }
 
-impl Hash for ToCsv {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.expr.hash(state);
-        self.timezone.hash(state);
-        self.csv_write_options.hash(state);
-    }
-}
-
-impl PartialEq for ToCsv {
-    fn eq(&self, other: &Self) -> bool {
-        self.expr.eq(&other.expr)
-            && self.timezone.eq(&other.timezone)
-            && self.csv_write_options.eq(&other.csv_write_options)
-    }
-}
+impl_expr_eq_hash!(ToCsv {
+    expr,
+    timezone,
+    csv_write_options
+});
 
 impl ToCsv {
     pub fn new(

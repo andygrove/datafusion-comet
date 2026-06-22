@@ -21,7 +21,6 @@ use arrow::record_batch::RecordBatch;
 use datafusion::common::{DataFusionError, ScalarValue, ScalarValue::Utf8};
 use datafusion::logical_expr::ColumnarValue;
 use datafusion::physical_expr::PhysicalExpr;
-use std::hash::Hash;
 use std::{
     fmt::{Debug, Display, Formatter},
     sync::Arc,
@@ -29,7 +28,7 @@ use std::{
 
 use crate::kernels::temporal::{timestamp_trunc_array_fmt_dyn, timestamp_trunc_dyn};
 
-#[derive(Debug, Eq)]
+#[derive(Debug)]
 pub struct TimestampTruncExpr {
     /// An array with DataType::Timestamp(TimeUnit::Microsecond, None)
     child: Arc<dyn PhysicalExpr>,
@@ -44,20 +43,11 @@ pub struct TimestampTruncExpr {
     timezone: String,
 }
 
-impl Hash for TimestampTruncExpr {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.child.hash(state);
-        self.format.hash(state);
-        self.timezone.hash(state);
-    }
-}
-impl PartialEq for TimestampTruncExpr {
-    fn eq(&self, other: &Self) -> bool {
-        self.child.eq(&other.child)
-            && self.format.eq(&other.format)
-            && self.timezone.eq(&other.timezone)
-    }
-}
+impl_expr_eq_hash!(TimestampTruncExpr {
+    child,
+    format,
+    timezone
+});
 
 impl TimestampTruncExpr {
     pub fn new(

@@ -25,29 +25,18 @@ use datafusion::common::{
 };
 use datafusion::logical_expr::ColumnarValue;
 use datafusion::physical_expr::PhysicalExpr;
-use std::hash::Hash;
 use std::{
     fmt::{Debug, Display, Formatter},
     sync::Arc,
 };
 
-#[derive(Debug, Eq)]
+#[derive(Debug)]
 pub struct GetArrayStructFields {
     child: Arc<dyn PhysicalExpr>,
     ordinal: usize,
 }
 
-impl Hash for GetArrayStructFields {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.child.hash(state);
-        self.ordinal.hash(state);
-    }
-}
-impl PartialEq for GetArrayStructFields {
-    fn eq(&self, other: &Self) -> bool {
-        self.child.eq(&other.child) && self.ordinal.eq(&other.ordinal)
-    }
-}
+impl_expr_eq_hash!(GetArrayStructFields { child, ordinal });
 
 impl GetArrayStructFields {
     pub fn new(child: Arc<dyn PhysicalExpr>, ordinal: usize) -> Self {

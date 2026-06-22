@@ -28,7 +28,6 @@ use datafusion::{
     physical_expr::PhysicalExpr,
 };
 use std::fmt::{Display, Formatter};
-use std::hash::Hash;
 use std::sync::Arc;
 
 pub fn create_negate_expr(
@@ -39,25 +38,14 @@ pub fn create_negate_expr(
 }
 
 /// Negative expression
-#[derive(Debug, Eq)]
+#[derive(Debug)]
 pub struct NegativeExpr {
     /// Input expression
     arg: Arc<dyn PhysicalExpr>,
     fail_on_error: bool,
 }
 
-impl Hash for NegativeExpr {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.arg.hash(state);
-        self.fail_on_error.hash(state);
-    }
-}
-
-impl PartialEq for NegativeExpr {
-    fn eq(&self, other: &Self) -> bool {
-        self.arg.eq(&other.arg) && self.fail_on_error.eq(&other.fail_on_error)
-    }
-}
+impl_expr_eq_hash!(NegativeExpr { arg, fail_on_error });
 
 macro_rules! check_overflow {
     ($array:expr, $array_type:ty, $min_val:expr, $type_name:expr) => {{

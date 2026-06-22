@@ -28,7 +28,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::sync::Arc;
 
 /// from_json function - parses JSON strings into structured types
-#[derive(Debug, Eq)]
+#[derive(Debug)]
 pub struct FromJson {
     /// The JSON string input expression
     expr: Arc<dyn PhysicalExpr>,
@@ -38,20 +38,11 @@ pub struct FromJson {
     timezone: String,
 }
 
-impl PartialEq for FromJson {
-    fn eq(&self, other: &Self) -> bool {
-        self.expr.eq(&other.expr) && self.schema == other.schema && self.timezone == other.timezone
-    }
-}
-
-impl std::hash::Hash for FromJson {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.expr.hash(state);
-        // Note: DataType doesn't implement Hash, so we hash its debug representation
-        format!("{:?}", self.schema).hash(state);
-        self.timezone.hash(state);
-    }
-}
+impl_expr_eq_hash!(FromJson {
+    expr,
+    schema,
+    timezone
+});
 
 impl FromJson {
     pub fn new(expr: Arc<dyn PhysicalExpr>, schema: DataType, timezone: &str) -> Self {

@@ -24,30 +24,18 @@ use arrow::{
 };
 use datafusion::logical_expr::ColumnarValue;
 use datafusion::physical_expr::PhysicalExpr;
-use std::hash::Hash;
 use std::{
     fmt::{Display, Formatter},
     sync::Arc,
 };
 
-#[derive(Debug, Eq)]
+#[derive(Debug)]
 pub struct NormalizeNaNAndZero {
     pub data_type: DataType,
     pub child: Arc<dyn PhysicalExpr>,
 }
 
-impl PartialEq for NormalizeNaNAndZero {
-    fn eq(&self, other: &Self) -> bool {
-        self.child.eq(&other.child) && self.data_type.eq(&other.data_type)
-    }
-}
-
-impl Hash for NormalizeNaNAndZero {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.child.hash(state);
-        self.data_type.hash(state);
-    }
-}
+impl_expr_eq_hash!(NormalizeNaNAndZero { data_type, child });
 
 impl NormalizeNaNAndZero {
     pub fn new(data_type: DataType, child: Arc<dyn PhysicalExpr>) -> Self {

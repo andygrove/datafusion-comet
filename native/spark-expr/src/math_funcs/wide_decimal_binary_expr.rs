@@ -30,7 +30,6 @@ use datafusion::common::Result;
 use datafusion::logical_expr::ColumnarValue;
 use datafusion::physical_expr::PhysicalExpr;
 use std::fmt::{Display, Formatter};
-use std::hash::Hash;
 use std::sync::Arc;
 
 /// The arithmetic operation to perform.
@@ -54,7 +53,7 @@ impl Display for WideDecimalOp {
 /// A fused expression that evaluates Decimal128 add/sub/mul using i256 intermediate arithmetic,
 /// applies scale adjustment with HALF_UP rounding, checks precision bounds, and outputs
 /// a single Decimal128 array.
-#[derive(Debug, Eq)]
+#[derive(Debug)]
 pub struct WideDecimalBinaryExpr {
     left: Arc<dyn PhysicalExpr>,
     right: Arc<dyn PhysicalExpr>,
@@ -64,27 +63,14 @@ pub struct WideDecimalBinaryExpr {
     eval_mode: EvalMode,
 }
 
-impl Hash for WideDecimalBinaryExpr {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.left.hash(state);
-        self.right.hash(state);
-        self.op.hash(state);
-        self.output_precision.hash(state);
-        self.output_scale.hash(state);
-        self.eval_mode.hash(state);
-    }
-}
-
-impl PartialEq for WideDecimalBinaryExpr {
-    fn eq(&self, other: &Self) -> bool {
-        self.left.eq(&other.left)
-            && self.right.eq(&other.right)
-            && self.op == other.op
-            && self.output_precision == other.output_precision
-            && self.output_scale == other.output_scale
-            && self.eval_mode == other.eval_mode
-    }
-}
+impl_expr_eq_hash!(WideDecimalBinaryExpr {
+    left,
+    right,
+    op,
+    output_precision,
+    output_scale,
+    eval_mode
+});
 
 impl WideDecimalBinaryExpr {
     pub fn new(

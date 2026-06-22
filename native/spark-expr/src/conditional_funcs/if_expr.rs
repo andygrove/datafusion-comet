@@ -23,12 +23,11 @@ use datafusion::common::Result;
 use datafusion::logical_expr::ColumnarValue;
 use datafusion::physical_expr::{expressions::CaseExpr, PhysicalExpr};
 use std::fmt::{Display, Formatter};
-use std::hash::Hash;
 use std::sync::Arc;
 
 /// IfExpr is a wrapper around CaseExpr, because `IF(a, b, c)` is semantically equivalent to
 /// `CASE WHEN a THEN b ELSE c END`.
-#[derive(Debug, Eq)]
+#[derive(Debug)]
 pub struct IfExpr {
     if_expr: Arc<dyn PhysicalExpr>,
     true_expr: Arc<dyn PhysicalExpr>,
@@ -37,22 +36,12 @@ pub struct IfExpr {
     case_expr: Arc<CaseExpr>,
 }
 
-impl Hash for IfExpr {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.if_expr.hash(state);
-        self.true_expr.hash(state);
-        self.false_expr.hash(state);
-        self.case_expr.hash(state);
-    }
-}
-impl PartialEq for IfExpr {
-    fn eq(&self, other: &Self) -> bool {
-        self.if_expr.eq(&other.if_expr)
-            && self.true_expr.eq(&other.true_expr)
-            && self.false_expr.eq(&other.false_expr)
-            && self.case_expr.eq(&other.case_expr)
-    }
-}
+impl_expr_eq_hash!(IfExpr {
+    if_expr,
+    true_expr,
+    false_expr,
+    case_expr
+});
 
 impl std::fmt::Display for IfExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {

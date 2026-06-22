@@ -27,7 +27,6 @@ use arrow::record_batch::RecordBatch;
 use datafusion::common::{DataFusionError, ScalarValue};
 use datafusion::logical_expr::ColumnarValue;
 use datafusion::physical_expr::PhysicalExpr;
-use std::hash::Hash;
 use std::{
     fmt::{Display, Formatter},
     sync::Arc,
@@ -36,7 +35,7 @@ use std::{
 /// A fused expression that rescales a Decimal128 value (changing scale) and checks
 /// for precision overflow in a single pass. Replaces the two-step
 /// `CheckOverflow(Cast(expr, Decimal128(p,s)))` pattern.
-#[derive(Debug, Eq)]
+#[derive(Debug)]
 pub struct DecimalRescaleCheckOverflow {
     child: Arc<dyn PhysicalExpr>,
     input_scale: i8,
@@ -45,25 +44,13 @@ pub struct DecimalRescaleCheckOverflow {
     fail_on_error: bool,
 }
 
-impl Hash for DecimalRescaleCheckOverflow {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.child.hash(state);
-        self.input_scale.hash(state);
-        self.output_precision.hash(state);
-        self.output_scale.hash(state);
-        self.fail_on_error.hash(state);
-    }
-}
-
-impl PartialEq for DecimalRescaleCheckOverflow {
-    fn eq(&self, other: &Self) -> bool {
-        self.child.eq(&other.child)
-            && self.input_scale == other.input_scale
-            && self.output_precision == other.output_precision
-            && self.output_scale == other.output_scale
-            && self.fail_on_error == other.fail_on_error
-    }
-}
+impl_expr_eq_hash!(DecimalRescaleCheckOverflow {
+    child,
+    input_scale,
+    output_precision,
+    output_scale,
+    fail_on_error
+});
 
 impl DecimalRescaleCheckOverflow {
     pub fn new(

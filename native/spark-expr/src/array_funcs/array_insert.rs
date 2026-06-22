@@ -28,7 +28,6 @@ use datafusion::common::{
 };
 use datafusion::logical_expr::ColumnarValue;
 use datafusion::physical_expr::PhysicalExpr;
-use std::hash::Hash;
 use std::{
     fmt::{Debug, Display, Formatter},
     sync::Arc,
@@ -39,7 +38,7 @@ use std::{
 // https://github.com/apache/spark/blob/master/common/utils/src/main/java/org/apache/spark/unsafe/array/ByteArrayUtils.java
 const MAX_ROUNDED_ARRAY_LENGTH: usize = 2147483632;
 
-#[derive(Debug, Eq)]
+#[derive(Debug)]
 pub struct ArrayInsert {
     src_array_expr: Arc<dyn PhysicalExpr>,
     pos_expr: Arc<dyn PhysicalExpr>,
@@ -47,22 +46,12 @@ pub struct ArrayInsert {
     legacy_negative_index: bool,
 }
 
-impl Hash for ArrayInsert {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.src_array_expr.hash(state);
-        self.pos_expr.hash(state);
-        self.item_expr.hash(state);
-        self.legacy_negative_index.hash(state);
-    }
-}
-impl PartialEq for ArrayInsert {
-    fn eq(&self, other: &Self) -> bool {
-        self.src_array_expr.eq(&other.src_array_expr)
-            && self.pos_expr.eq(&other.pos_expr)
-            && self.item_expr.eq(&other.item_expr)
-            && self.legacy_negative_index.eq(&other.legacy_negative_index)
-    }
-}
+impl_expr_eq_hash!(ArrayInsert {
+    src_array_expr,
+    pos_expr,
+    item_expr,
+    legacy_negative_index
+});
 
 impl ArrayInsert {
     pub fn new(

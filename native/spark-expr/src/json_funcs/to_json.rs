@@ -29,11 +29,10 @@ use datafusion::physical_expr::PhysicalExpr;
 use datafusion::physical_plan::ColumnarValue;
 use std::any::Any;
 use std::fmt::{Debug, Display, Formatter};
-use std::hash::Hash;
 use std::sync::Arc;
 
 /// to_json function
-#[derive(Debug, Eq)]
+#[derive(Debug)]
 pub struct ToJson {
     /// The input to convert to JSON
     expr: Arc<dyn PhysicalExpr>,
@@ -42,20 +41,11 @@ pub struct ToJson {
     ignore_null_fields: bool,
 }
 
-impl Hash for ToJson {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.expr.hash(state);
-        self.timezone.hash(state);
-        self.ignore_null_fields.hash(state);
-    }
-}
-impl PartialEq for ToJson {
-    fn eq(&self, other: &Self) -> bool {
-        self.expr.eq(&other.expr)
-            && self.timezone.eq(&other.timezone)
-            && self.ignore_null_fields.eq(&other.ignore_null_fields)
-    }
-}
+impl_expr_eq_hash!(ToJson {
+    expr,
+    timezone,
+    ignore_null_fields
+});
 
 impl ToJson {
     pub fn new(expr: Arc<dyn PhysicalExpr>, timezone: &str, ignore_null_fields: bool) -> Self {

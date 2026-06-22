@@ -27,30 +27,17 @@ use datafusion::logical_expr::ColumnarValue;
 use datafusion::physical_expr::PhysicalExpr;
 use std::{
     fmt::{Display, Formatter},
-    hash::Hash,
     sync::Arc,
 };
 
-#[derive(Debug, Eq)]
+#[derive(Debug)]
 pub struct SubstringExpr {
     pub child: Arc<dyn PhysicalExpr>,
     pub start: i64,
     pub len: u64,
 }
 
-impl Hash for SubstringExpr {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.child.hash(state);
-        self.start.hash(state);
-        self.len.hash(state);
-    }
-}
-
-impl PartialEq for SubstringExpr {
-    fn eq(&self, other: &Self) -> bool {
-        self.child.eq(&other.child) && self.start.eq(&other.start) && self.len.eq(&other.len)
-    }
-}
+impl_expr_eq_hash!(SubstringExpr { child, start, len });
 
 impl SubstringExpr {
     pub fn new(child: Arc<dyn PhysicalExpr>, start: i64, len: u64) -> Self {
