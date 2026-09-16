@@ -119,22 +119,25 @@ that never went through the pool, such as scratch buffers inside kernels or inte
 until the executor exceeds its container limit and is killed. To make it visible, both pools also compare the memory
 the native allocator has actually handed out against `spark.memory.offHeap.size`.
 
-By default a crossing is only logged, once per task. Setting `spark.comet.exec.memoryPool.enforceNativeUsage` to
-`true` makes the pools refuse the reservation instead, so operators that can spill do so and those that cannot fail
-the task rather than the executor. Enforcement is off by default while the rate of false positives on real workloads
-is established, and because spilling releases only reserved bytes: a denial provoked by untracked allocations may not
-relieve the pressure it reports.
+The pool only observes: a crossing is logged once per task and the reservation is always passed
+through. An earlier revision could also refuse the reservation, and it was removed because
+measurement showed it did not work. On TPC-H SF100 with a 2 GB budget it refused 30 to 44
+reservations per run and real native usage still passed the budget in every run, exactly as it did
+when only observing. The reason is structural: the check refuses reservations, but the overshoot
+lives in allocations that never reserve, so making a reserving operator spill releases reserved
+bytes and does nothing about the untracked allocations actually carrying usage past the limit.
 
-Two things about the comparison are worth knowing. The budget is the whole off-heap size, not the reservable portion:
-`spark.comet.exec.memoryPool.fraction` bounds what Comet may reserve, and lowering it to provoke spilling
-deliberately does not lower this ceiling too. The two sides also do not measure the same population, because
-`spark.memory.offHeap.size` is shared with Spark's own off-heap allocations and with Comet's JVM-side shuffle pages
-while the measured usage counts only Comet's native allocations. It is a loose backstop against losing the executor,
-not a bound on total off-heap usage.
+Two things about the comparison are worth knowing. The budget is the whole off-heap size, not the
+reservable portion: `spark.comet.exec.memoryPool.fraction` bounds what Comet may reserve, and
+lowering it to provoke spilling deliberately does not lower this ceiling too. The two sides also do
+not measure the same population, because `spark.memory.offHeap.size` is shared with Spark's own
+off-heap allocations and with Comet's JVM-side shuffle pages while the measured usage counts only
+Comet's native allocations.
 
-The comparison is process-wide on both sides, so there is no per-task attribution: once any task pushes real usage
-past the budget, every task's next reservation sees it. It gates reservations only; allocations themselves are never
-refused.
+The comparison is process-wide on both sides, so there is no per-task attribution: once any task
+pushes real usage past the budget, every task's next reservation sees it. Treat the log line as a
+signal that Comet is heading past its allotment and that the off-heap size or
+`spark.comet.exec.memoryPool.fraction` needs adjusting, not as something Comet will act on itself.
 
 [shuffle]: #shuffle
 [Advanced Memory Tuning]: #advanced-memory-tuning

@@ -15,18 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
-mod checked_pool;
+mod native_usage_pool;
 mod config;
 mod fair_pool;
 pub mod logging_pool;
 mod task_shared;
 mod unified_pool;
 
-use checked_pool::CheckedMemoryPool;
 use datafusion::execution::memory_pool::{
     FairSpillPool, GreedyMemoryPool, MemoryPool, TrackConsumersPool, UnboundedMemoryPool,
 };
 use fair_pool::CometFairMemoryPool;
+use native_usage_pool::NativeUsagePool;
 use jni::objects::{Global, JObject};
 use once_cell::sync::OnceCell;
 use std::num::NonZeroUsize;
@@ -54,17 +54,12 @@ pub(crate) fn create_memory_pool(
         ))
     }
 
-    /// Wraps an off-heap pool in the real-native-usage check when there is a budget to compare
-    /// against, so that Comet's actual allocations are measured rather than only its declared
-    /// reservations. Whether a crossing is refused or merely logged is `enforce`. `tracked` stays
-    /// outermost so a denial is still annotated with the largest consumers.
-    fn checked(
-        pool: impl MemoryPool + 'static,
-        budget: Option<usize>,
-        enforce: bool,
-    ) -> Arc<dyn MemoryPool> {
+    /// Wraps an off-heap pool so real native usage is compared against the off-heap size, making
+    /// the gap between declared and actual allocation visible at runtime. Observation only: the
+    /// reservation always reaches the inner pool.
+    fn observed(pool: impl MemoryPool + 'static, budget: Option<usize>) -> Arc<dyn MemoryPool> {
         match budget {
-            Some(budget) => tracked(CheckedMemoryPool::new(pool, budget, enforce)),
+            Some(budget) => tracked(NativeUsagePool::new(pool, budget)),
             None => tracked(pool),
         }
     }
@@ -72,21 +67,18 @@ pub(crate) fn create_memory_pool(
     let pool_type = memory_pool_config.pool_type;
     let pool_size = memory_pool_config.pool_size;
     let native_usage_budget = memory_pool_config.native_usage_budget;
-    let enforce_native_usage = memory_pool_config.enforce_native_usage;
 
     match pool_type {
         MemoryPoolType::GreedyUnified => acquire_task_shared_pool(task_attempt_id, || {
-            checked(
+            observed(
                 CometUnifiedMemoryPool::new(comet_task_memory_manager, task_attempt_id),
                 native_usage_budget,
-                enforce_native_usage,
             )
         }),
         MemoryPoolType::FairUnified => acquire_task_shared_pool(task_attempt_id, || {
-            checked(
+            observed(
                 CometFairMemoryPool::new(comet_task_memory_manager, pool_size),
                 native_usage_budget,
-                enforce_native_usage,
             )
         }),
         MemoryPoolType::GreedyTaskShared => acquire_task_shared_pool(task_attempt_id, || {

@@ -850,22 +850,6 @@ object CometConf extends ShimCometConf {
       .doubleConf
       .createWithDefault(1.0)
 
-  val COMET_OFFHEAP_MEMORY_POOL_ENFORCE_NATIVE_USAGE: ConfigEntry[Boolean] =
-    conf("spark.comet.exec.memoryPool.enforceNativeUsage")
-      .category(CATEGORY_TUNING)
-      .doc(
-        "Comet's off-heap memory pools compare the memory the native allocator has actually " +
-          "handed out against `spark.memory.offHeap.size`, which bounds native memory that " +
-          "operators never reserved and that the pools cannot otherwise see. By default a " +
-          "crossing is only logged, once per task. When this is enabled the pools refuse the " +
-          "reservation instead, so operators that can spill do so and those that cannot fail " +
-          "the task rather than the executor. Enforcement is off by default while the rate of " +
-          "false positives on real workloads is still being established. " +
-          "Only applies to off-heap mode. " +
-          s"$TUNING_GUIDE.")
-      .booleanConf
-      .createWithDefault(false)
-
   val COMET_NATIVE_LOAD_REQUIRED: ConfigEntry[Boolean] = conf("spark.comet.nativeLoadRequired")
     .category(CATEGORY_EXEC)
     .doc(

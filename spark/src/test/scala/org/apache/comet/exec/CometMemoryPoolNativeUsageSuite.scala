@@ -25,14 +25,14 @@ import org.apache.spark.sql.CometTestBase
 import org.apache.comet.CometConf
 
 /**
- * Exercises the off-heap memory pools' check of real native memory usage.
+ * Exercises the off-heap memory pools' observation of real native memory usage.
  *
  * The budget is `spark.memory.offHeap.size`, which Spark fixes when the session starts, so these
  * tests need a session of their own rather than a `withSQLConf` override. The size below is
- * smaller than the memory Comet's native code already holds before a query runs, so every
- * reservation crosses the budget and the first one is refused once enforcement is turned on.
- * Deliberately not achieved by lowering `spark.comet.exec.memoryPool.fraction`: that bounds what
- * Comet may reserve, not what the check measures.
+ * smaller than the memory Comet's native code holds once a query is running, so every reservation
+ * crosses the budget and the observer has something to report. Deliberately not achieved by
+ * lowering `spark.comet.exec.memoryPool.fraction`: that bounds what Comet may reserve, not what
+ * the observer measures.
  */
 class CometMemoryPoolNativeUsageSuite extends CometTestBase {
 
@@ -46,38 +46,25 @@ class CometMemoryPoolNativeUsageSuite extends CometTestBase {
   private def sortSmallInput(): Unit =
     spark.range(0, 1000).selectExpr("id", "id % 7 AS m").sort("m", "id").collect()
 
-  private def failureMessages(run: => Unit): Seq[String] =
-    causeChain(intercept[Throwable](run)).map(t => s"${t.getClass.getName}: ${t.getMessage}")
-
-  test("off-heap pools deny reservations once real native usage exceeds the off-heap size") {
+  /**
+   * The observer must never withhold a reservation, only report on it.
+   *
+   * The budget here is far too small for the sort, so the query fails either way. What this pins
+   * down is *who* refuses it: the request has to reach Spark's ledger and fail there. An earlier
+   * revision of this pool could refuse the reservation itself, which was removed because
+   * measurement showed it did not keep real usage under the budget while it did penalise the
+   * operators that reserve. If refusal is ever reintroduced, this test fails.
+   */
+  test("the pool observes real native usage without withholding reservations") {
     Seq("fair_unified", "greedy_unified").foreach { poolType =>
-      withSQLConf(
-        CometConf.COMET_OFFHEAP_MEMORY_POOL_ENFORCE_NATIVE_USAGE.key -> "true",
-        CometConf.COMET_OFFHEAP_MEMORY_POOL_TYPE.key -> poolType) {
-        val messages = failureMessages(sortSmallInput())
+      withSQLConf(CometConf.COMET_OFFHEAP_MEMORY_POOL_TYPE.key -> poolType) {
+        val messages = causeChain(intercept[Throwable](sortSmallInput()))
+          .map(t => s"${t.getClass.getName}: ${t.getMessage}")
         assert(
-          messages.exists(_.contains("native memory in use is")),
-          s"expected $poolType to deny the reservation on real native usage, but got:\n  " +
+          messages.exists(_.contains("failed to acquire")),
+          s"expected $poolType to pass the reservation to Spark's ledger, but got:\n  " +
             messages.mkString("\n  "))
       }
-    }
-  }
-
-  test("the check only observes by default") {
-    // The same query under the same off-heap size, so enforcement is the only difference. It is
-    // too small for the sort either way, which is what makes the budget bite in the test above;
-    // what changes here is who refuses the reservation. Left at its default the check only logs,
-    // so the reservation is not held back in Comet and reaches Spark's ledger, which fails it.
-    withSQLConf(CometConf.COMET_OFFHEAP_MEMORY_POOL_TYPE.key -> "greedy_unified") {
-      val messages = failureMessages(sortSmallInput())
-      assert(
-        !messages.exists(_.contains("native memory in use is")),
-        "the check is not enforcing by default but still refused the reservation:\n  " +
-          messages.mkString("\n  "))
-      assert(
-        messages.exists(_.contains("failed to acquire")),
-        "expected the reservation to reach Spark's ledger, but got:\n  " +
-          messages.mkString("\n  "))
     }
   }
 }
