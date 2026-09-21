@@ -62,7 +62,7 @@ The Implementation column is auto-generated from the serde definitions in `Query
 ## Not currently planned
 
 Comet focuses acceleration on mainstream relational, string, datetime, math, and collection
-expressions. The following function families are **not currently planned** for native acceleration (they are not on the 1.0 roadmap): specialized functionality with narrow real-world analytics use and high implementation cost. They fall back to Spark and may be reconsidered based on demand:
+expressions. The following function families are **not currently planned** for native acceleration: specialized functionality with narrow real-world analytics use and high implementation cost. They fall back to Spark and may be reconsidered based on demand:
 
 - **Probabilistic sketches and approximate top-k** (`kll_sketch_*`, `hll_*`, `theta_*`, `count_min_sketch`, `bitmap_*`, `approx_top_k*`): specialized data structures with exact-correctness traps.
 - **Geospatial** (`st_*`): brand-new Spark 4.1 functionality, specialized.
