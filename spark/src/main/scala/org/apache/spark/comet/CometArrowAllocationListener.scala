@@ -302,8 +302,8 @@ private[comet] class CometArrowAllocationListener(taskMemoryManager: TaskMemoryM
     new OutOfMemoryException(
       s"Unable to reserve $needed bytes of Spark off-heap execution memory for a JVM Arrow " +
         s"allocation of $size bytes, got $granted. Increase spark.memory.offHeap.size, or set " +
-        s"${CometConf.COMET_MEMORY_JVM_ARROW_ACCOUNTING_ENABLED.key}=false to stop charging " +
-        "JVM Arrow allocations to Spark.",
+        s"${CometConf.COMET_LEGACY_UNBOUNDED_JVM_ARROW_MEMORY.key}=true to restore the previous " +
+        "behavior of not charging JVM Arrow allocations to Spark.",
       cause)
   }
 }

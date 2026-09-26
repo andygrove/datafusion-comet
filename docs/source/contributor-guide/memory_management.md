@@ -120,9 +120,9 @@ Comet's native pool among them. The reservation is made before Arrow allocates, 
 cover the allocation, any partial grant is handed back and the allocation is refused with Arrow's
 `OutOfMemoryException`. That is `try_grow` rather than `grow`: nothing is allocated that is not
 covered, and there is no overcommit. Nothing can spill these buffers, so a refusal fails the
-allocating task, the way a Spark consumer fails when it cannot acquire memory. Set
-`spark.comet.memory.jvmArrowAccounting.enabled=false` to stop charging them, in which case
-`forCurrentTask()` returns the root. It also returns the root in on-heap mode, and off a task, as
+allocating task, the way a Spark consumer fails when it cannot acquire memory. The deprecated
+`spark.comet.legacy.unboundedJvmArrowMemory=true` restores the earlier behavior of charging
+nothing, in which case `forCurrentTask()` returns the root. It also returns the root in on-heap mode, and off a task, as
 for broadcast coalescing on the driver or for a reader built on a native thread that is pulling a
 stream.
 

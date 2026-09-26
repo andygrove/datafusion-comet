@@ -28,7 +28,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import org.apache.arrow.c.Data
 import org.apache.arrow.memory.{BufferAllocator, OutOfMemoryException}
 import org.apache.arrow.vector.{FieldVector, IntVector, VectorSchemaRoot}
-import org.apache.spark.{SparkConf, TaskContext, TaskContextImpl}
+import org.apache.spark.{SparkConf, SparkContext, TaskContext, TaskContextImpl}
 import org.apache.spark.executor.TaskMetrics
 import org.apache.spark.memory.{MemoryConsumer, MemoryManager, MemoryMode, SparkOutOfMemoryError, TaskMemoryManager, TestMemoryManager}
 import org.apache.spark.sql.comet.execution.arrow.CometArrowStream
@@ -171,6 +171,29 @@ class CometArrowAllocationListenerSuite extends AnyFunSuite {
       assert(CometTaskArrowAllocator.forCurrentTask() eq CometArrowAllocator)
       assert(CometTaskArrowAllocator.listenerForTask(task.taskAttemptId).isEmpty)
     }
+  }
+
+  test("the legacy setting hands tasks the unaccounted root, and is off by default") {
+    // Read from the executors' SparkConf, so each arm runs a task in a context of its own.
+    def taskGetsRoot(legacy: Option[String]): Boolean = {
+      val conf = new SparkConf()
+        .setMaster("local[1]")
+        .setAppName(getClass.getSimpleName)
+        .set("spark.memory.offHeap.enabled", "true")
+        .set("spark.memory.offHeap.size", poolBytes.toString)
+      legacy.foreach(conf.set(CometConf.COMET_LEGACY_UNBOUNDED_JVM_ARROW_MEMORY.key, _))
+      val sc = new SparkContext(conf)
+      try {
+        sc.parallelize(Seq(0), 1)
+          .map(_ => CometTaskArrowAllocator.forCurrentTask() eq CometArrowAllocator)
+          .collect()
+          .head
+      } finally {
+        sc.stop()
+      }
+    }
+    assert(!taskGetsRoot(None), "a task was not accounted by default")
+    assert(taskGetsRoot(Some("true")), "the legacy setting did not restore the unaccounted root")
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -389,7 +412,7 @@ class CometArrowAllocationListenerSuite extends AnyFunSuite {
 
       val allocator = CometTaskArrowAllocator.forCurrentTask()
       val refused = intercept[OutOfMemoryException](allocator.buffer(blockSize * 2))
-      assert(refused.getMessage.contains(CometConf.COMET_MEMORY_JVM_ARROW_ACCOUNTING_ENABLED.key))
+      assert(refused.getMessage.contains(CometConf.COMET_LEGACY_UNBOUNDED_JVM_ARROW_MEMORY.key))
       // Spark granted the block it had before coming up short. That partial grant is handed back
       // rather than kept, and Arrow never allocated anything.
       assert(allocator.getAllocatedMemory == 0L)

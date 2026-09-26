@@ -122,8 +122,9 @@ cannot cover fails the task that makes it, the way a Spark operator fails when i
 leaves Comet's native operators and Spark's own consumers less of the pool, so they can spill sooner. Comet 1.1.0 and
 earlier did not charge this memory to the pool, so if you sized `spark.memory.offHeap.size` against one of those
 releases, check how often queries spill, and raise it if tasks fail with `Unable to reserve ... for a JVM Arrow
-allocation`. Setting `spark.comet.memory.jvmArrowAccounting.enabled=false` stops charging
-it, in which case it has to fit in `spark.executor.memoryOverhead` instead.
+allocation`. Setting the deprecated `spark.comet.legacy.unboundedJvmArrowMemory=true` restores the earlier behavior
+while you adjust, in which case this memory has to fit in `spark.executor.memoryOverhead` instead; see the
+[Upgrade Guide](migration-guide.md).
 
 For more details about Spark off-heap memory mode, please refer to [Spark documentation].
 

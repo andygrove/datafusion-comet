@@ -33,10 +33,10 @@ import org.apache.spark.memory.{MemoryConsumer, MemoryManager, MemoryMode, TaskM
  *
  * Each case runs the same allocate/release loop twice: once against a plain `RootAllocator`,
  * which is what Comet did before [[CometArrowAllocationListener]] existed and what
- * `spark.comet.memory.jvmArrowAccounting.enabled=false` restores, and once against a task
- * allocator carrying the listener. Reservation call counts are printed under each table, because
- * the interesting variable is not the per-buffer bookkeeping but how often a buffer size crosses
- * a block boundary and has to go into `TaskMemoryManager` at all.
+ * `spark.comet.legacy.unboundedJvmArrowMemory=true` restores, and once against a task allocator
+ * carrying the listener. Reservation call counts are printed under each table, because the
+ * interesting variable is not the per-buffer bookkeeping but how often a buffer size crosses a
+ * block boundary and has to go into `TaskMemoryManager` at all.
  *
  * To run this benchmark:
  * {{{

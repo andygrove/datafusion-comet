@@ -53,6 +53,25 @@ Treat setting one of these keys as a temporary measure. If you find you cannot s
 legacy behavior, please open an issue describing your use case so it can be considered before the
 key is removed.
 
+## Upgrading to Comet 1.2.0
+
+### JVM-side Arrow memory is charged to Spark's off-heap memory pool
+
+The Arrow memory that Comet allocates on the JVM side for a task, for example to read a cached table
+or to exchange batches with a Python worker, is now charged to `spark.memory.offHeap.size` as a
+memory consumer of that task. An allocation the pool cannot cover fails the task with an
+`OutOfMemoryException` whose message begins `Unable to reserve`, the way a Spark operator fails when
+it cannot acquire memory. The charge also leaves Comet's native operators and Spark's own consumers
+less of the pool, so queries can spill sooner than before. Earlier releases charged this memory to no
+pool, so it never failed an allocation and had to fit in `spark.executor.memoryOverhead` instead.
+
+Arrow memory that is handed to Comet's native code, or received from it, is not charged on the JVM
+side, because native accounts for what it retains.
+
+To restore the previous behavior, set `spark.comet.legacy.unboundedJvmArrowMemory=true` when the
+application is submitted. It is read on the executors, so setting it in a running session has no
+effect.
+
 ## Upgrading to Comet 1.1.0
 
 Comet `1.1.0` makes no behavior changes that need a `spark.comet.legacy.*` key.

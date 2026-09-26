@@ -68,6 +68,7 @@ object CometConf extends ShimCometConf {
   private val CATEGORY_SHUFFLE = "shuffle"
   private val CATEGORY_TUNING = "tuning"
   private val CATEGORY_TESTING = "testing"
+  private val CATEGORY_LEGACY = "legacy"
 
   def register(conf: ConfigEntry[_]): Unit = {
     assert(conf.category.nonEmpty, s"${conf.key} does not have a category defined")
@@ -374,21 +375,20 @@ object CometConf extends ShimCometConf {
     .checkValue(_ >= 0, "The memory usage log interval must not be negative")
     .createWithDefault(TimeUnit.SECONDS.toMillis(10))
 
-  val COMET_MEMORY_JVM_ARROW_ACCOUNTING_ENABLED: ConfigEntry[Boolean] =
-    conf("spark.comet.memory.jvmArrowAccounting.enabled")
-      .category(CATEGORY_TUNING)
+  val COMET_LEGACY_UNBOUNDED_JVM_ARROW_MEMORY: ConfigEntry[Boolean] =
+    conf("spark.comet.legacy.unboundedJvmArrowMemory")
+      .category(CATEGORY_LEGACY)
       .doc(
-        "Whether to charge the Arrow memory that Comet allocates on the JVM side for a task to " +
-          "Spark's off-heap memory pool, as a memory consumer of that task. An allocation the " +
-          "pool cannot cover fails the task that makes it, and the charge leaves Comet's native " +
-          "operators and Spark's other consumers correspondingly less of the pool, so they may " +
-          "spill sooner. Arrow memory that is " +
-          "handed to Comet's native code, or received from it, is not charged here, because it " +
-          "is native's to account for. This is an executor setting, read when an executor " +
-          "first allocates Arrow memory for a task, so it must be set when the application is " +
-          s"submitted. Set to false to stop charging these allocations. $TUNING_GUIDE.")
+        "When true, restores the pre-1.2.0 behavior of the Arrow memory that Comet " +
+          "allocates on the JVM side for a task, which was charged to no memory pool and so " +
+          "could never fail an allocation. Since 1.2.0 it is charged to Spark's off-heap " +
+          "memory pool as a memory consumer of the task, and an allocation the pool cannot " +
+          "cover fails the task. Arrow memory handed to Comet's native code, or received from " +
+          "it, is not affected. This is an executor setting, read when an executor first " +
+          "allocates Arrow memory for a task, so it must be set when the application is " +
+          "submitted. This config is deprecated and will be removed in a future major release.")
       .booleanConf
-      .createWithDefault(true)
+      .createWithDefault(false)
 
   val COMET_SHUFFLE_ENABLED: ConfigEntry[Boolean] =
     conf("spark.comet.shuffle.enabled")

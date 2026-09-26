@@ -77,14 +77,17 @@ object CometTaskArrowAllocator extends Logging {
   private val closeLock = new Object
 
   /**
-   * Resolved once per JVM. Read from the `SparkConf` rather than `SQLConf`, because this is
-   * reached from executor threads where `SQLConf` does not carry Comet's settings. The `Option`
-   * guard covers tests that install a task context without a `SparkEnv`.
+   * Whether tasks get an accounted allocator, which the deprecated
+   * `spark.comet.legacy.unboundedJvmArrowMemory` turns off. Read from the `SparkConf` rather than
+   * `SQLConf`, because this is reached from executor threads where `SQLConf` does not carry
+   * Comet's settings, and when a task first needs its allocator rather than once per JVM, so that
+   * the value belongs to whichever `SparkContext` is running. Tests that install a task context
+   * by hand have no `SparkEnv`, and account as the default does.
    */
-  private lazy val accountingEnabled: Boolean = Option(SparkEnv.get).forall { env =>
+  private def accountingEnabled: Boolean = !Option(SparkEnv.get).exists { env =>
     env.conf.getBoolean(
-      CometConf.COMET_MEMORY_JVM_ARROW_ACCOUNTING_ENABLED.key,
-      CometConf.COMET_MEMORY_JVM_ARROW_ACCOUNTING_ENABLED.defaultValue.get)
+      CometConf.COMET_LEGACY_UNBOUNDED_JVM_ARROW_MEMORY.key,
+      CometConf.COMET_LEGACY_UNBOUNDED_JVM_ARROW_MEMORY.defaultValue.get)
   }
 
   /**

@@ -72,6 +72,16 @@ shuffle, including applications that rely only on remote reliable storage or dec
 <!--BEGIN:CONFIG_TABLE[tuning]-->
 <!--END:CONFIG_TABLE-->
 
+## Legacy Settings
+
+Each of these settings restores a behavior that an earlier release had, after a release changed it.
+They are deprecated from the moment they are added, and may be removed in any future major release,
+at which point the newer behavior becomes unconditional. The
+[Upgrade Guide](migration-guide.md) describes each change and the setting that reverts it.
+
+<!--BEGIN:CONFIG_TABLE[legacy]-->
+<!--END:CONFIG_TABLE-->
+
 ## Development & Testing Settings
 
 These settings exist for Comet's own test suites and for debugging. They are **not covered by the
