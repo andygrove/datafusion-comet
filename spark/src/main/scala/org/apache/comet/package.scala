@@ -34,13 +34,10 @@ package object comet {
    * leaked. To avoid this, we use a single allocator for the whole execution process.
    *
    * It carries no allocation listener, so neither it nor a child cut with the three-argument
-   * `newChildAllocator` reports anything to Spark's memory manager. That is what buffers
-   * allocated to be handed to native want: a native operator that retains a batch reserves its
-   * buffers through Comet's pool, which charges the same Spark task, so reporting them here as
-   * well would reserve the same memory twice. JVM-owned allocations should go through
-   * `CometTaskArrowAllocator.forCurrentTask()` instead, which cuts a per-task child whose
-   * listener charges what that child owns to Spark and refuses an allocation Spark cannot cover,
-   * and which hands back this allocator when there is no task.
+   * `newChildAllocator` charges anything to Spark. That suits buffers handed to native, which
+   * accounts for what it retains. JVM-owned allocations within a task go through
+   * `CometTaskArrowAllocator.forCurrentTask()` instead, which describes which allocations go
+   * where.
    */
   val CometArrowAllocator = new RootAllocator(Long.MaxValue)
 

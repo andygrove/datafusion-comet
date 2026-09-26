@@ -19,14 +19,12 @@
 
 package org.apache.spark.comet
 
-import java.util.Properties
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
 
 import org.apache.arrow.memory.{ArrowBuf, BufferAllocator, RootAllocator}
-import org.apache.spark.{SparkConf, TaskContext, TaskContextImpl}
+import org.apache.spark.{CometTaskMemoryManager, TaskContext}
 import org.apache.spark.benchmark.{Benchmark, BenchmarkBase}
-import org.apache.spark.executor.TaskMetrics
-import org.apache.spark.memory.{MemoryConsumer, MemoryManager, MemoryMode, TaskMemoryManager, TestMemoryManager}
+import org.apache.spark.memory.{MemoryConsumer, MemoryManager, TaskMemoryManager}
 
 /**
  * Measures what charging JVM Arrow allocations to Spark costs, since it is on by default.
@@ -45,11 +43,11 @@ import org.apache.spark.memory.{MemoryConsumer, MemoryManager, MemoryMode, TaskM
  */
 object CometArrowAllocationListenerBenchmark extends BenchmarkBase {
 
-  private val blockSize = 1024L * 1024L
+  private val blockSize = CometArrowAllocationListener.BLOCK_SIZE
   private val poolBytes = 1024L * 1024L * 1024L
 
   override def runBenchmarkSuite(mainArgs: Array[String]): Unit = {
-    runBenchmark("JVM Arrow allocations reported to Spark") {
+    runBenchmark("JVM Arrow allocations charged to Spark") {
       // Many sub-block buffers, the shape a codegen output vector's validity and offset buffers
       // take. None of them comes close to a block, so the listener should never reach Spark after
       // the first one.
@@ -63,9 +61,17 @@ object CometArrowAllocationListenerBenchmark extends BenchmarkBase {
       // Worst case for the block batching: every allocation crosses a boundary, so every one of
       // them takes the executor-wide lock in `acquireExecutionMemory`.
       allocateAndRelease("block-sized buffers", bufferSize = blockSize, buffersPerIteration = 8)
-      // Same, with a second thread reserving from the same constrained pool the way Comet's native
-      // side does through CometTaskMemoryManager.
-      allocateUnderNativePressure()
+      // Same, with a second thread reserving from the same pool the way Comet's native side does.
+      // The pool has room for the whole set plus that thread's block, because a smaller one would
+      // refuse the allocations rather than slow them down, so what this measures is contention for
+      // the pool's lock rather than for its capacity. In the unaccounted arm only the pressure
+      // thread touches the pool: the delta is what the Arrow side adds by competing.
+      allocateAndRelease(
+        "block-sized buffers under native pressure",
+        bufferSize = blockSize,
+        buffersPerIteration = 8,
+        pool = blockSize * 9,
+        nativePressure = true)
       // Per call site rather than per buffer, but it is the cost the root allocator `val` did not
       // have: a TaskContext lookup and a concurrent map read.
       allocatorLookup()
@@ -75,7 +81,9 @@ object CometArrowAllocationListenerBenchmark extends BenchmarkBase {
   private def allocateAndRelease(
       name: String,
       bufferSize: Long,
-      buffersPerIteration: Int): Unit = {
+      buffersPerIteration: Int,
+      pool: Long = poolBytes,
+      nativePressure: Boolean = false): Unit = {
     val benchmark =
       new Benchmark(
         s"$name (${buffersPerIteration}x$bufferSize)",
@@ -86,55 +94,23 @@ object CometArrowAllocationListenerBenchmark extends BenchmarkBase {
     // steady-state cost of allocating and releasing rather than the cost of standing a task up.
     val root = new RootAllocator(Long.MaxValue)
     try {
-      withTaskAllocator() { (accounted, memory) =>
-        benchmark.addCase("not accounted") { _ =>
-          churn(root, bufferSize, buffersPerIteration)
-        }
-        benchmark.addCase("accounted") { _ =>
-          churn(accounted, bufferSize, buffersPerIteration)
-        }
-        benchmark.run()
-
-        // One more round with the counters zeroed, to report how often a single iteration reaches
-        // the memory manager. That, rather than the per-buffer bookkeeping, is the cost that
-        // scales with buffer size.
-        memory.reset()
-        churn(accounted, bufferSize, buffersPerIteration)
-        writeLine(s"  accounted: ${memory.summary(buffersPerIteration)} per iteration")
-      }
-    } finally {
-      root.close()
-    }
-  }
-
-  private def allocateUnderNativePressure(): Unit = {
-    val buffersPerIteration = 8
-    val benchmark = new Benchmark(
-      s"block-sized buffers under native pressure (${buffersPerIteration}x$blockSize)",
-      buffersPerIteration,
-      output = output)
-
-    val root = new RootAllocator(Long.MaxValue)
-    try {
-      // Room for the whole set plus the pressure thread's block, which runs throughout. A smaller
-      // pool would refuse the allocations rather than slow them down, so what this measures is
-      // contention for the pool's lock rather than for its capacity. In the unaccounted arm only
-      // the pressure thread touches the pool: the delta is what the Arrow side adds by competing.
-      withTaskAllocator(poolBytes = blockSize * (buffersPerIteration + 1)) {
-        (accounted, memory) =>
-          withNativePressure(memory) {
-            benchmark.addCase("not accounted") { _ =>
-              churn(root, blockSize, buffersPerIteration)
-            }
-            benchmark.addCase("accounted") { _ =>
-              churn(accounted, blockSize, buffersPerIteration)
-            }
-            benchmark.run()
-
-            memory.reset()
-            churn(accounted, blockSize, buffersPerIteration)
-            writeLine(s"  accounted: ${memory.summary(buffersPerIteration)} per iteration")
+      withTaskAllocator(pool) { (accounted, memory) =>
+        withNativePressure(nativePressure) {
+          benchmark.addCase("not accounted") { _ =>
+            churn(root, bufferSize, buffersPerIteration)
           }
+          benchmark.addCase("accounted") { _ =>
+            churn(accounted, bufferSize, buffersPerIteration)
+          }
+          benchmark.run()
+
+          // One more round with the counters zeroed, to report how often a single iteration
+          // reaches the memory manager. That, rather than the per-buffer bookkeeping, is the cost
+          // that scales with buffer size.
+          memory.reset()
+          churn(accounted, bufferSize, buffersPerIteration)
+          writeLine(s"  accounted: ${memory.summary(buffersPerIteration)} per iteration")
+        }
       }
     } finally {
       root.close()
@@ -193,69 +169,36 @@ object CometArrowAllocationListenerBenchmark extends BenchmarkBase {
    * Runs the body against a task allocator, torn down afterwards, so that repeated iterations do
    * not accumulate reservations or allocators.
    */
-  private def withTaskAllocator[T](poolBytes: Long = poolBytes)(
+  private def withTaskAllocator[T](pool: Long = poolBytes)(
       f: (BufferAllocator, CountingTaskMemoryManager) => T): T = {
-    val memory = newTaskMemoryManager(poolBytes)
-    val context = newTaskContext(memory)
-    val previous = TaskContext.get()
-    TaskContext.setTaskContext(context)
-    try {
-      f(CometTaskArrowAllocator.forCurrentTask(), memory)
-    } finally {
-      try {
-        context.markTaskCompleted(None)
-        memory.cleanUpAllAllocatedMemory()
-      } finally {
-        if (previous == null) TaskContext.unset() else TaskContext.setTaskContext(previous)
+    val (context, memory) = TestTasks.newTask(pool)(new CountingTaskMemoryManager(_, _))
+    TestTasks.withInstalled(context)(f(CometTaskArrowAllocator.forCurrentTask(), memory))
+  }
+
+  /**
+   * Hammers the task's pool from another thread for the duration of the body, when asked to, the
+   * way native reservations do. Built on the task's thread, which `CometTaskMemoryManager` needs.
+   */
+  private def withNativePressure[T](enabled: Boolean)(f: => T): T = {
+    if (!enabled) {
+      f
+    } else {
+      val stop = new AtomicBoolean(false)
+      val native = new CometTaskMemoryManager(0L, TaskContext.get().taskAttemptId())
+      val thread = new Thread(() => {
+        while (!stop.get()) {
+          native.releaseMemory(native.acquireMemory(blockSize))
+        }
+      })
+      thread.setDaemon(true)
+      thread.setName("native-reservations")
+      thread.start()
+      try f
+      finally {
+        stop.set(true)
+        thread.join()
       }
     }
-  }
-
-  /** Hammers the same pool from another thread, the way native reservations do. */
-  private def withNativePressure[T](memory: TaskMemoryManager)(f: => T): T = {
-    val stop = new AtomicBoolean(false)
-    val consumer = new NativeLikeConsumer(memory)
-    val thread = new Thread(() => {
-      while (!stop.get()) {
-        val granted = consumer.reserve(blockSize)
-        consumer.release(granted)
-      }
-    })
-    thread.setDaemon(true)
-    thread.setName("native-reservations")
-    thread.start()
-    try f
-    finally {
-      stop.set(true)
-      thread.join()
-    }
-  }
-
-  private val nextTaskAttemptId = new AtomicLong(1L)
-
-  private def newTaskMemoryManager(poolBytes: Long): CountingTaskMemoryManager = {
-    val conf = new SparkConf(false)
-      .set("spark.memory.offHeap.enabled", "true")
-      .set("spark.memory.offHeap.size", poolBytes.toString)
-    val memoryManager = new TestMemoryManager(conf)
-    memoryManager.limit(poolBytes)
-    new CountingTaskMemoryManager(memoryManager, nextTaskAttemptId.getAndIncrement())
-  }
-
-  private def newTaskContext(memory: CountingTaskMemoryManager): TaskContextImpl = {
-    new TaskContextImpl(
-      stageId = 0,
-      stageAttemptNumber = 0,
-      partitionId = 0,
-      numPartitions = 1,
-      taskAttemptId = memory.getTaskAttemptId,
-      attemptNumber = 0,
-      taskMemoryManager = memory,
-      localProperties = new Properties,
-      metricsSystem = null,
-      taskMetrics = TaskMetrics.empty,
-      cpus = 1,
-      resources = Map.empty)
   }
 
   private def writeLine(line: String): Unit = {
@@ -269,8 +212,6 @@ object CometArrowAllocationListenerBenchmark extends BenchmarkBase {
       extends TaskMemoryManager(memoryManager, taskAttemptId) {
     private val acquires = new AtomicLong(0L)
     private val releases = new AtomicLong(0L)
-
-    def getTaskAttemptId: Long = taskAttemptId
 
     // Only the Arrow listener's own calls are counted, so the pressure thread's traffic does not
     // land in the reported figure.
@@ -291,24 +232,5 @@ object CometArrowAllocationListenerBenchmark extends BenchmarkBase {
 
     def summary(buffers: Int): String =
       s"${acquires.get()} acquire and ${releases.get()} release calls for $buffers buffers"
-  }
-
-  /** Stands in for `CometTaskMemoryManager`: reserves from Spark directly and never spills. */
-  private class NativeLikeConsumer(memory: TaskMemoryManager)
-      extends MemoryConsumer(memory, 0L, MemoryMode.OFF_HEAP) {
-    private val reserved = new AtomicLong(0L)
-    override def spill(size: Long, trigger: MemoryConsumer): Long = 0L
-    override def getUsed: Long = reserved.get()
-    def reserve(bytes: Long): Long = {
-      val granted = memory.acquireExecutionMemory(bytes, this)
-      reserved.addAndGet(granted)
-      granted
-    }
-    def release(bytes: Long): Unit = {
-      if (bytes > 0L) {
-        reserved.addAndGet(-bytes)
-        memory.releaseExecutionMemory(bytes, this)
-      }
-    }
   }
 }

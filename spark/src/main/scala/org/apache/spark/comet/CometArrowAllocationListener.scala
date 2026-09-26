@@ -34,10 +34,8 @@ import org.apache.comet.CometConf
  * Charges one task's JVM-side Arrow allocations to Spark's off-heap execution pool, and refuses
  * an allocation the pool cannot cover.
  *
- * `CometArrowAllocator` is a process-wide `RootAllocator` with no limit, so until now the
- * off-heap bytes it hands out were counted by nobody: not Spark's `TaskMemoryManager`, and not
- * Comet's native memory pool. They are still resident in the container, which makes them a blind
- * spot when an executor is killed for exceeding its memory limit. Here they appear in
+ * `CometArrowAllocator` is a process-wide `RootAllocator` with no limit, but the bytes a task's
+ * allocator hands out are resident in the container all the same. Charged here, they appear in
  * `TaskMemoryManager.showMemoryUsage`, are arbitrated against Spark's other off-heap consumers,
  * and are bounded by the same pool.
  *
@@ -69,21 +67,17 @@ import org.apache.comet.CometConf
  * child of the unaccounted root, and then closes the source. Summing the callbacks would charge
  * the task for each such batch until the task ended. So the callbacks only say when to look, and
  * the size comes from the task allocator's accountant, which Arrow keeps right across transfers.
- * `ColumnarBatchArrowReader` calls [[reconcile]] as soon as it closes a source, so a task stops
- * paying for a batch once native has it. Any other transfer out is reflected at the next
- * allocation or release on the task's allocator. A transfer in is charged at the next allocation,
- * which is refused if the pool cannot cover both.
+ * Every callback trims the reservation to what is owned and pending, so a transfer out is
+ * reflected at the next allocation or release on the task's allocator, and the reader calls
+ * [[reconcile]] as soon as it closes a source, so that a task stops paying for a batch once
+ * native has it. A transfer in is charged at the next allocation, which is refused if the pool
+ * cannot cover both.
  *
  * '''Only [[onPreAllocation]] may throw.''' Arrow documents that the other callbacks cannot, and
  * `BaseAllocator.buffer` marks the allocation successful before calling `onAllocation`, so
- * throwing from any of them loses a buffer Arrow has already created. They only ever shrink the
- * reservation, and contain anything the memory manager throws. The acquisition in
- * [[onPreAllocation]] is fallible in three ways, and only the first is caught by `NonFatal`: it
- * runs other consumers' `spill`, which turns a task interrupt into a `RuntimeException` and an
- * I/O failure into a `SparkOutOfMemoryError`, and the execution pool itself parks in
- * `lock.wait()`, so killing a task can raise a plain `InterruptedException`. Each becomes the
- * refusal's cause, with the thread's interrupt flag re-armed for an interrupt, and any grant
- * Spark took before failing is handed back first; see [[acquire]].
+ * throwing from any of them loses a buffer Arrow has already created. They only ever settle or
+ * trim the reservation, and contain anything the memory manager throws. How the acquisition in
+ * [[onPreAllocation]] can fail is described at [[acquire]].
  *
  * '''Lock order.''' This listener's monitor is taken before Spark's and never the other way
  * round: [[onPreAllocation]] holds ours across `acquireExecutionMemory`, and [[acquire]]
@@ -133,7 +127,7 @@ private[comet] class CometArrowAllocationListener(taskMemoryManager: TaskMemoryM
     if (!completed) {
       val needed = owned.getAsLong + pending + size
       if (reserved < needed) {
-        reserved += acquireAtLeast(needed - reserved, size)
+        reserved += acquireAtLeast(needed - reserved, roundUpToBlock(needed) - reserved, size)
       }
       pending += size
     }
@@ -144,14 +138,13 @@ private[comet] class CometArrowAllocationListener(taskMemoryManager: TaskMemoryM
   /** Arrow's own limit refused the allocation after it was admitted here, so hand it back. */
   override def onFailedAllocation(size: Long, outcome: AllocationOutcome): Boolean = {
     settle(size)
-    shrinkQuietly()
     false
   }
 
-  override def onRelease(size: Long): Unit = shrinkQuietly()
+  override def onRelease(size: Long): Unit = reconcile()
 
-  /** Brings the reservation up to date after buffers moved out without a callback. */
-  private[comet] def reconcile(): Unit = shrinkQuietly()
+  /** Trims the reservation after buffers moved out of the allocator without a callback. */
+  private[comet] def reconcile(): Unit = settle(0L)
 
   /**
    * Reports what the task's allocator owns. Spark reads this for spill-victim ordering,
@@ -178,10 +171,7 @@ private[comet] class CometArrowAllocationListener(taskMemoryManager: TaskMemoryM
     try {
       synchronized {
         completed = true
-        if (reserved > 0L) {
-          taskMemoryManager.releaseExecutionMemory(reserved, this)
-          reserved = 0L
-        }
+        releaseDownTo(0L)
       }
     } catch {
       case NonFatal(e) => warnOnReleaseFailure(e)
@@ -191,30 +181,19 @@ private[comet] class CometArrowAllocationListener(taskMemoryManager: TaskMemoryM
   /** Bytes currently reserved with Spark on this task's behalf. Visible for testing. */
   private[comet] def reservedBytes: Long = synchronized(reserved)
 
-  /** The allocation is now in the allocator's accountant, so it is no longer pending. */
-  private def settle(size: Long): Unit = synchronized {
-    if (!completed) {
-      pending = math.max(0L, pending - size)
-    }
-  }
-
   /**
-   * Returns what the allocator no longer needs, keeping what it owns and has pending rounded up
-   * to a block so that allocating and releasing around a boundary does not reach Spark every
-   * time. Returned in one call rather than one per block: `releaseExecutionMemory` synchronizes
-   * on the executor-wide pool, so a per-block loop would take that lock once per megabyte freed.
-   * Releasing cannot fail in practice, but this is reached from callbacks that may not throw, so
-   * anything unforeseen is contained.
+   * Moves `size` bytes out of pending, since Arrow has put them in the allocator's accountant by
+   * the time it calls back, and trims the reservation to what is owned and pending, rounded up to
+   * a block. The rounding keeps a change within a block from reaching Spark, although a change
+   * that crosses a block boundary still does every time. Releasing cannot fail in practice, but
+   * this is reached from callbacks that may not throw, so anything unforeseen is contained.
    */
-  private def shrinkQuietly(): Unit = {
+  private def settle(size: Long): Unit = {
     try {
       synchronized {
+        pending = math.max(0L, pending - size)
         if (!completed) {
-          val keep = roundUpToBlock(owned.getAsLong + pending)
-          if (reserved > keep) {
-            taskMemoryManager.releaseExecutionMemory(reserved - keep, this)
-            reserved = keep
-          }
+          releaseDownTo(roundUpToBlock(owned.getAsLong + pending))
         }
       }
     } catch {
@@ -223,14 +202,26 @@ private[comet] class CometArrowAllocationListener(taskMemoryManager: TaskMemoryM
   }
 
   /**
-   * Asks Spark for `shortfall` bytes, rounded up to a block so that `reserved` leaves headroom
-   * and the next small allocation does not go straight back into Spark's lock, and returns what
-   * it granted. A grant short of the block but covering `shortfall` is accepted: the rounding is
-   * there to save lock traffic, and must not be the reason an allocation that fits is refused.
-   * Anything less is handed back and the allocation refused.
+   * Returns everything reserved above `keep`, in one call rather than one per block, because
+   * `releaseExecutionMemory` synchronizes on the executor-wide pool. Called with this listener's
+   * monitor held.
    */
-  private def acquireAtLeast(shortfall: Long, size: Long): Long = {
-    val granted = acquire(roundUpToBlock(shortfall), size)
+  private def releaseDownTo(keep: Long): Unit = {
+    if (reserved > keep) {
+      taskMemoryManager.releaseExecutionMemory(reserved - keep, this)
+      reserved = keep
+    }
+  }
+
+  /**
+   * Asks Spark for `request` bytes, which takes the reservation up to a block boundary so that
+   * the next small allocation does not go straight back into Spark's lock, and returns what it
+   * granted. A grant short of `request` is accepted as long as it covers `shortfall`, because the
+   * rounding is there to save lock traffic and must not be the reason an allocation that fits is
+   * refused. Anything less is handed back and the allocation refused.
+   */
+  private def acquireAtLeast(shortfall: Long, request: Long, size: Long): Long = {
+    val granted = acquire(request, size)
     if (granted < shortfall) {
       if (granted > 0L) {
         taskMemoryManager.releaseExecutionMemory(granted, this)
@@ -243,6 +234,12 @@ private[comet] class CometArrowAllocationListener(taskMemoryManager: TaskMemoryM
   /**
    * Asks Spark for `request` bytes and returns what it granted, or refuses the allocation if the
    * acquisition fails.
+   *
+   * It is fallible in three ways, and only the first is caught by `NonFatal`: it runs other
+   * consumers' `spill`, which turns a task interrupt into a `RuntimeException` and an I/O failure
+   * into a `SparkOutOfMemoryError`, and the execution pool itself parks in `lock.wait()`, so
+   * killing a task can raise a plain `InterruptedException`. Each becomes the refusal's cause,
+   * and an interrupt also re-arms the thread's flag.
    *
    * `acquireExecutionMemory` takes its first grant from the pool and only then asks other
    * consumers to spill, so when a spill throws it has already charged the task for bytes it never
@@ -268,28 +265,20 @@ private[comet] class CometArrowAllocationListener(taskMemoryManager: TaskMemoryM
     try {
       taskMemoryManager.acquireExecutionMemory(request, this)
     } catch {
-      case e: InterruptedException =>
-        // Refusing is the only way out of an Arrow callback, but the cancellation must not be
-        // lost with it: re-arm the flag so the task still observes it.
-        Thread.currentThread().interrupt()
-        throw refusedAfterFailure(heldBefore, request, size, e)
-      case NonFatal(e) => throw refusedAfterFailure(heldBefore, request, size, e)
-      case e: SparkOutOfMemoryError => throw refusedAfterFailure(heldBefore, request, size, e)
+      case e @ (_: InterruptedException | _: SparkOutOfMemoryError | NonFatal(_)) =>
+        if (e.isInstanceOf[InterruptedException]) {
+          // Refusing is the only way out of an Arrow callback, but the cancellation must not be
+          // lost with it: re-arm the flag so the task still observes it.
+          Thread.currentThread().interrupt()
+        }
+        val orphaned = math.max(
+          0L,
+          math.min(taskMemoryManager.getMemoryConsumptionForThisTask - heldBefore, request))
+        if (orphaned > 0L) {
+          taskMemoryManager.releaseExecutionMemory(orphaned, this)
+        }
+        throw refusal(size, request, 0L, e)
     }
-  }
-
-  private def refusedAfterFailure(
-      heldBefore: Long,
-      request: Long,
-      size: Long,
-      cause: Throwable): OutOfMemoryException = {
-    val orphaned = math.max(
-      0L,
-      math.min(taskMemoryManager.getMemoryConsumptionForThisTask - heldBefore, request))
-    if (orphaned > 0L) {
-      taskMemoryManager.releaseExecutionMemory(orphaned, this)
-    }
-    refusal(size, request, 0L, cause)
   }
 
   private def refusal(

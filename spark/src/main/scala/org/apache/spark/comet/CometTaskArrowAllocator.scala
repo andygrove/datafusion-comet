@@ -27,8 +27,10 @@ import org.apache.arrow.memory.BufferAllocator
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.memory.MemoryMode
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 import org.apache.comet.{CometArrowAllocator, CometConf}
+import org.apache.comet.vector.CometVector
 
 /**
  * Hands out the Arrow allocator that JVM-owned allocations should use, one per Spark task.
@@ -48,13 +50,11 @@ import org.apache.comet.{CometArrowAllocator, CometConf}
  * listener-less root instead, and imports from native come from `CometArrowImportAllocator`, a
  * listener-less child of it. Native memory is native's to account for: a native operator that
  * retains a batch reserves its buffers through Comet's pool, which charges the same Spark task,
- * so charging them here as well would reserve the same memory twice. A batch the JVM read into
- * this allocator and then streams to native is covered by the same rule without its allocation
- * site having to know: the stream's reader retains each batch into its own root-backed allocator
- * and closes the source, which moves the charge off this one, and then calls [[reconcile]] so
- * that the reservation follows straight away. The root is also what callers with no task get,
- * such as broadcast coalescing on the driver or a reader built while native pulls a stream, and
- * what Comet's on-heap mode gets, where charging an off-heap consumer would be wrong.
+ * so charging them here as well would reserve the same memory twice. A batch read into this
+ * allocator and then streamed to native stops being charged here once the stream has it; see
+ * [[closeAndReconcile]]. The root is also what callers with no task get, such as broadcast
+ * coalescing on the driver or a reader built while native pulls a stream, and what Comet's
+ * on-heap mode gets, where charging an off-heap consumer would be wrong.
  *
  * '''Lifetime.''' The task allocator cannot simply be closed when the task ends. The process-wide
  * allocator exists precisely because Arrow buffers can outlive the task that created them, and
@@ -111,8 +111,8 @@ object CometTaskArrowAllocator extends Logging {
     // Comet's on-heap mode accounts for nothing and exists so the Spark SQL suite can run without
     // off-heap memory configured, so it gets the root: the same switch that
     // `CometShuffleMemoryAllocator.getInstance` makes for shuffle pages.
-    if (!accountingEnabled || taskMemoryManager == null ||
-      taskMemoryManager.getTungstenMemoryMode != MemoryMode.OFF_HEAP) {
+    if (taskMemoryManager == null ||
+      taskMemoryManager.getTungstenMemoryMode != MemoryMode.OFF_HEAP || !accountingEnabled) {
       return CometArrowAllocator
     }
 
@@ -143,36 +143,24 @@ object CometTaskArrowAllocator extends Logging {
     val finished = perTask.remove(taskAttemptId)
     if (finished != null) {
       finished.listener.taskCompleted()
-      closeLock.synchronized {
-        if (!tryClose(finished.allocator)) {
-          awaitingClose.add(finished.allocator)
-        }
-      }
+      closeLock.synchronized(awaitingClose.add(finished.allocator))
     }
     closeDrained()
   }
 
-  /** Closes any parked allocator whose stragglers have since been released. */
+  /** Closes every parked allocator that has been drained, including one parked just now. */
   private def closeDrained(): Unit = {
     if (!awaitingClose.isEmpty) {
       closeLock.synchronized {
         val parked = awaitingClose.iterator()
         while (parked.hasNext) {
-          if (tryClose(parked.next())) {
+          val allocator = parked.next()
+          if (allocator.getAllocatedMemory == 0L) {
+            closeQuietly(allocator)
             parked.remove()
           }
         }
       }
-    }
-  }
-
-  /** Closes the allocator if it has been drained. Returns false if it must stay open. */
-  private def tryClose(allocator: BufferAllocator): Boolean = {
-    if (allocator.getAllocatedMemory != 0L) {
-      false
-    } else {
-      closeQuietly(allocator)
-      true
     }
   }
 
@@ -188,31 +176,38 @@ object CometTaskArrowAllocator extends Logging {
   }
 
   /**
-   * Brings a task allocator's reservation up to date with what it owns, if `allocator` is a task
-   * allocator or a child of one, and does nothing otherwise. For a caller that has just moved
-   * buffers out of it by retaining them in another allocator and closing the source, which Arrow
-   * does without calling any listener, so that the task stops paying for them now rather than at
-   * its next allocation.
+   * Closes a batch whose buffers another allocator has just retained, then trims the reservation
+   * of the task allocator they came from. Closing hands ownership to the retaining allocator
+   * without calling any listener, so without this the task would go on paying for them until its
+   * next allocation or release. A batch is built within one task, so it has at most one task
+   * allocator, and a `NullVector` owns no buffers and has no allocator at all.
    */
-  private[spark] def reconcile(allocator: BufferAllocator): Unit = allocator.getListener match {
-    case listener: CometArrowAllocationListener => listener.reconcile()
-    case _ =>
+  private[spark] def closeAndReconcile(batch: ColumnarBatch): Unit = {
+    var listener: CometArrowAllocationListener = null
+    var i = 0
+    while (i < batch.numCols()) {
+      batch.column(i) match {
+        case vector: CometVector =>
+          val allocator = vector.getValueVector.getAllocator
+          if (allocator != null) {
+            allocator.getListener match {
+              case l: CometArrowAllocationListener => listener = l
+              case _ =>
+            }
+          }
+        case _ =>
+      }
+      i += 1
+    }
+    batch.close()
+    if (listener != null) {
+      listener.reconcile()
+    }
   }
-
-  /** Number of tasks currently holding an accounted allocator. Visible for testing. */
-  private[comet] def trackedTaskCount: Int = perTask.size()
-
-  /** Number of finished tasks whose allocator is still draining. Visible for testing. */
-  private[comet] def awaitingCloseCount: Int = awaitingClose.size()
 
   /** The listener accounting for the given task, if it has one. Visible for testing. */
   private[comet] def listenerForTask(
       taskAttemptId: Long): Option[CometArrowAllocationListener] = {
     Option(perTask.get(taskAttemptId)).map(_.listener)
-  }
-
-  /** Bytes currently reserved with Spark on behalf of the given task. Visible for testing. */
-  private[comet] def reservedBytesForTask(taskAttemptId: Long): Long = {
-    listenerForTask(taskAttemptId).map(_.reservedBytes).getOrElse(0L)
   }
 }

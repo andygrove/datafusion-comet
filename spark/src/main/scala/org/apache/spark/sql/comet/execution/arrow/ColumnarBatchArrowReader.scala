@@ -70,17 +70,9 @@ private[comet] class ColumnarBatchArrowReader(
         // Do not close this borrowed root: src and the helper own its vectors.
       }
     } finally {
-      // Closing the source leaves this reader's allocator owning the buffers it retained, which
-      // Arrow does without telling the listener of the allocator they came from. A task allocator
-      // is told here instead, so the task stops paying for the batch once native has it.
-      val sourceAllocators = (0 until src.numCols())
-        .map(src.column)
-        .collect { case v: CometVector => v.getValueVector.getAllocator }
-        // A NullVector owns no buffers and has no allocator.
-        .filter(_ != null)
-        .distinct
-      src.close()
-      sourceAllocators.foreach(CometTaskArrowAllocator.reconcile)
+      // Closing leaves this reader's allocator owning the buffers it retained, so the task
+      // allocator they came from stops paying for them here.
+      CometTaskArrowAllocator.closeAndReconcile(src)
     }
     true
   }

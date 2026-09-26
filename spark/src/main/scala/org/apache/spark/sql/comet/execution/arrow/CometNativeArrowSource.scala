@@ -231,10 +231,8 @@ object CometArrowStream extends Logging {
       name: String,
       readerFactory: BufferAllocator => ArrowReader): Iterator[ArrowArrayStream] = {
     val context = TaskContext.get()
-    // A child of the listener-less root, not of the task allocator: everything loaded here is
-    // exported to native, which accounts for what it retains. A reader that loads a batch from the
-    // task allocator and then closes the source moves the batch's charge here, so the task stops
-    // paying for it as well. See CometTaskArrowAllocator.
+    // A child of the listener-less root rather than of the task allocator, since everything loaded
+    // here is exported to native, which accounts for what it retains. See CometTaskArrowAllocator.
     val allocator = CometArrowAllocator.newChildAllocator(name, 0, Long.MaxValue)
     var reader: ArrowReader = null
     var arrowStream: ArrowArrayStream = null
