@@ -31,3 +31,8 @@ INSERT INTO test_min_max_collation VALUES ('x', 'a'), ('x', 'B'), ('x', NULL), (
 query expect_fallback(min/max does not support non-UTF8_BINARY collated operands)
 SELECT grp, min(CAST(s AS STRING COLLATE UTF8_LCASE)), max(CAST(s AS STRING COLLATE UTF8_LCASE))
 FROM test_min_max_collation GROUP BY grp ORDER BY grp
+
+-- A collated string inside a struct is ordered by its collation too.
+query expect_fallback(min/max does not support non-UTF8_BINARY collated operands)
+SELECT grp, max(named_struct('k', coalesce(CAST(s AS STRING COLLATE UTF8_LCASE), CAST('' AS STRING COLLATE UTF8_LCASE))))
+FROM test_min_max_collation GROUP BY grp ORDER BY grp

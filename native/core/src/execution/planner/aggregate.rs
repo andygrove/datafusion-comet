@@ -51,10 +51,10 @@ use datafusion_comet_proto::{
     spark_operator::{AggregateMode as ProtoAggregateMode, Operator},
 };
 use datafusion_comet_spark_expr::{
-    ApproxPercentile, Avg, AvgDecimal, BloomFilterAgg, CometCollectList, CometCollectSet,
-    Correlation, Covariance, HllPlusPlus, HllSketchAgg, HllUnionAgg, MaxMinBy, Mode, Regr,
-    RegrType, SparkBloomFilterVersion, SparkListAgg, SparkMinMax, SparkPercentile, SparkPivotFirst,
-    Stddev, SumDecimal, SumInteger, Variance,
+    ApproxPercentile, Avg, AvgDecimal, BloomFilterAgg, Cast, CometCollectList, CometCollectSet,
+    Correlation, Covariance, EvalMode, HllPlusPlus, HllSketchAgg, HllUnionAgg, MaxMinBy, Mode,
+    Regr, RegrType, SparkBloomFilterVersion, SparkCastOptions, SparkListAgg, SparkMinMax,
+    SparkPercentile, SparkPivotFirst, Stddev, SumDecimal, SumInteger, Variance,
 };
 use jni::objects::{Global, JObject};
 
@@ -339,7 +339,7 @@ impl PhysicalPlanner {
                 let child = self.create_expr(expr.child.as_ref().unwrap(), Arc::clone(&schema))?;
                 let datatype = to_arrow_datatype(expr.datatype.as_ref().unwrap());
                 let func = min_max_udaf(&datatype, false);
-                let child = Arc::new(CastExpr::new(child, datatype.clone(), None));
+                let child = min_max_input(child, &datatype);
 
                 AggregateExprBuilder::new(func, vec![child])
                     .schema(schema)
@@ -353,7 +353,7 @@ impl PhysicalPlanner {
                 let child = self.create_expr(expr.child.as_ref().unwrap(), Arc::clone(&schema))?;
                 let datatype = to_arrow_datatype(expr.datatype.as_ref().unwrap());
                 let func = min_max_udaf(&datatype, true);
-                let child = Arc::new(CastExpr::new(child, datatype.clone(), None));
+                let child = min_max_input(child, &datatype);
 
                 AggregateExprBuilder::new(func, vec![child])
                     .schema(schema)
@@ -860,6 +860,27 @@ fn make_all_fields_nullable(data_type: &DataType) -> DataType {
             }
         }
         other => other.clone(),
+    }
+}
+
+/// Casts the input of `min` / `max` to the type Spark declared for it.
+///
+/// A struct is relabelled with Comet's cast rather than DataFusion's `CastExpr`, which refuses to
+/// turn a field it considers nullable into a non-nullable one. Native expressions report their
+/// output nullable more often than Spark does, so a struct Spark built from non-nullable fields
+/// (`struct(coalesce(a, 0), 1)`) would otherwise fail to plan. The relabel still checks that a
+/// non-nullable field holds no nulls.
+fn min_max_input(child: Arc<dyn PhysicalExpr>, datatype: &DataType) -> Arc<dyn PhysicalExpr> {
+    if matches!(datatype, DataType::Struct(_)) {
+        Arc::new(Cast::new(
+            child,
+            datatype.clone(),
+            SparkCastOptions::new(EvalMode::Legacy, "UTC"),
+            None,
+            None,
+        ))
+    } else {
+        Arc::new(CastExpr::new(child, datatype.clone(), None))
     }
 }
 

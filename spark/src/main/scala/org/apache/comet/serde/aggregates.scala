@@ -43,6 +43,8 @@ object CometMin extends CometAggregateExpressionSerde[Min] {
 
   override def getUnsupportedReasons(): Seq[String] = AggSerde.minMaxUnsupportedReasons
 
+  override def getIncompatibleReasons(): Seq[String] = AggSerde.minMaxIncompatibleReasons
+
   override def getSupportLevel(expr: Min): SupportLevel =
     AggSerde.minMaxSupportLevel(expr.dataType)
 
@@ -83,6 +85,8 @@ object CometMax extends CometAggregateExpressionSerde[Max] {
   override def supportsNativePartialToSparkFinal(fn: Max): Boolean = true
 
   override def getUnsupportedReasons(): Seq[String] = AggSerde.minMaxUnsupportedReasons
+
+  override def getIncompatibleReasons(): Seq[String] = AggSerde.minMaxIncompatibleReasons
 
   override def getSupportLevel(expr: Max): SupportLevel =
     AggSerde.minMaxSupportLevel(expr.dataType)
@@ -1631,15 +1635,64 @@ object AggSerde {
       Unsupported(Some(ComparisonUtils.nonDefaultCollationReason("min/max")))
     // DataFusion's grouped hash aggregate under-reports the memory these values hold (#6936).
     case _: StringType | BinaryType => Compatible()
+    case st: StructType => minMaxStructSupportLevel(st)
     case _ if minMaxDataTypeSupported(dt) => Compatible()
     case _ => Unsupported(Some(s"Unsupported data type: $dt"))
   }
 
+  /**
+   * Support level for `Min` / `Max` over a struct. DataFusion orders structs by flattening the
+   * fields and comparing them in order with Arrow's comparison kernels, which differs from
+   * Spark's struct ordering in two ways:
+   *   - A float or double field compares by IEEE rules, so NaN is never the largest value as it
+   *     is in Spark. Such structs are unsupported.
+   *   - A field that is null on either side is skipped instead of ordering before every value.
+   *     When any field, at any depth, is nullable the native result can differ from Spark's, so
+   *     the struct is incompatible. A struct of only non-nullable fields matches. A row whose
+   *     whole struct is null is ignored by both.
+   */
+  private def minMaxStructSupportLevel(st: StructType): SupportLevel = {
+    def unsupportedLeaf(dt: DataType): Option[DataType] = dt match {
+      case _: StringType if isStringCollationType(dt) => Some(dt)
+      case _: StringType | BinaryType => None
+      case nested: StructType =>
+        nested.fields.flatMap(f => unsupportedLeaf(f.dataType)).headOption
+      case FloatType | DoubleType => Some(dt)
+      case _ => if (minMaxDataTypeSupported(dt)) None else Some(dt)
+    }
+
+    def hasNullableField(dt: DataType): Boolean = dt match {
+      case nested: StructType =>
+        nested.fields.exists(f => f.nullable || hasNullableField(f.dataType))
+      case _ => false
+    }
+
+    unsupportedLeaf(st) match {
+      case Some(_: StringType) =>
+        Unsupported(Some(ComparisonUtils.nonDefaultCollationReason("min/max")))
+      case Some(leaf) =>
+        Unsupported(Some(s"Unsupported data type in struct: $leaf"))
+      case None if hasNullableField(st) => Incompatible(Some(minMaxStructNullFieldReason))
+      case None => Compatible()
+    }
+  }
+
+  private val minMaxStructNullFieldReason: String =
+    "A struct with a nullable field is ordered by skipping a field that is null on either side," +
+      " while Spark orders null before every other value, so ties on the leading fields can pick" +
+      " a different row."
+
   /** The inputs that `minMaxSupportLevel` rejects, for the generated compatibility guide. */
   val minMaxUnsupportedReasons: Seq[String] = Seq(
     "Input of a type other than boolean, integral, floating-point, decimal, date, timestamp," +
-      " string or binary, such as timestamp without time zone, intervals, arrays and structs.",
+      " string, binary or struct, such as timestamp without time zone, intervals, arrays and maps.",
     "A string with a non-default collation (Spark 4.0+), which Spark orders by its collation" +
-      " while Comet compares raw bytes.")
+      " while Comet compares raw bytes.",
+    "A struct with a field, at any depth, that is not boolean, integral, decimal, date," +
+      " timestamp, string, binary or a struct of those. In particular a float or double field," +
+      " which native comparison orders differently from Spark for NaN.")
+
+  /** The inputs that `minMaxSupportLevel` marks incompatible, for the compatibility guide. */
+  val minMaxIncompatibleReasons: Seq[String] = Seq(minMaxStructNullFieldReason)
 
 }
