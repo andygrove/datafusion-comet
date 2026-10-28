@@ -425,3 +425,5 @@ object CometSparkSessionExtensions extends Logging {
   }
 
 }
+
+// fork-ci-probe: comment-only change to exercise the PR tier on a fork

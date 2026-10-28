@@ -405,3 +405,5 @@ mod tests {
         assert!(!is_object_store_scheme_supported("not a url"));
     }
 }
+
+// fork-ci-probe: comment-only change to exercise the PR tier on a fork
