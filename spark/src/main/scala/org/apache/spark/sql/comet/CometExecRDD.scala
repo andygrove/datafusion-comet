@@ -23,13 +23,12 @@ import org.apache.arrow.c.ArrowArrayStream
 import org.apache.spark._
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.comet.execution.shuffle.CometShuffledBatchRDD
 import org.apache.spark.sql.execution.ScalarSubquery
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
-import org.apache.comet.{CometExecIterator, CometRuntimeException, CometShuffleBlockIterator}
+import org.apache.comet.{CometBlockSource, CometExecIterator, CometRuntimeException, CometShuffleBlockIterator}
 
 /**
  * Partition that carries per-partition planning data, avoiding closure capture of all partitions.
@@ -42,10 +41,10 @@ private[spark] class CometExecPartition(
     extends Partition
 
 /**
- * Unified RDD for Comet native execution. Non-shuffle input slots are `RDD[ArrowArrayStream]`
- * (consumed natively via the C Stream Interface); shuffle input slots are `CometShuffledBatchRDD`
- * (consumed via `CometShuffleBlockIterator`). Slot order matches the scan-input order in the
- * serialized native plan.
+ * Unified RDD for Comet native execution. Most input slots are `RDD[ArrowArrayStream]` (consumed
+ * natively via the C Stream Interface); `ShuffleScan` slots are a `CometBlockSource`, such as
+ * `CometShuffledBatchRDD` (consumed via `CometShuffleBlockIterator`). Slot order matches the
+ * scan-input order in the serialized native plan.
  *
  * Solves the closure-capture problem: instead of capturing all partitions' data in the closure
  * (which gets serialized to every task), each `CometExecPartition` carries only its own data.
@@ -189,7 +188,7 @@ object CometExecRDD {
   /**
    * Resolve the per-partition native input slots for `createPlan`, in scan-input order. A slot is
    * either a `CometShuffleBlockIterator` (for slots in `shuffleScanIndices`, fed by a
-   * `CometShuffledBatchRDD` consumed via the JNI block-iteration protocol) or the single
+   * `CometBlockSource` consumed via the JNI block-iteration protocol) or the single
    * `ArrowArrayStream` exported by a non-shuffle `RDD[ArrowArrayStream]`. Returned alongside the
    * subset that are shuffle-block iterators, which `CometExecIterator` needs to drive block
    * iteration. Shared by [[CometExecRDD.compute]] and the native-shuffle path so both classify
@@ -207,14 +206,14 @@ object CometExecRDD {
       .map { case ((rdd, part), idx) =>
         if (shuffleScanIndices.contains(idx)) {
           rdd match {
-            case shuffleRDD: CometShuffledBatchRDD =>
-              val it = shuffleRDD.computeAsShuffleBlockIterator(part, context)
+            case source: CometBlockSource =>
+              val it = source.computeAsShuffleBlockIterator(part, context)
               shuffleBlockIters(idx) = it
               it.asInstanceOf[Object]
             case other =>
               throw new CometRuntimeException(
                 s"Slot $idx is marked as a shuffle scan but the input RDD is " +
-                  s"${other.getClass.getName}, expected CometShuffledBatchRDD")
+                  s"${other.getClass.getName}, expected a CometBlockSource")
           }
         } else {
           val streams = rdd.iterator(part, context).asInstanceOf[Iterator[ArrowArrayStream]]

@@ -45,7 +45,7 @@ use super::{
 };
 use crate::{
     execution::{
-        operators::{ExecutionError, ShuffleScanExec},
+        operators::{CachedBatchLayout, ExecutionError, ShuffleScanExec},
         serde::to_arrow_datatype,
         shuffle::{
             CometPartitioning, CompressionCodec, PartitionOffsets, RoundRobinStrategy,
@@ -273,7 +273,27 @@ impl OperatorBuilder for ShuffleScanBuilder {
             Some(inputs.remove(0))
         };
 
-        let shuffle_scan = ShuffleScanExec::new(exec_context_id, input_source, data_types)?;
+        let cached_batch_layout = scan
+            .cached_batch_layout
+            .as_ref()
+            .map(|layout| {
+                CachedBatchLayout::try_new(
+                    layout
+                        .relation_fields
+                        .iter()
+                        .map(to_arrow_datatype)
+                        .collect(),
+                    layout.projection.iter().map(|&i| i as usize).collect(),
+                )
+            })
+            .transpose()?;
+
+        let shuffle_scan = ShuffleScanExec::new(
+            exec_context_id,
+            input_source,
+            data_types,
+            cached_batch_layout,
+        )?;
 
         Ok((
             vec![],

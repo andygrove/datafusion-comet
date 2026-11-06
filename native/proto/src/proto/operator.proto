@@ -141,6 +141,19 @@ message ShuffleScan {
   repeated spark.spark_expression.DataType fields = 1;
   // Informational label for debug output (e.g., "CometShuffleExchangeExec [id=5]")
   string source = 2;
+  // Set when the blocks are Comet's in-memory cache payloads rather than shuffle blocks.
+  CachedBatchLayout cached_batch_layout = 3;
+}
+
+// How to read the blocks of a `ShuffleScan` over Comet's in-memory cache. Each block is one
+// encapsulated Arrow IPC RecordBatch message and its body, with no Schema message, written by
+// `CachedBatchIpc.serialize` with every column of the cached relation. The scan decodes only the
+// columns it projects, so `fields` holds the projected types and this holds the full relation.
+message CachedBatchLayout {
+  // Every column of the cached relation, in the order the cache stores them.
+  repeated spark.spark_expression.DataType relation_fields = 1;
+  // For each entry of the scan's `fields`, its index in `relation_fields`.
+  repeated int32 projection = 2;
 }
 
 // Common data shared by all partitions in split mode (sent once at planning)

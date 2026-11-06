@@ -26,6 +26,7 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.columnar.{CachedBatch, CachedBatchSerializer}
+import org.apache.spark.sql.comet.execution.arrow.{ArrowCachedBatchSerializer, CachedBatchBlockRDD}
 import org.apache.spark.sql.comet.shims.ShimCometInMemoryTableScanExec
 import org.apache.spark.sql.execution.{CollectMetricsExec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanHelper
@@ -126,6 +127,24 @@ case class CometInMemoryTableScanExec(
   override def vectorTypes: Option[Seq[String]] =
     serializer.vectorTypes(scanOutput, conf)
 
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val numOutputRows = longMetric("numOutputRows")
+    serializer
+      .convertCachedBatchToColumnarBatch(prunedCachedBatches(), relationOutput, scanOutput, conf)
+      .map { cb =>
+        numOutputRows += cb.numRows().toLong
+        cb
+      }
+  }
+
+  /**
+   * The cached batches for a native `ShuffleScan` with a `CachedBatchLayout` to decode, which
+   * [[CometInMemoryTableScanExec.convert]] plans when the scan's native consumer can take them.
+   */
+  def executeAsCachedBatchBlocks(): RDD[ColumnarBatch] = executeQuery {
+    new CachedBatchBlockRDD(prunedCachedBatches(), longMetric("numOutputRows"))
+  }
+
   // Apply Spark's cache batch filter before decoding. Spark's InMemoryTableScanExec does this in
   // filteredCachedBatches(), but that method is private. Reusing the serializer's buildFilter here
   // keeps Comet on the same stats-based pruning path instead of decoding every cached batch.
@@ -135,13 +154,11 @@ case class CometInMemoryTableScanExec(
   // normally a win, but the config exists to be able to turn it off -- for debugging a suspected
   // stats bug, for instance -- and silently ignoring it would make Comet diverge from Spark on a
   // knob a user reaching for it is specifically trying to control.
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  private def prunedCachedBatches(): RDD[CachedBatch] = {
     if (enableAccumulatorsForTest) {
       readPartitions.setValue(0)
       readBatches.setValue(0)
     }
-
-    val numOutputRows = longMetric("numOutputRows")
 
     // Resolved here rather than at planning time. CachedRDDBuilder.cachedColumnBuffers is not a
     // metadata lookup: it builds the RDD by calling execute/executeColumnar on the cached plan,
@@ -159,7 +176,7 @@ case class CometInMemoryTableScanExec(
       }
 
     // Counted after pruning, as Spark counts them, so a pruned batch is not a read one.
-    val countedBuffers = if (enableAccumulatorsForTest) {
+    if (enableAccumulatorsForTest) {
       filteredBuffers.mapPartitionsInternal { iter =>
         if (iter.hasNext) {
           readPartitions.add(1)
@@ -172,13 +189,6 @@ case class CometInMemoryTableScanExec(
     } else {
       filteredBuffers
     }
-
-    serializer
-      .convertCachedBatchToColumnarBatch(countedBuffers, relationOutput, scanOutput, conf)
-      .map { cb =>
-        numOutputRows += cb.numRows().toLong
-        cb
-      }
   }
 }
 
@@ -191,15 +201,57 @@ object CometInMemoryTableScanExec extends CometOperatorSerde[InMemoryTableScanEx
       op: InMemoryTableScanExec,
       builder: OperatorOuterClass.Operator.Builder,
       childOp: Operator*): Option[Operator] = {
+    cachedBatchScan(op.output, op.relation, builder).orElse {
+      val scanTypes = op.output.flatMap(attr => serializeDataType(attr.dataType))
 
-    val scanTypes = op.output.flatMap(attr => serializeDataType(attr.dataType))
+      val scanBuilder = OperatorOuterClass.Scan
+        .newBuilder()
+        .setSource(op.getClass.getSimpleName)
+        .addAllFields(scanTypes.asJava)
 
-    val scanBuilder = OperatorOuterClass.Scan
+      Some(builder.setScan(scanBuilder).build())
+    }
+  }
+
+  /**
+   * A `ShuffleScan` that decodes `relation`'s cached batches in native code and outputs `output`,
+   * or None when the JVM has to decode them and the scan reads Arrow arrays instead.
+   *
+   * A scan that selects no columns stays on the JVM, which answers it from each batch's row count
+   * without touching the payload.
+   */
+  def cachedBatchScan(
+      output: Seq[Attribute],
+      relation: InMemoryRelation,
+      builder: OperatorOuterClass.Operator.Builder): Option[Operator] = {
+    if (!CometConf.COMET_EXEC_IN_MEMORY_CACHE_NATIVE_DECODE_ENABLED.get() || output.isEmpty ||
+      !relation.cacheBuilder.serializer.isInstanceOf[ArrowCachedBatchSerializer] ||
+      !ArrowCachedBatchSerializer.supportsSchema(relation.output)) {
+      return None
+    }
+    val relationTypes = relation.output.flatMap(attr => serializeDataType(attr.dataType))
+    val scanTypes = output.flatMap(attr => serializeDataType(attr.dataType))
+    if (relationTypes.length != relation.output.length || scanTypes.length != output.length) {
+      return None
+    }
+    // Resolved by exprId, as the serializer resolves the columns it decodes.
+    val indexByExprId = relation.output.map(_.exprId).zipWithIndex.toMap
+    val projection = output.flatMap(attr => indexByExprId.get(attr.exprId))
+    if (projection.length != output.length) {
+      return None
+    }
+
+    val layout = OperatorOuterClass.CachedBatchLayout
       .newBuilder()
-      .setSource(op.getClass.getSimpleName)
+      .addAllRelationFields(relationTypes.asJava)
+      .addAllProjection(projection.map(Integer.valueOf).asJava)
+    val scanBuilder = OperatorOuterClass.ShuffleScan
+      .newBuilder()
+      .setSource(classOf[InMemoryTableScanExec].getSimpleName)
       .addAllFields(scanTypes.asJava)
-
-    Some(builder.setScan(scanBuilder).build())
+      .setCachedBatchLayout(layout)
+    builder.clearChildren()
+    Some(builder.setShuffleScan(scanBuilder).build())
   }
 
   // Reuse Spark's InMemoryRelation metadata so cache materialization, pruning, and storage

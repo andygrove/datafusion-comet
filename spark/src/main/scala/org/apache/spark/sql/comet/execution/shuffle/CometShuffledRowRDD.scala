@@ -28,7 +28,7 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLShuffleReadMetricsRe
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-import org.apache.comet.{CometConf, CometShuffleBlockIterator}
+import org.apache.comet.{CometBlockSource, CometConf, CometShuffleBlockIterator}
 
 /**
  * Different from [[org.apache.spark.sql.execution.ShuffledRowRDD]], this RDD is specialized for
@@ -40,7 +40,8 @@ class CometShuffledBatchRDD(
     val metrics: Map[String, SQLMetric],
     partitionSpecs: Array[ShufflePartitionSpec],
     private[comet] val nativeBatchCoalescing: Option[Int] = None)
-    extends RDD[ColumnarBatch](dependency.rdd.context, Nil) {
+    extends RDD[ColumnarBatch](dependency.rdd.context, Nil)
+    with CometBlockSource {
 
   def this(dependency: ShuffleDependency[Int, _, _], metrics: Map[String, SQLMetric]) = {
     this(
@@ -178,7 +179,7 @@ class CometShuffledBatchRDD(
    * Creates a CometShuffleBlockIterator that provides raw compressed shuffle blocks for direct
    * consumption by native code, bypassing Arrow FFI.
    */
-  def computeAsShuffleBlockIterator(
+  override def computeAsShuffleBlockIterator(
       split: Partition,
       context: TaskContext): CometShuffleBlockIterator = sqlConf.withConf {
     val readerAndMetrics: (CometShuffleReader[_, _], SQLShuffleReadMetricsReporter) =

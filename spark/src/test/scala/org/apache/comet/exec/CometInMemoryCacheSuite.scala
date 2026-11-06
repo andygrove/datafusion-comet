@@ -39,7 +39,7 @@ import org.apache.spark.sql.catalyst.expressions.{And, Ascending, Attribute, Att
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.sql.catalyst.plans.{LeftOuter, RightOuter}
 import org.apache.spark.sql.columnar.{CachedBatch, SimpleMetricsCachedBatch}
-import org.apache.spark.sql.comet.{CometBroadcastHashJoinExec, CometHashAggregateExec, CometHashJoin, CometHashJoinExec, CometInMemoryTableScanExec, CometNativeScanExec, CometSortAggregateExec, CometSortExec, CometSortMergeJoinExec, CometSparkToColumnarExec}
+import org.apache.spark.sql.comet.{CometBroadcastHashJoinExec, CometExec, CometHashAggregateExec, CometHashJoin, CometHashJoinExec, CometInMemoryTableScanExec, CometNativeExec, CometNativeScanExec, CometSortAggregateExec, CometSortExec, CometSortMergeJoinExec, CometSparkToColumnarExec}
 import org.apache.spark.sql.comet.execution.arrow.{ArrowCachedBatchSerializer, CometCachedBatchHelper}
 import org.apache.spark.sql.comet.execution.shuffle.CometCelebornShuffleManager
 import org.apache.spark.sql.comet.util.Utils
@@ -3929,6 +3929,132 @@ class CometInMemoryCacheSuite extends CometTestBase {
             }
           }
         }
+      }
+    }
+  }
+
+  // Whether a native plan of `df` reads the cache through a `ShuffleScan` that decodes the cached
+  // batches itself, rather than through a `Scan` of Arrow arrays the JVM decoded.
+  private def decodesCacheNatively(df: DataFrame): Boolean =
+    collect(df.queryExecution.executedPlan) { case native: CometNativeExec => native }
+      .exists { native =>
+        CometExec
+          .nativeLeaves(native.nativeOp)
+          .exists(leaf => leaf.hasShuffleScan && leaf.getShuffleScan.hasCachedBatchLayout)
+      }
+
+  test("native operators decode cached batches natively under every codec and AQE mode") {
+    val query =
+      """
+        SELECT
+          id AS l,
+          CAST(id AS INT) AS i,
+          CAST(id % 30000 AS SMALLINT) AS sh,
+          CAST(id % 100 AS TINYINT) AS ti,
+          CAST(id % 2 AS BOOLEAN) AS bo,
+          CAST(id AS FLOAT) AS fl,
+          IF(id % 7 = 0, NULL, CAST(id AS DOUBLE) / 3) AS db,
+          CAST(id AS DECIMAL(20,4)) AS de,
+          CAST(id AS DECIMAL(9,2)) AS de9,
+          IF(id % 5 = 0, NULL, CONCAT('s_', CAST(id AS STRING))) AS st,
+          CAST(CAST(id AS STRING) AS BINARY) AS bi,
+          DATE_ADD(DATE'2020-01-01', CAST(id AS INT)) AS da,
+          TIMESTAMP'2020-01-01 00:00:00' + make_dt_interval(0, 0, 0, id) AS ts,
+          CAST(TIMESTAMP'2020-01-01 00:00:00' + make_dt_interval(0, 0, 0, id) AS TIMESTAMP_NTZ)
+            AS tsntz,
+          NULL AS nu,
+          struct(id AS a, IF(id % 3 = 0, NULL, CAST(id AS STRING)) AS b) AS sc,
+          IF(id % 11 = 0, NULL, array(id, id + 1)) AS ar,
+          map(CONCAT('k', CAST(id % 4 AS STRING)), id) AS mp,
+          array(struct(id AS x, array(CAST(id AS STRING)) AS y)) AS deep
+        FROM range(0, 20000, 1, 3)
+      """
+    // Each a native operator over the cache scan: the whole relation, a narrow projection out of
+    // the cache's column order, a projection of only nested columns, and an aggregate. The cache
+    // keeps the range's ordering, so an ORDER BY l alone plans no operator over the scan, and a
+    // shuffle straight over the scan builds its own native plan, which reads Arrow arrays.
+    val reads = Seq(
+      "SELECT * FROM decode_cache WHERE l % 2 = 0 ORDER BY l",
+      "SELECT mp, st, l FROM decode_cache WHERE l % 3 = 1 ORDER BY l",
+      "SELECT deep, sc, ar FROM decode_cache WHERE sc.a % 3 = 0 ORDER BY sc.a",
+      "SELECT i % 10 AS k, count(st), sum(de), max(ts) FROM decode_cache " +
+        "GROUP BY i % 10 ORDER BY k")
+    val expected =
+      reads.map(read => uncachedSparkAnswer(read.replace("decode_cache", s"($query)")))
+
+    for {
+      codec <- Seq("none", "zstd", "lz4")
+      aqe <- Seq("false", "true")
+    } {
+      withConversions(
+        SQLConf.ADAPTIVE_EXECUTION_ENABLED.key -> aqe,
+        SQLConf.CACHE_VECTORIZED_READER_ENABLED.key -> "true",
+        CometConf.COMET_EXEC_IN_MEMORY_CACHE_ENABLED.key -> "true",
+        CometConf.COMET_EXEC_IN_MEMORY_CACHE_COMPRESSION_CODEC.key -> codec) {
+        spark.catalog.clearCache()
+        try {
+          spark.sql(query).createOrReplaceTempView("decode_cache")
+          spark.catalog.cacheTable("decode_cache")
+          spark.table("decode_cache").count()
+          assert(
+            cachedBatchTypes("decode_cache").sameElements(
+              Array("org.apache.spark.sql.comet.execution.arrow.CometCachedBatch")))
+
+          reads.zip(expected).foreach { case (read, rows) =>
+            val context = s"codec $codec, AQE $aqe: $read"
+            Seq(true, false).foreach { nativeDecode =>
+              withSQLConf(CometConf.COMET_EXEC_IN_MEMORY_CACHE_NATIVE_DECODE_ENABLED.key ->
+                nativeDecode.toString) {
+                val df = spark.sql(read)
+                assert(df.collect() === rows, s"$context, native decode $nativeDecode")
+                assert(
+                  decodesCacheNatively(df) == nativeDecode,
+                  s"$context should decode natively only when enabled:\n" +
+                    df.queryExecution.executedPlan)
+              }
+            }
+          }
+        } finally {
+          spark.catalog.clearCache()
+        }
+      }
+    }
+  }
+
+  test("native cache decode counts the rows it reads and keeps pruning batches") {
+    withConversions(
+      SQLConf.ADAPTIVE_EXECUTION_ENABLED.key -> "false",
+      SQLConf.CACHE_VECTORIZED_READER_ENABLED.key -> "true",
+      CometConf.COMET_EXEC_IN_MEMORY_CACHE_ENABLED.key -> "true",
+      "spark.sql.inMemoryColumnarStorage.batchSize" -> "100") {
+      spark.catalog.clearCache()
+      try {
+        spark
+          .range(0, 1000, 1, 10)
+          .selectExpr("id", "CONCAT('v', CAST(id AS STRING)) AS v")
+          .createOrReplaceTempView("decode_pruning_cache")
+        spark.catalog.cacheTable("decode_pruning_cache")
+        spark.table("decode_pruning_cache").count()
+
+        // The rows the cache scan read, under native or JVM decode.
+        def rowsRead(nativeDecode: Boolean): Long =
+          withSQLConf(
+            CometConf.COMET_EXEC_IN_MEMORY_CACHE_NATIVE_DECODE_ENABLED.key ->
+              nativeDecode.toString) {
+            // No ORDER BY: a range partitioning samples its input, which reads the scan again.
+            val df = spark.sql("SELECT upper(v) FROM decode_pruning_cache WHERE id >= 990")
+            assert(df.collect().map(_.getString(0)).sorted === (990 until 1000).map(i => s"V$i"))
+            assert(decodesCacheNatively(df) == nativeDecode)
+            collect(df.queryExecution.executedPlan) { case scan: CometInMemoryTableScanExec =>
+              scan.metrics("numOutputRows").value
+            }.sum
+          }
+
+        // Pruning leaves only the batch that holds ids 900 to 999, and both decode paths count it.
+        assert(rowsRead(nativeDecode = true) == 100)
+        assert(rowsRead(nativeDecode = false) == 100)
+      } finally {
+        spark.catalog.clearCache()
       }
     }
   }

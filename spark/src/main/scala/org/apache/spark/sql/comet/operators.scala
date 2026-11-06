@@ -1059,6 +1059,17 @@ abstract class CometNativeExec extends CometExec {
       case _ => false
     }
 
+    // A Comet cache scan, bare or as the table-cache stage AQE plans it in on Spark 3.5+.
+    def cacheScan(plan: SparkPlan): Option[CometInMemoryTableScanExec] = plan match {
+      case scan: CometInMemoryTableScanExec => Some(scan)
+      case stage: QueryStageExec =>
+        stage.plan match {
+          case scan: CometInMemoryTableScanExec => Some(scan)
+          case _ => None
+        }
+      case _ => None
+    }
+
     // The protobuf is the source of truth for whether a slot is a ShuffleScan or a regular
     // Scan: `CometExchangeSink.shouldUseShuffleScan` only fires for AQE wrappers
     // (`ShuffleQueryStageExec`), so a bare non-AQE `CometShuffleExchangeExec` always serializes
@@ -1107,6 +1118,9 @@ abstract class CometNativeExec extends CometExec {
               // Direct-read shuffle: `CometShuffledBatchRDD` reaches native via
               // CometShuffleBlockIterator. Other shuffle slots fall through and get wrapped.
               plan.executeColumnar()
+            case None if shuffleScanIndices.contains(scanSlot) && cacheScan(plan).isDefined =>
+              // A cache scan whose `ShuffleScan` decodes the cached batches natively.
+              cacheScan(plan).get.executeAsCachedBatchBlocks()
             case None =>
               CometArrowStream.wrapColumnarBatchRDD(
                 plan.executeColumnar(),

@@ -46,11 +46,15 @@ use std::{
     task::{Context, Poll},
 };
 
+use super::cached_batch::CachedBatchLayout;
 use super::scan::InputBatch;
 
 /// ShuffleScanExec reads compressed shuffle blocks from JVM via JNI and decodes them natively.
 /// Unlike ScanExec which receives Arrow arrays via FFI, ShuffleScanExec receives raw compressed
 /// bytes from CometShuffleBlockIterator and decodes them using read_ipc_compressed().
+///
+/// With a `cached_batch_layout`, the blocks are Comet's in-memory cache payloads instead, handed
+/// over by the JVM's `CachedBatchBlockIterator`, and are decoded by [`CachedBatchLayout::decode`].
 #[derive(Debug, Clone)]
 pub struct ShuffleScanExec {
     /// The ID of the execution context that owns this subquery.
@@ -75,6 +79,8 @@ pub struct ShuffleScanExec {
     decode_time: Time,
     /// Remote inputs require Arrow array and logical schema validation; queried once at construction.
     requires_validation: bool,
+    /// Set when the blocks are cached batches rather than shuffle blocks.
+    cached_batch_layout: Option<Arc<CachedBatchLayout>>,
 }
 
 impl ShuffleScanExec {
@@ -82,6 +88,7 @@ impl ShuffleScanExec {
         exec_context_id: i64,
         input_source: Option<Arc<Global<JObject<'static>>>>,
         data_types: Vec<DataType>,
+        cached_batch_layout: Option<CachedBatchLayout>,
     ) -> Result<Self, CometError> {
         let requires_validation = if exec_context_id == TEST_EXEC_CONTEXT_ID {
             false
@@ -118,6 +125,7 @@ impl ShuffleScanExec {
             schema,
             decode_time,
             requires_validation,
+            cached_batch_layout: cached_batch_layout.map(Arc::new),
         })
     }
 
@@ -148,6 +156,7 @@ impl ShuffleScanExec {
             &self.data_types,
             &self.decode_time,
             self.requires_validation,
+            self.cached_batch_layout.as_deref(),
         )?;
         *current_batch = Some(next_batch);
         timer.stop();
@@ -164,6 +173,7 @@ impl ShuffleScanExec {
         data_types: &[DataType],
         decode_time: &Time,
         requires_validation: bool,
+        cached_batch_layout: Option<&CachedBatchLayout>,
     ) -> Result<InputBatch, CometError> {
         if exec_context_id == TEST_EXEC_CONTEXT_ID {
             return Ok(InputBatch::EOF);
@@ -199,7 +209,11 @@ impl ShuffleScanExec {
 
             // Decode the compressed IPC data
             let mut timer = decode_time.timer();
-            let batch = match decode_shuffle_batch(slice, data_types, requires_validation) {
+            let decoded = match cached_batch_layout {
+                Some(layout) => layout.decode(slice),
+                None => decode_shuffle_batch(slice, data_types, requires_validation),
+            };
+            let batch = match decoded {
                 Ok(batch) => batch,
                 Err(failure) => {
                     // Remote inputs must invalidate the failed shuffle generation even when
@@ -648,6 +662,7 @@ mod tests {
             super::super::super::planner::TEST_EXEC_CONTEXT_ID,
             None,
             vec![DataType::Int32, DataType::Utf8],
+            None,
         )
         .unwrap();
 
@@ -714,6 +729,7 @@ mod tests {
             super::super::super::planner::TEST_EXEC_CONTEXT_ID,
             None,
             vec![declared.clone()],
+            None,
         )
         .unwrap();
         scan.set_input_batch(InputBatch::new(decoded.columns().to_vec(), Some(2)));
@@ -749,6 +765,7 @@ mod tests {
             super::super::super::planner::TEST_EXEC_CONTEXT_ID,
             None,
             vec![declared],
+            None,
         )
         .unwrap();
         let column: ArrayRef = Arc::new(StringArray::from(vec!["a", "b"]));
@@ -784,7 +801,7 @@ mod tests {
         let mut cx = Context::from_waker(&waker);
 
         let mut scan =
-            ShuffleScanExec::new(TEST_EXEC_CONTEXT_ID, None, vec![DataType::Int32]).unwrap();
+            ShuffleScanExec::new(TEST_EXEC_CONTEXT_ID, None, vec![DataType::Int32], None).unwrap();
         let mut stream = scan.execute(0, Arc::new(TaskContext::default())).unwrap();
 
         assert!(stream.as_mut().poll_next(&mut cx).is_pending());

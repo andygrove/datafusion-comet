@@ -118,7 +118,9 @@ object CometInMemoryCacheBenchmark extends CometBenchmarkBase {
   }
 
   override def runCometBenchmark(args: Array[String]): Unit = {
-    runStatsBenchmark()
+    // Run just the reads of a cached relation, which is where native and JVM decode differ.
+    val readsOnly = args.contains("--reads-only")
+    if (!readsOnly) runStatsBenchmark()
     // Run just the JVM statistics loop without constructing or scanning a cached relation.
     if (args.contains("--stats-only")) return
 
@@ -241,12 +243,14 @@ object CometInMemoryCacheBenchmark extends CometBenchmarkBase {
           s"FROM $nestedCacheTable",
         scanned = 6)
 
-      runCodecBenchmark(flatRelation)
-      runBuildBenchmark(flatRelation)
-      runSparkOperatorBenchmark(flatRelation)
-      runAdaptiveBenchmark(flatRelation)
+      runCodecBenchmark(flatRelation, readsOnly)
+      if (!readsOnly) {
+        runBuildBenchmark(flatRelation)
+        runSparkOperatorBenchmark(flatRelation)
+        runAdaptiveBenchmark(flatRelation)
+      }
     }
-    runWideSparkOperatorBenchmark()
+    if (!readsOnly) runWideSparkOperatorBenchmark()
   }
 
   /**
@@ -262,7 +266,7 @@ object CometInMemoryCacheBenchmark extends CometBenchmarkBase {
    *
    * Every case reads the cache natively. What moves between them is the codec, not the scan.
    */
-  private def runCodecBenchmark(relation: CachedRelation): Unit = {
+  private def runCodecBenchmark(relation: CachedRelation, readsOnly: Boolean = false): Unit = {
     val view = s"${relation.table}_codec"
 
     spark.catalog.clearCache()
@@ -309,7 +313,7 @@ object CometInMemoryCacheBenchmark extends CometBenchmarkBase {
           cached = codec
         }
       }
-      materialize.run()
+      if (!readsOnly) materialize.run()
 
       // Footprint is not a time, so it has no column in a Benchmark table, but it is the other
       // half of why one codec is the default.
@@ -333,12 +337,13 @@ object CometInMemoryCacheBenchmark extends CometBenchmarkBase {
         }
         val benchmark =
           new Benchmark(s"in-memory cache $label by codec", relation.rows.toLong, output = output)
-        codecs.foreach { codec =>
+        for (codec <- codecs; nativeDecode <- Seq(false, true)) {
+          val decode = if (nativeDecode) "native decode" else "JVM decode"
           // Re-caching under this case's codec is setup, so it is outside the timer, and it only
           // happens on the case's first call, which is a warmup iteration.
-          benchmark.addTimerCase(codec) { timer =>
+          benchmark.addTimerCase(s"$codec, $decode") { timer =>
             cacheUnder(codec)
-            withSQLConf(cacheConf(nativeCacheEnabled = true): _*) {
+            withSQLConf(cacheConf(nativeCacheEnabled = true, nativeDecode): _*) {
               timer.startTiming()
               spark.sql(query).noop()
               timer.stopTiming()
@@ -899,8 +904,14 @@ object CometInMemoryCacheBenchmark extends CometBenchmarkBase {
         }
       }
 
-      benchmark.addCase("CometInMemoryTableScan") { _ =>
-        withSQLConf(cacheConf(nativeCacheEnabled = true): _*) {
+      benchmark.addCase("CometInMemoryTableScan, JVM decode") { _ =>
+        withSQLConf(cacheConf(nativeCacheEnabled = true, nativeDecode = false): _*) {
+          spark.sql(query).noop()
+        }
+      }
+
+      benchmark.addCase("CometInMemoryTableScan, native decode") { _ =>
+        withSQLConf(cacheConf(nativeCacheEnabled = true, nativeDecode = true): _*) {
           spark.sql(query).noop()
         }
       }
@@ -975,11 +986,14 @@ object CometInMemoryCacheBenchmark extends CometBenchmarkBase {
         s"${scanOutputs.head.map(_.name).mkString("[", ",", "]")}:\n$plan")
   }
 
-  private def cacheConf(nativeCacheEnabled: Boolean): Seq[(String, String)] = {
+  private def cacheConf(
+      nativeCacheEnabled: Boolean,
+      nativeDecode: Boolean = true): Seq[(String, String)] = {
     Seq(
       CometConf.COMET_ENABLED.key -> "true",
       CometConf.COMET_EXEC_ENABLED.key -> "true",
       CometConf.COMET_EXEC_IN_MEMORY_CACHE_ENABLED.key -> nativeCacheEnabled.toString,
+      CometConf.COMET_EXEC_IN_MEMORY_CACHE_NATIVE_DECODE_ENABLED.key -> nativeDecode.toString,
       CometConf.COMET_CONVERT_FROM_RANGE_ENABLED.key -> "true",
       CometConf.COMET_CONVERT_FROM_IN_MEMORY_CACHE_ENABLED.key -> "true",
       "spark.comet.exec.onHeap.enabled" -> "true",

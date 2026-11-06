@@ -51,7 +51,8 @@ public class CometShuffleBlockIterator implements Closeable {
   private final InputStream inputStream;
   private final LongConsumer recordsReadUpdater;
   private final ByteBuffer headerBuf = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN);
-  private ByteBuffer dataBuf = ByteBuffer.allocateDirect(INITIAL_BUFFER_SIZE);
+  // Allocated by the first block read, so that a subclass with blocks of its own allocates none.
+  private ByteBuffer dataBuf = null;
   private boolean closed = false;
   private int currentBlockLength = 0;
 
@@ -116,10 +117,7 @@ public class CometShuffleBlockIterator implements Closeable {
 
     currentBlockLength = (int) bytesToRead;
 
-    if (dataBuf.capacity() < currentBlockLength) {
-      int newCapacity = (int) Math.min(bytesToRead * 2L, Integer.MAX_VALUE);
-      dataBuf = ByteBuffer.allocateDirect(newCapacity);
-    }
+    dataBuf = ensureCapacity(dataBuf, currentBlockLength);
 
     dataBuf.clear();
     dataBuf.limit(currentBlockLength);
@@ -131,6 +129,19 @@ public class CometShuffleBlockIterator implements Closeable {
     // not the buffer's position/limit. No flip needed.
 
     return currentBlockLength;
+  }
+
+  /**
+   * {@code buffer}, or a larger direct buffer when it is null or cannot hold {@code length} bytes.
+   * Grows to twice the length asked for, so that a run of slowly growing blocks does not allocate
+   * on every one.
+   */
+  protected static ByteBuffer ensureCapacity(ByteBuffer buffer, int length) {
+    if (buffer != null && buffer.capacity() >= length) {
+      return buffer;
+    }
+    long capacity = Math.max(INITIAL_BUFFER_SIZE, Math.min(length * 2L, Integer.MAX_VALUE));
+    return ByteBuffer.allocateDirect((int) capacity);
   }
 
   /**

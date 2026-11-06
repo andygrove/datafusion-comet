@@ -477,6 +477,18 @@ object CometConf extends ShimCometConf {
       .booleanConf
       .createWithDefault(false)
 
+  val COMET_EXEC_IN_MEMORY_CACHE_NATIVE_DECODE_ENABLED: ConfigEntry[Boolean] =
+    conf("spark.comet.exec.inMemoryCache.nativeDecode.enabled")
+      .category(CATEGORY_EXEC)
+      .doc(
+        "When a Comet native operator reads a table cached in Comet's format, whether native " +
+          "code decodes the cached batches, decompressing only the columns the scan selects. " +
+          "When disabled, the batches are decoded into Arrow vectors on the JVM and passed to " +
+          "native code over the Arrow C Data Interface. Has no effect on a cached table that " +
+          "Spark operators read, which is always decoded on the JVM.")
+      .booleanConf
+      .createWithDefault(true)
+
   val COMET_EXEC_IN_MEMORY_CACHE_COMPRESSION_CODEC: ConfigEntry[String] =
     conf("spark.comet.exec.inMemoryCache.compression.codec")
       .category(CATEGORY_EXEC)

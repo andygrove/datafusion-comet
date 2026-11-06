@@ -21,10 +21,10 @@ package org.apache.comet.serde.operator
 
 import scala.jdk.CollectionConverters._
 
-import org.apache.spark.sql.comet.{CometNativeExec, CometSinkPlaceHolder}
+import org.apache.spark.sql.comet.{CometInMemoryTableScanExec, CometNativeExec, CometSinkPlaceHolder}
 import org.apache.spark.sql.comet.execution.shuffle.CometShuffleExchangeExec
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
+import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.types.DataType
 
@@ -98,10 +98,17 @@ object CometExchangeSink extends CometSink[SparkPlan] {
       op: SparkPlan,
       builder: Operator.Builder,
       childOp: OperatorOuterClass.Operator*): Option[OperatorOuterClass.Operator] = {
-    if (shouldUseShuffleScan(op)) {
-      convertToShuffleScan(op, builder)
-    } else {
-      super.convert(op, builder, childOp: _*)
+    op match {
+      // A table-cache stage over a Comet cache scan, whose batches native code can decode.
+      case stage: QueryStageExec if stage.plan.isInstanceOf[CometInMemoryTableScanExec] =>
+        val scan = stage.plan.asInstanceOf[CometInMemoryTableScanExec]
+        CometInMemoryTableScanExec
+          .cachedBatchScan(stage.output, scan.originalPlan.relation, builder)
+          .orElse(super.convert(op, builder, childOp: _*))
+      case _ if shouldUseShuffleScan(op) =>
+        convertToShuffleScan(op, builder)
+      case _ =>
+        super.convert(op, builder, childOp: _*)
     }
   }
 
